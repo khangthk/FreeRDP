@@ -43,7 +43,6 @@ if (ENABLE_WARNING_VERBOSE)
 			-Wno-reserved-identifier
 			-Wno-covered-switch-default
 			-Wno-disabled-macro-expansion
-			-Wno-language-extension-token
 			-Wno-ctad-maybe-unsupported
 			-Wno-c++98-compat
 			-Wno-c++98-compat-pedantic
@@ -60,6 +59,11 @@ endif()
 
 if (ENABLE_WARNING_ERROR)
 	CheckCXXFlag(-Werror)
+endif()
+
+# https://stackoverflow.com/questions/4913922/possible-problems-with-nominmax-on-visual-c
+if (WIN32)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-DNOMINMAX>)
 endif()
 
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} CACHE STRING "default CXXFLAGS")
