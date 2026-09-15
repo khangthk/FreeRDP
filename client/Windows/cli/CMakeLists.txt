@@ -20,16 +20,15 @@ set(MODULE_PREFIX "FREERDP_CLIENT_WINDOWS")
 
 include_directories(..)
 
-set(${MODULE_PREFIX}_SRCS
-	wfreerdp.c
-	wfreerdp.h
-	../resource/wfreerdp.rc)
+set(${MODULE_PREFIX}_SRCS wfreerdp.c wfreerdp.h ../resource/wfreerdp.rc)
 
-AddTargetWithResourceFile(${MODULE_NAME} "${WIN32_GUI_FLAG}" "${FREERDP_VERSION}" ${MODULE_PREFIX}_SRCS)
+add_win_console_manifest(${MODULE_PREFIX}_SRCS)
+
+addtargetwithresourcefile(${MODULE_NAME} "${WIN32_GUI_FLAG}" "${FREERDP_VERSION}" ${MODULE_PREFIX}_SRCS)
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} wfreerdp-client)
 
-target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
+target_link_libraries(${MODULE_NAME} PRIVATE ${${MODULE_PREFIX}_LIBS})
 
 install(TARGETS ${MODULE_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Client/Windows")

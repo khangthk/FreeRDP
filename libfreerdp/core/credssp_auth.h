@@ -37,31 +37,62 @@ FREERDP_LOCAL void credssp_auth_free(rdpCredsspAuth* auth);
 WINPR_ATTR_MALLOC(credssp_auth_free, 1)
 FREERDP_LOCAL rdpCredsspAuth* credssp_auth_new(const rdpContext* context);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_init(rdpCredsspAuth* auth, TCHAR* pkg_name,
                                      SecPkgContext_Bindings* bindings);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_setup_client(rdpCredsspAuth* auth, const char* target_service,
                                              const char* target_hostname,
                                              const SEC_WINNT_AUTH_IDENTITY* identity,
                                              const char* pkinit);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_setup_server(rdpCredsspAuth* auth);
+
 FREERDP_LOCAL void credssp_auth_set_flags(rdpCredsspAuth* auth, ULONG flags);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL int credssp_auth_authenticate(rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_encrypt(rdpCredsspAuth* auth, const SecBuffer* plaintext,
                                         SecBuffer* ciphertext, size_t* signature_length,
                                         ULONG sequence);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_decrypt(rdpCredsspAuth* auth, const SecBuffer* ciphertext,
                                         SecBuffer* plaintext, ULONG sequence);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_impersonate(rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_revert_to_self(rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_set_spn(rdpCredsspAuth* auth, const char* service,
                                         const char* hostname);
+
 FREERDP_LOCAL void credssp_auth_take_input_buffer(rdpCredsspAuth* auth, SecBuffer* buffer);
-FREERDP_LOCAL const SecBuffer* credssp_auth_get_output_buffer(rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL const SecBuffer* credssp_auth_get_output_buffer(const rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL credssp_auth_have_output_token(rdpCredsspAuth* auth);
-FREERDP_LOCAL BOOL credssp_auth_is_complete(rdpCredsspAuth* auth);
-FREERDP_LOCAL const char* credssp_auth_pkg_name(rdpCredsspAuth* auth);
-FREERDP_LOCAL size_t credssp_auth_trailer_size(rdpCredsspAuth* auth);
-FREERDP_LOCAL UINT32 credssp_auth_sspi_error(rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL BOOL credssp_auth_is_complete(const rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL const char* credssp_auth_pkg_name(const rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL size_t credssp_auth_trailer_size(const rdpCredsspAuth* auth);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL INT32 credssp_auth_sspi_error(const rdpCredsspAuth* auth);
 
 FREERDP_LOCAL void credssp_auth_tableAndContext(rdpCredsspAuth* auth,
                                                 SecurityFunctionTable** ptable,

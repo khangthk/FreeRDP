@@ -1,4 +1,6 @@
 
+#include <winpr/wtypes.h>
+
 /*
 #define DEFINE_UNICODE			FALSE
 #define CUR_PATH_SEPARATOR_CHR		'\\'
@@ -7,15 +9,16 @@
 
 #if DEFINE_UNICODE
 
-HRESULT PATH_CCH_ADD_SEPARATOR_EX(PWSTR pszPath, size_t cchPath, PWSTR* ppszEnd,
-                                  size_t* pcchRemaining)
+HRESULT PATH_CCH_ADD_SEPARATOR_EX(PWSTR pszPath, size_t cchPath, WINPR_ATTR_UNUSED PWSTR* ppszEnd,
+                                  WINPR_ATTR_UNUSED size_t* pcchRemaining)
 {
-	size_t pszPathLength;
-
+	WINPR_ASSERT(pszPath || (cchPath == 0));
 	if (!pszPath)
-		return E_INVALIDARG;
+		return S_OK;
 
-	pszPathLength = _wcslen(pszPath);
+	const size_t pszPathLength = _wcsnlen(pszPath, cchPath);
+	if (pszPathLength < 1)
+		return S_OK;
 
 	if (pszPath[pszPathLength - 1] == CUR_PATH_SEPARATOR_CHR)
 		return S_FALSE;
@@ -33,15 +36,17 @@ HRESULT PATH_CCH_ADD_SEPARATOR_EX(PWSTR pszPath, size_t cchPath, PWSTR* ppszEnd,
 
 #else
 
-HRESULT PATH_CCH_ADD_SEPARATOR_EX(PSTR pszPath, size_t cchPath, PSTR* ppszEnd,
-                                  size_t* pcchRemaining)
+HRESULT PATH_CCH_ADD_SEPARATOR_EX(WINPR_ATTR_UNUSED PSTR pszPath, WINPR_ATTR_UNUSED size_t cchPath,
+                                  WINPR_ATTR_UNUSED PSTR* ppszEnd,
+                                  WINPR_ATTR_UNUSED size_t* pcchRemaining)
 {
-	size_t pszPathLength;
-
+	WINPR_ASSERT(pszPath || (cchPath == 0));
 	if (!pszPath)
-		return E_INVALIDARG;
+		return S_OK;
 
-	pszPathLength = strlen(pszPath);
+	const size_t pszPathLength = strnlen(pszPath, cchPath);
+	if (pszPathLength < 1)
+		return S_OK;
 
 	if (pszPath[pszPathLength - 1] == CUR_PATH_SEPARATOR_CHR)
 		return S_FALSE;

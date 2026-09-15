@@ -149,6 +149,7 @@
  */
 
 #include <winpr/crt.h>
+#include <winpr/wlog.h>
 #include <winpr/wincrypt.h>
 
 #ifndef _WIN32
@@ -156,9 +157,10 @@
 #include "crypto.h"
 
 HCERTSTORE CertOpenStore(LPCSTR lpszStoreProvider, DWORD dwMsgAndCertEncodingType,
-                         HCRYPTPROV_LEGACY hCryptProv, DWORD dwFlags, const void* pvPara)
+                         WINPR_ATTR_UNUSED HCRYPTPROV_LEGACY hCryptProv,
+                         WINPR_ATTR_UNUSED DWORD dwFlags, WINPR_ATTR_UNUSED const void* pvPara)
 {
-	WINPR_CERTSTORE* certstore = NULL;
+	WINPR_CERTSTORE* certstore = nullptr;
 
 	certstore = (WINPR_CERTSTORE*)calloc(1, sizeof(WINPR_CERTSTORE));
 
@@ -171,23 +173,25 @@ HCERTSTORE CertOpenStore(LPCSTR lpszStoreProvider, DWORD dwMsgAndCertEncodingTyp
 	return (HCERTSTORE)certstore;
 }
 
-HCERTSTORE CertOpenSystemStoreW(HCRYPTPROV_LEGACY hProv, LPCWSTR szSubsystemProtocol)
+HCERTSTORE CertOpenSystemStoreW(HCRYPTPROV_LEGACY hProv,
+                                WINPR_ATTR_UNUSED LPCWSTR szSubsystemProtocol)
 {
-	HCERTSTORE hCertStore = NULL;
+	HCERTSTORE hCertStore = nullptr;
 
-	hCertStore = CertOpenStore(CERT_STORE_PROV_FILE, X509_ASN_ENCODING, hProv, 0, NULL);
+	hCertStore = CertOpenStore(CERT_STORE_PROV_FILE, X509_ASN_ENCODING, hProv, 0, nullptr);
 
 	return hCertStore;
 }
 
-HCERTSTORE CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv, LPCSTR szSubsystemProtocol)
+HCERTSTORE CertOpenSystemStoreA(HCRYPTPROV_LEGACY hProv,
+                                WINPR_ATTR_UNUSED LPCSTR szSubsystemProtocol)
 {
-	return CertOpenSystemStoreW(hProv, NULL);
+	return CertOpenSystemStoreW(hProv, nullptr);
 }
 
-BOOL CertCloseStore(HCERTSTORE hCertStore, DWORD dwFlags)
+BOOL CertCloseStore(HCERTSTORE hCertStore, WINPR_ATTR_UNUSED DWORD dwFlags)
 {
-	WINPR_CERTSTORE* certstore = NULL;
+	WINPR_CERTSTORE* certstore = nullptr;
 
 	certstore = (WINPR_CERTSTORE*)hCertStore;
 
@@ -196,27 +200,39 @@ BOOL CertCloseStore(HCERTSTORE hCertStore, DWORD dwFlags)
 	return TRUE;
 }
 
-PCCERT_CONTEXT CertFindCertificateInStore(HCERTSTORE hCertStore, DWORD dwCertEncodingType,
-                                          DWORD dwFindFlags, DWORD dwFindType,
-                                          const void* pvFindPara, PCCERT_CONTEXT pPrevCertContext)
+PCCERT_CONTEXT CertFindCertificateInStore(WINPR_ATTR_UNUSED HCERTSTORE hCertStore,
+                                          WINPR_ATTR_UNUSED DWORD dwCertEncodingType,
+                                          WINPR_ATTR_UNUSED DWORD dwFindFlags,
+                                          WINPR_ATTR_UNUSED DWORD dwFindType,
+                                          WINPR_ATTR_UNUSED const void* pvFindPara,
+                                          WINPR_ATTR_UNUSED PCCERT_CONTEXT pPrevCertContext)
 {
+	WLog_ERR("TODO", "TODO: Implement");
 	return (PCCERT_CONTEXT)1;
 }
 
-PCCERT_CONTEXT CertEnumCertificatesInStore(HCERTSTORE hCertStore, PCCERT_CONTEXT pPrevCertContext)
+PCCERT_CONTEXT CertEnumCertificatesInStore(WINPR_ATTR_UNUSED HCERTSTORE hCertStore,
+                                           WINPR_ATTR_UNUSED PCCERT_CONTEXT pPrevCertContext)
 {
-	return (PCCERT_CONTEXT)NULL;
+	WLog_ERR("TODO", "TODO: Implement");
+	return (PCCERT_CONTEXT) nullptr;
 }
 
-DWORD CertGetNameStringW(PCCERT_CONTEXT pCertContext, DWORD dwType, DWORD dwFlags, void* pvTypePara,
-                         LPWSTR pszNameString, DWORD cchNameString)
+DWORD CertGetNameStringW(WINPR_ATTR_UNUSED PCCERT_CONTEXT pCertContext,
+                         WINPR_ATTR_UNUSED DWORD dwType, WINPR_ATTR_UNUSED DWORD dwFlags,
+                         WINPR_ATTR_UNUSED void* pvTypePara, WINPR_ATTR_UNUSED LPWSTR pszNameString,
+                         WINPR_ATTR_UNUSED DWORD cchNameString)
 {
+	WLog_ERR("TODO", "TODO: Implement");
 	return 0;
 }
 
-DWORD CertGetNameStringA(PCCERT_CONTEXT pCertContext, DWORD dwType, DWORD dwFlags, void* pvTypePara,
-                         LPSTR pszNameString, DWORD cchNameString)
+DWORD CertGetNameStringA(WINPR_ATTR_UNUSED PCCERT_CONTEXT pCertContext,
+                         WINPR_ATTR_UNUSED DWORD dwType, WINPR_ATTR_UNUSED DWORD dwFlags,
+                         WINPR_ATTR_UNUSED void* pvTypePara, WINPR_ATTR_UNUSED LPSTR pszNameString,
+                         WINPR_ATTR_UNUSED DWORD cchNameString)
 {
+	WLog_ERR("TODO", "TODO: Implement");
 	return 0;
 }
 

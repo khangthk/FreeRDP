@@ -46,7 +46,7 @@
 
 static BOOL cert_info_allocate(rdpCertInfo* info, size_t size);
 
-BOOL read_bignum(BYTE** dst, UINT32* length, const BIGNUM* num, BOOL alloc)
+BOOL read_bignum(BYTE** dst, DWORD* length, const BIGNUM* num, BOOL alloc)
 {
 	WINPR_ASSERT(dst);
 	WINPR_ASSERT(length);
@@ -55,7 +55,7 @@ BOOL read_bignum(BYTE** dst, UINT32* length, const BIGNUM* num, BOOL alloc)
 	if (alloc)
 	{
 		free(*dst);
-		*dst = NULL;
+		*dst = nullptr;
 		*length = 0;
 	}
 
@@ -87,7 +87,7 @@ BOOL read_bignum(BYTE** dst, UINT32* length, const BIGNUM* num, BOOL alloc)
 
 BOOL cert_info_create(rdpCertInfo* dst, const BIGNUM* rsa, const BIGNUM* rsa_e)
 {
-	const rdpCertInfo empty = { 0 };
+	const rdpCertInfo empty = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(dst);
 	WINPR_ASSERT(rsa);
@@ -97,10 +97,12 @@ BOOL cert_info_create(rdpCertInfo* dst, const BIGNUM* rsa, const BIGNUM* rsa_e)
 	if (!read_bignum(&dst->Modulus, &dst->ModulusLength, rsa, TRUE))
 		goto fail;
 
-	UINT32 len = sizeof(dst->exponent);
-	BYTE* ptr = &dst->exponent[0];
-	if (!read_bignum(&ptr, &len, rsa_e, FALSE))
-		goto fail;
+	{
+		DWORD len = sizeof(dst->exponent);
+		BYTE* ptr = &dst->exponent[0];
+		if (!read_bignum(&ptr, &len, rsa_e, FALSE))
+			goto fail;
+	}
 	return TRUE;
 
 fail:
@@ -115,7 +117,7 @@ BOOL cert_info_clone(rdpCertInfo* dst, const rdpCertInfo* src)
 
 	*dst = *src;
 
-	dst->Modulus = NULL;
+	dst->Modulus = nullptr;
 	dst->ModulusLength = 0;
 	if (src->ModulusLength > 0)
 	{
@@ -133,7 +135,7 @@ void cert_info_free(rdpCertInfo* info)
 	WINPR_ASSERT(info);
 	free(info->Modulus);
 	info->ModulusLength = 0;
-	info->Modulus = NULL;
+	info->Modulus = nullptr;
 }
 
 BOOL cert_info_allocate(rdpCertInfo* info, size_t size)
@@ -173,12 +175,13 @@ BOOL cert_info_read_exponent(rdpCertInfo* info, size_t size, wStream* s)
 		return FALSE;
 	if (size > 4)
 	{
-		WLog_ERR(TAG, "exponent size %" PRIuz " exceeds limit of %" PRIu32, size, 4);
+		WLog_ERR(TAG, "exponent size %" PRIuz " exceeds limit of %" PRIu32, size, 4u);
 		return FALSE;
 	}
 	if (!info->Modulus || (info->ModulusLength == 0))
 	{
-		WLog_ERR(TAG, "invalid modulus=%p [%" PRIu32 "]", info->Modulus, info->ModulusLength);
+		WLog_ERR(TAG, "invalid modulus=%p [%" PRIu32 "]",
+		         WINPR_CXX_COMPAT_CAST(const void*, info->Modulus), info->ModulusLength);
 		return FALSE;
 	}
 	Stream_Read(s, &info->exponent[4 - size], size);
@@ -190,8 +193,8 @@ BOOL cert_info_read_exponent(rdpCertInfo* info, size_t size, wStream* s)
 #if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 X509* x509_from_rsa(const RSA* rsa)
 {
-	EVP_PKEY* pubkey = NULL;
-	X509* x509 = NULL;
+	EVP_PKEY* pubkey = nullptr;
+	X509* x509 = nullptr;
 	BIO* bio = BIO_new(
 #if defined(LIBRESSL_VERSION_NUMBER)
 	    BIO_s_mem()
@@ -200,25 +203,38 @@ X509* x509_from_rsa(const RSA* rsa)
 #endif
 	);
 	if (!bio)
-		return NULL;
+	{
+		WLog_ERR(TAG, "BIO_new() failed");
+		return nullptr;
+	}
 
 	const int rc = PEM_write_bio_RSA_PUBKEY(bio, (RSA*)rsa);
 	if (rc != 1)
+	{
+		WLog_ERR(TAG, "PEM_write_bio_RSA_PUBKEY(bio, (RSA*)rsa) failed");
 		goto fail;
+	}
 
-	pubkey = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
+	pubkey = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
 	if (!pubkey)
+	{
+		WLog_ERR(TAG, "PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr) failed");
 		goto fail;
+	}
 
 	x509 = X509_new();
 	if (!x509)
+	{
+		WLog_ERR(TAG, "X509_new() failed");
 		goto fail;
+	}
 
 	const int res = X509_set_pubkey(x509, pubkey);
 	if (res != 1)
 	{
+		WLog_ERR(TAG, "X509_set_pubkey(x509, pubkey) failed");
 		X509_free(x509);
-		x509 = NULL;
+		x509 = nullptr;
 		goto fail;
 	}
 fail:

@@ -17,37 +17,28 @@
 
 define_channel_client("rdpecam")
 
-if(NOT WITH_SWSCALE OR NOT WITH_FFMPEG)
-    message(FATAL_ERROR "WITH_FFMPEG and WITH_SWSCALE required for CHANNEL_RDPECAM_CLIENT")
+# currently camera redirect client supported for platforms with Video4Linux or Android
+if(NOT ANDROID)
+  find_package(V4L)
+  if(V4L_FOUND)
+    set(WITH_V4L ON)
+    add_compile_definitions("WITH_V4L")
+  else()
+    message(FATAL_ERROR "libv4l-dev required for CHANNEL_RDPECAM_CLIENT")
+  endif()
 endif()
 
-# currently camera redirect client supported for platforms with Video4Linux only
-find_package(FFmpeg REQUIRED COMPONENTS SWSCALE)
-find_package(V4L)
-if(V4L_FOUND)
-	set(WITH_V4L ON)
-	add_definitions("-DWITH_V4L")
-else()
-	message(FATAL_ERROR "libv4l-dev required for CHANNEL_RDPECAM_CLIENT")
-endif()
+set(${MODULE_PREFIX}_LIBS freerdp winpr)
 
-include_directories(SYSTEM ${SWSCALE_INCLUDE_DIRS})
+set(${MODULE_PREFIX}_SRCS camera_device_enum_main.c camera_device_main.c encoding.c)
 
-set(${MODULE_PREFIX}_SRCS
-	camera_device_enum_main.c
-	camera_device_main.c
-	encoding.c
-)
-
-set(${MODULE_PREFIX}_LIBS
-	freerdp
-    winpr
-    ${SWSCALE_LIBRARIES}
-    ${FFMPEG_LIBRARIES}
-)
-
+# TRUE = build as static addin (linked into libfreerdp-client), not dynamic plugin (.so)
 add_channel_client_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_NAME} TRUE "DVCPluginEntry")
 
-if(V4L_FOUND)
-	add_channel_client_subsystem(${MODULE_PREFIX} ${CHANNEL_NAME} "v4l" "")
+if(WITH_V4L)
+  add_channel_client_subsystem(${MODULE_PREFIX} ${CHANNEL_NAME} "v4l" "")
+endif()
+
+if(ANDROID)
+  add_channel_client_subsystem(${MODULE_PREFIX} ${CHANNEL_NAME} "android" "")
 endif()

@@ -26,66 +26,56 @@
 
 #include <SDL3/SDL.h>
 
-#include <freerdp/freerdp.h>
-
-#include "sdl_widget.hpp"
 #include "sdl_buttons.hpp"
+#include "sdl_connection_dialog_wrapper.hpp"
+#include "sdl_widget.hpp"
+#include "sdl_widget_list.hpp"
 
-class SDLConnectionDialog
+class SDLConnectionDialog : public SdlWidgetList
 {
   public:
 	explicit SDLConnectionDialog(rdpContext* context);
 	SDLConnectionDialog(const SDLConnectionDialog& other) = delete;
 	SDLConnectionDialog(const SDLConnectionDialog&& other) = delete;
-	virtual ~SDLConnectionDialog();
+	~SDLConnectionDialog() override;
 
 	SDLConnectionDialog& operator=(const SDLConnectionDialog& other) = delete;
-	SDLConnectionDialog& operator=(SDLConnectionDialog& other) = delete;
+	SDLConnectionDialog& operator=(SDLConnectionDialog&& other) = delete;
 
-	bool visible() const;
+	[[nodiscard]] bool setTitle(const char* fmt, ...);
+	[[nodiscard]] bool showInfo(const char* fmt, ...);
+	[[nodiscard]] bool showWarn(const char* fmt, ...);
+	[[nodiscard]] bool showError(const char* fmt, ...);
 
-	bool setTitle(const char* fmt, ...);
-	bool showInfo(const char* fmt, ...);
-	bool showWarn(const char* fmt, ...);
-	bool showError(const char* fmt, ...);
+	[[nodiscard]] bool show();
+	[[nodiscard]] bool hide();
 
-	bool show();
-	bool hide();
+	[[nodiscard]] bool running() const;
+	[[nodiscard]] bool wait(bool ignoreRdpContextQuit = false);
 
-	bool running() const;
-	bool wait(bool ignoreRdpContextQuit = false);
+	[[nodiscard]] bool handle(const SDL_Event& event);
 
-	bool handle(const SDL_Event& event);
+	[[nodiscard]] bool visible() const override;
+
+  protected:
+	[[nodiscard]] bool updateInternal() override;
 
   private:
-	enum MsgType
-	{
-		MSG_NONE,
-		MSG_INFO,
-		MSG_WARN,
-		MSG_ERROR,
-		MSG_DISCARD
-	};
-
-	bool createWindow();
+	[[nodiscard]] bool createWindow();
 	void destroyWindow();
 
-	bool update();
+	[[nodiscard]] bool updateMsg(SdlConnectionDialogWrapper::MsgType type);
 
-	bool setModal();
+	[[nodiscard]] bool setModal();
 
-	static bool clearWindow(SDL_Renderer* renderer);
+	[[nodiscard]] bool show(SdlConnectionDialogWrapper::MsgType type, const char* fmt, va_list ap);
+	[[nodiscard]] bool show(SdlConnectionDialogWrapper::MsgType type);
 
-	bool update(SDL_Renderer* renderer);
-
-	bool show(MsgType type, const char* fmt, va_list ap);
-	bool show(MsgType type);
-
-	static std::string print(const char* fmt, va_list ap);
-	bool setTimer(Uint32 timeoutMS = 15000);
+	[[nodiscard]] static std::string print(const char* fmt, va_list ap);
+	[[nodiscard]] bool setTimer(Uint32 timeoutMS = 15000);
 	void resetTimer();
 
-	static Uint32 timeout(void* pvthis, SDL_TimerID timerID, Uint32 intervalMS);
+	[[nodiscard]] static Uint32 timeout(void* pvthis, SDL_TimerID timerID, Uint32 intervalMS);
 
 	struct widget_cfg_t
 	{
@@ -95,38 +85,11 @@ class SDLConnectionDialog
 	};
 
 	rdpContext* _context = nullptr;
-	SDL_Window* _window = nullptr;
-	SDL_Renderer* _renderer = nullptr;
 	mutable std::mutex _mux;
 	std::string _title;
 	std::string _msg;
-	MsgType _type = MSG_NONE;
-	MsgType _type_active = MSG_NONE;
-	SDL_TimerID _timer = -1;
+	SdlConnectionDialogWrapper::MsgType _type_active = SdlConnectionDialogWrapper::MSG_NONE;
+	SDL_TimerID _timer = 0;
 	bool _running = false;
 	std::vector<widget_cfg_t> _list;
-	SdlButtonList _buttons;
-};
-
-class SDLConnectionDialogHider
-{
-  public:
-	explicit SDLConnectionDialogHider(freerdp* instance);
-	explicit SDLConnectionDialogHider(rdpContext* context);
-
-	explicit SDLConnectionDialogHider(SDLConnectionDialog* dialog);
-
-	SDLConnectionDialogHider(const SDLConnectionDialogHider& other) = delete;
-	SDLConnectionDialogHider(SDLConnectionDialogHider&& other) = delete;
-	SDLConnectionDialogHider& operator=(const SDLConnectionDialogHider& other) = delete;
-	SDLConnectionDialogHider& operator=(SDLConnectionDialogHider& other) = delete;
-
-	~SDLConnectionDialogHider();
-
-  private:
-	SDLConnectionDialog* get(freerdp* instance);
-	static SDLConnectionDialog* get(rdpContext* context);
-
-	SDLConnectionDialog* _dialog = nullptr;
-	bool _visible = false;
 };

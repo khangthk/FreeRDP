@@ -36,7 +36,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->rfx)
 		{
 			rfx_context_free(codecs->rfx);
-			codecs->rfx = NULL;
+			codecs->rfx = nullptr;
 		}
 	}
 
@@ -45,7 +45,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->nsc)
 		{
 			nsc_context_free(codecs->nsc);
-			codecs->nsc = NULL;
+			codecs->nsc = nullptr;
 		}
 	}
 
@@ -55,7 +55,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->h264)
 		{
 			h264_context_free(codecs->h264);
-			codecs->h264 = NULL;
+			codecs->h264 = nullptr;
 		}
 	}
 #endif
@@ -65,7 +65,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->clear)
 		{
 			clear_context_free(codecs->clear);
-			codecs->clear = NULL;
+			codecs->clear = nullptr;
 		}
 	}
 
@@ -74,7 +74,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->progressive)
 		{
 			progressive_context_free(codecs->progressive);
-			codecs->progressive = NULL;
+			codecs->progressive = nullptr;
 		}
 	}
 
@@ -83,7 +83,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->planar)
 		{
 			freerdp_bitmap_planar_context_free(codecs->planar);
-			codecs->planar = NULL;
+			codecs->planar = nullptr;
 		}
 	}
 
@@ -92,7 +92,7 @@ static void codecs_free_int(rdpCodecs* codecs, UINT32 flags)
 		if (codecs->interleaved)
 		{
 			bitmap_interleaved_context_free(codecs->interleaved);
-			codecs->interleaved = NULL;
+			codecs->interleaved = nullptr;
 		}
 	}
 }
@@ -239,10 +239,13 @@ BOOL freerdp_client_codecs_reset(rdpCodecs* codecs, UINT32 flags, UINT32 width, 
 	return rc;
 }
 
+#if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
+WINPR_PRAGMA_DIAG_PUSH
+WINPR_PRAGMA_DIAG_IGNORED_DEPRECATED_DECL
 rdpCodecs* codecs_new(rdpContext* context)
 {
 	if (!context || !context->settings)
-		return NULL;
+		return nullptr;
 
 	const UINT32 flags = freerdp_settings_get_uint32(context->settings, FreeRDP_ThreadingFlags);
 	return freerdp_client_codecs_new(flags);
@@ -252,13 +255,15 @@ void codecs_free(rdpCodecs* codecs)
 {
 	freerdp_client_codecs_free(codecs);
 }
+WINPR_PRAGMA_DIAG_POP
+#endif
 
 rdpCodecs* freerdp_client_codecs_new(UINT32 ThreadingFlags)
 {
 	rdpCodecs* codecs = (rdpCodecs*)calloc(1, sizeof(rdpCodecs));
 
 	if (!codecs)
-		return NULL;
+		return nullptr;
 
 	codecs->ThreadingFlags = ThreadingFlags;
 
@@ -273,4 +278,22 @@ void freerdp_client_codecs_free(rdpCodecs* codecs)
 	codecs_free_int(codecs, FREERDP_CODEC_ALL);
 
 	free(codecs);
+}
+
+const char* freerdp_codec_id_to_str(UINT32 id)
+{
+#define ENTRY(x) \
+	case x:      \
+		return #x
+	switch (id)
+	{
+		ENTRY(RDP_CODEC_ID_NONE);
+		ENTRY(RDP_CODEC_ID_NSCODEC);
+		ENTRY(RDP_CODEC_ID_JPEG);
+		ENTRY(RDP_CODEC_ID_REMOTEFX);
+		ENTRY(RDP_CODEC_ID_IMAGE_REMOTEFX);
+		default:
+			return "RDP_CODEC_ID_UNKNOWN";
+	}
+#undef ENTRY
 }

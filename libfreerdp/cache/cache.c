@@ -27,14 +27,14 @@
 
 rdpCache* cache_new(rdpContext* context)
 {
-	rdpCache* cache = NULL;
+	rdpCache* cache = nullptr;
 
 	WINPR_ASSERT(context);
 
 	cache = (rdpCache*)calloc(1, sizeof(rdpCache));
 
 	if (!cache)
-		return NULL;
+		return nullptr;
 
 	cache->glyph = glyph_cache_new(context);
 
@@ -77,12 +77,12 @@ error:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	cache_free(cache);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void cache_free(rdpCache* cache)
 {
-	if (cache != NULL)
+	if (cache != nullptr)
 	{
 		glyph_cache_free(cache->glyph);
 		brush_cache_free(cache->brush);
@@ -110,10 +110,11 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	free_cache_color_table_order(context, dst);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
-void free_cache_color_table_order(rdpContext* context, CACHE_COLOR_TABLE_ORDER* order)
+void free_cache_color_table_order(WINPR_ATTR_UNUSED rdpContext* context,
+                                  CACHE_COLOR_TABLE_ORDER* order)
 {
 	free(order);
 }
@@ -141,12 +142,27 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	free_surface_bits_command(context, dst);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
-void free_surface_bits_command(rdpContext* context, SURFACE_BITS_COMMAND* order)
+void free_surface_bits_command(WINPR_ATTR_UNUSED rdpContext* context, SURFACE_BITS_COMMAND* order)
 {
 	if (order)
 		free(order->bmp.bitmapData);
 	free(order);
+}
+
+BOOL cache_resize(rdpContext* context)
+{
+	WINPR_ASSERT(context);
+
+	if (!context->cache)
+		context->cache = cache_new(context);
+	if (!context->cache)
+		return FALSE;
+	if (!bitmap_cache_resize(context->cache->bitmap))
+		return FALSE;
+	if (!pointer_cache_resize(context->cache->pointer))
+		return FALSE;
+	return TRUE;
 }

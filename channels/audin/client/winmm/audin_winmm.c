@@ -119,13 +119,14 @@ static BOOL log_mmresult(AudinWinmmDevice* winmm, const char* what, MMRESULT res
 {
 	if (result != MMSYSERR_NOERROR)
 	{
-		CHAR buffer[8192] = { 0 };
-		CHAR msg[8192] = { 0 };
-		CHAR cmsg[8192] = { 0 };
+		CHAR buffer[8192] = WINPR_C_ARRAY_INIT;
+		CHAR msg[8192] = WINPR_C_ARRAY_INIT;
+		CHAR cmsg[8192] = WINPR_C_ARRAY_INIT;
 		waveInGetErrorTextA(result, buffer, sizeof(buffer));
 
-		_snprintf(msg, sizeof(msg) - 1, "%s failed. %" PRIu32 " [%s]", what, result, buffer);
-		_snprintf(cmsg, sizeof(cmsg) - 1, "audin_winmm_thread_func reported an error '%s'", msg);
+		(void)_snprintf(msg, sizeof(msg) - 1, "%s failed. %" PRIu32 " [%s]", what, result, buffer);
+		(void)_snprintf(cmsg, sizeof(cmsg) - 1, "audin_winmm_thread_func reported an error '%s'",
+		                msg);
 		WLog_Print(winmm->log, WLOG_DEBUG, "%s", msg);
 		if (winmm->rdpcontext)
 			setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR, cmsg);
@@ -137,7 +138,7 @@ static BOOL log_mmresult(AudinWinmmDevice* winmm, const char* what, MMRESULT res
 static BOOL test_format_supported(const PWAVEFORMATEX pwfx)
 {
 	MMRESULT rc;
-	WAVEINCAPSA caps = { 0 };
+	WAVEINCAPSA caps = WINPR_C_ARRAY_INIT;
 
 	rc = waveInGetDevCapsA(WAVE_MAPPER, &caps, sizeof(caps));
 	if (rc != MMSYSERR_NOERROR)
@@ -161,7 +162,7 @@ static BOOL test_format_supported(const PWAVEFORMATEX pwfx)
 			return FALSE;
 	}
 
-	rc = waveInOpen(NULL, WAVE_MAPPER, pwfx, 0, 0,
+	rc = waveInOpen(nullptr, WAVE_MAPPER, pwfx, 0, 0,
 	                WAVE_FORMAT_QUERY | WAVE_MAPPED_DEFAULT_COMMUNICATION_DEVICE);
 	return (rc == MMSYSERR_NOERROR);
 }
@@ -169,9 +170,7 @@ static BOOL test_format_supported(const PWAVEFORMATEX pwfx)
 static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 {
 	AudinWinmmDevice* winmm = (AudinWinmmDevice*)arg;
-	char* buffer = NULL;
-	int size = 0;
-	WAVEHDR waveHdr[4] = { 0 };
+	WAVEHDR waveHdr[4] = WINPR_C_ARRAY_INIT;
 	DWORD status = 0;
 	MMRESULT rc = 0;
 
@@ -184,19 +183,22 @@ static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 			return ERROR_INTERNAL_ERROR;
 	}
 
-	size =
-	    (winmm->pwfx_cur->wBitsPerSample * winmm->pwfx_cur->nChannels * winmm->frames_per_packet +
-	     7) /
-	    8;
+	const size_t framesize =
+	    1ull * winmm->pwfx_cur->wBitsPerSample / 8ull * winmm->pwfx_cur->nChannels;
+	if (framesize > UINT32_MAX)
+		return ERROR_INTERNAL_ERROR;
 
+	const size_t size = framesize * winmm->frames_per_packet;
+	if (size > UINT32_MAX)
+		return ERROR_INTERNAL_ERROR;
 	for (int i = 0; i < 4; i++)
 	{
-		buffer = (char*)malloc(size);
+		char* buffer = (char*)calloc(framesize, winmm->frames_per_packet);
 
 		if (!buffer)
 			return CHANNEL_RC_NO_MEMORY;
 
-		waveHdr[i].dwBufferLength = size;
+		waveHdr[i].dwBufferLength = WINPR_ASSERTING_INT_CAST(DWORD, size);
 		waveHdr[i].dwFlags = 0;
 		waveHdr[i].lpData = buffer;
 		rc = waveInPrepareHeader(winmm->hWaveIn, &waveHdr[i], sizeof(waveHdr[i]));
@@ -252,7 +254,7 @@ static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 	{
 	}
 
-	winmm->hWaveIn = NULL;
+	winmm->hWaveIn = nullptr;
 	return 0;
 }
 
@@ -306,10 +308,10 @@ static UINT audin_winmm_close(IAudinDevice* device)
 
 	(void)CloseHandle(winmm->thread);
 	(void)CloseHandle(winmm->stopEvent);
-	winmm->thread = NULL;
-	winmm->stopEvent = NULL;
-	winmm->receive = NULL;
-	winmm->user_data = NULL;
+	winmm->thread = nullptr;
+	winmm->stopEvent = nullptr;
+	winmm->receive = nullptr;
+	winmm->user_data = nullptr;
 	return error;
 }
 
@@ -427,17 +429,17 @@ static UINT audin_winmm_open(IAudinDevice* device, AudinReceive receive, void* u
 	winmm->receive = receive;
 	winmm->user_data = user_data;
 
-	if (!(winmm->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+	if (!(winmm->stopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr)))
 	{
 		WLog_Print(winmm->log, WLOG_ERROR, "CreateEvent failed!");
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	if (!(winmm->thread = CreateThread(NULL, 0, audin_winmm_thread_func, winmm, 0, NULL)))
+	if (!(winmm->thread = CreateThread(nullptr, 0, audin_winmm_thread_func, winmm, 0, nullptr)))
 	{
 		WLog_Print(winmm->log, WLOG_ERROR, "CreateThread failed!");
 		(void)CloseHandle(winmm->stopEvent);
-		winmm->stopEvent = NULL;
+		winmm->stopEvent = nullptr;
 		return ERROR_INTERNAL_ERROR;
 	}
 
@@ -455,14 +457,16 @@ static UINT audin_winmm_parse_addin_args(AudinWinmmDevice* device, const ADDIN_A
 	DWORD flags;
 	const COMMAND_LINE_ARGUMENT_A* arg;
 	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
-	COMMAND_LINE_ARGUMENT_A audin_winmm_args[] = { { "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>",
-		                                             NULL, NULL, -1, NULL, "audio device name" },
-		                                           { NULL, 0, NULL, NULL, NULL, -1, NULL, NULL } };
+	COMMAND_LINE_ARGUMENT_A audin_winmm_args[] = {
+		{ "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>", nullptr, nullptr, -1, nullptr,
+		  "audio device name" },
+		{ nullptr, 0, nullptr, nullptr, nullptr, -1, nullptr, nullptr }
+	};
 
 	flags =
 	    COMMAND_LINE_SIGIL_NONE | COMMAND_LINE_SEPARATOR_COLON | COMMAND_LINE_IGN_UNKNOWN_KEYWORD;
 	status = CommandLineParseArgumentsA(args->argc, args->argv, audin_winmm_args, flags, winmm,
-	                                    NULL, NULL);
+	                                    nullptr, nullptr);
 	arg = audin_winmm_args;
 
 	do
@@ -481,7 +485,7 @@ static UINT audin_winmm_parse_addin_args(AudinWinmmDevice* device, const ADDIN_A
 			}
 		}
 		CommandLineSwitchEnd(arg)
-	} while ((arg = CommandLineFindNextArgumentA(arg)) != NULL);
+	} while ((arg = CommandLineFindNextArgumentA(arg)) != nullptr);
 
 	return CHANNEL_RC_OK;
 }

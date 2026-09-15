@@ -26,6 +26,7 @@
 
 #include "urbdrc_types.h"
 #include "urbdrc_main.h"
+#include "msusb.h"
 
 typedef struct libusb_device LIBUSB_DEVICE;
 typedef struct libusb_device_handle LIBUSB_DEVICE_HANDLE;
@@ -51,7 +52,7 @@ typedef struct
 	BYTE bus_number;
 	BYTE dev_number;
 	char path[17];
-	int port_number;
+	UINT8 port_number;
 	int isCompositeDevice;
 
 	LIBUSB_DEVICE_HANDLE* libusb_handle;
@@ -67,10 +68,15 @@ typedef struct
 } UDEVICE;
 typedef UDEVICE* PUDEVICE;
 
-size_t udev_new_by_id(URBDRC_PLUGIN* urbdrc, libusb_context* ctx, UINT16 idVendor, UINT16 idProduct,
-                      IUDEVICE*** devArray);
-IUDEVICE* udev_new_by_addr(URBDRC_PLUGIN* urbdrc, libusb_context* context, BYTE bus_number,
-                           BYTE dev_number);
-const char* usb_interface_class_to_string(uint8_t class);
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL size_t udev_new_by_id(URBDRC_PLUGIN* urbdrc, libusb_context* ctx, UINT16 idVendor,
+                                    UINT16 idProduct, IUDEVICE*** devArray);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL IUDEVICE* udev_new_by_addr(URBDRC_PLUGIN* urbdrc, libusb_context* context,
+                                         BYTE bus_number, BYTE dev_number);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL const char* usb_interface_class_to_string(uint8_t c_class);
 
 #endif /* FREERDP_CHANNEL_URBDRC_CLIENT_LIBUSB_UDEVICE_H */

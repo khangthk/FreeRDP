@@ -44,7 +44,7 @@ static BOOL CALLBACK init_module(PINIT_ONCE once, PVOID param, PVOID* context)
 	if (kernel32)
 	{
 		pSetEventWhenCallbackReturns =
-		    GetProcAddressAs(kernel32, "SetEventWhenCallbackReturns"), void*);
+		    GetProcAddressAs(kernel32, "SetEventWhenCallbackReturns", void*);
 		pReleaseSemaphoreWhenCallbackReturns =
 		    GetProcAddressAs(kernel32, "ReleaseSemaphoreWhenCallbackReturns", void*);
 		pReleaseMutexWhenCallbackReturns =
@@ -60,23 +60,28 @@ static BOOL CALLBACK init_module(PINIT_ONCE once, PVOID param, PVOID* context)
 }
 #endif
 
-VOID SetEventWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HANDLE evt)
+VOID SetEventWhenCallbackReturns(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE pci,
+                                 WINPR_ATTR_UNUSED HANDLE evt)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pSetEventWhenCallbackReturns)
 	{
 		pSetEventWhenCallbackReturns(pci, evt);
 		return;
 	}
 #endif
+	WLog_ERR("TODO", "TODO: implement");
 	/* No default implementation */
 }
 
-VOID ReleaseSemaphoreWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HANDLE sem, DWORD crel)
+VOID ReleaseSemaphoreWhenCallbackReturns(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE pci,
+                                         WINPR_ATTR_UNUSED HANDLE sem, WINPR_ATTR_UNUSED DWORD crel)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pReleaseSemaphoreWhenCallbackReturns)
 	{
 		pReleaseSemaphoreWhenCallbackReturns(pci, sem, crel);
@@ -84,12 +89,15 @@ VOID ReleaseSemaphoreWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HANDLE sem, 
 	}
 #endif
 	/* No default implementation */
+	WLog_ERR("TODO", "TODO: implement");
 }
 
-VOID ReleaseMutexWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HANDLE mut)
+VOID ReleaseMutexWhenCallbackReturns(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE pci,
+                                     WINPR_ATTR_UNUSED HANDLE mut)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pReleaseMutexWhenCallbackReturns)
 	{
 		pReleaseMutexWhenCallbackReturns(pci, mut);
@@ -97,24 +105,30 @@ VOID ReleaseMutexWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HANDLE mut)
 	}
 #endif
 	/* No default implementation */
+	WLog_ERR("TODO", "TODO: implement");
 }
 
-VOID LeaveCriticalSectionWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, PCRITICAL_SECTION pcs)
+VOID LeaveCriticalSectionWhenCallbackReturns(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE pci,
+                                             WINPR_ATTR_UNUSED PCRITICAL_SECTION pcs)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pLeaveCriticalSectionWhenCallbackReturns)
 	{
 		pLeaveCriticalSectionWhenCallbackReturns(pci, pcs);
 	}
 #endif
 	/* No default implementation */
+	WLog_ERR("TODO", "TODO: implement");
 }
 
-VOID FreeLibraryWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HMODULE mod)
+VOID FreeLibraryWhenCallbackReturns(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE pci,
+                                    WINPR_ATTR_UNUSED HMODULE mod)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pFreeLibraryWhenCallbackReturns)
 	{
 		pFreeLibraryWhenCallbackReturns(pci, mod);
@@ -122,18 +136,21 @@ VOID FreeLibraryWhenCallbackReturns(PTP_CALLBACK_INSTANCE pci, HMODULE mod)
 	}
 #endif
 	/* No default implementation */
+	WLog_ERR("TODO", "TODO: implement");
 }
 
-VOID DisassociateCurrentThreadFromCallback(PTP_CALLBACK_INSTANCE pci)
+VOID DisassociateCurrentThreadFromCallback(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE pci)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pDisassociateCurrentThreadFromCallback)
 	{
 		pDisassociateCurrentThreadFromCallback(pci);
 		return;
 	}
 #endif
+	WLog_ERR("TODO", "TODO: implement");
 	/* No default implementation */
 }
 

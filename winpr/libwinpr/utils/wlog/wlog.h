@@ -23,43 +23,39 @@
 #include <winpr/wlog.h>
 
 #define WLOG_MAX_PREFIX_SIZE 512
-#define WLOG_MAX_STRING_SIZE 8192
 
 typedef BOOL (*WLOG_APPENDER_OPEN_FN)(wLog* log, wLogAppender* appender);
 typedef BOOL (*WLOG_APPENDER_CLOSE_FN)(wLog* log, wLogAppender* appender);
 typedef BOOL (*WLOG_APPENDER_WRITE_MESSAGE_FN)(wLog* log, wLogAppender* appender,
-                                               wLogMessage* message);
+                                               const wLogMessage* message);
 typedef BOOL (*WLOG_APPENDER_WRITE_DATA_MESSAGE_FN)(wLog* log, wLogAppender* appender,
-                                                    wLogMessage* message);
+                                                    const wLogMessage* message);
 typedef BOOL (*WLOG_APPENDER_WRITE_IMAGE_MESSAGE_FN)(wLog* log, wLogAppender* appender,
-                                                     wLogMessage* message);
+                                                     const wLogMessage* message);
 typedef BOOL (*WLOG_APPENDER_WRITE_PACKET_MESSAGE_FN)(wLog* log, wLogAppender* appender,
-                                                      wLogMessage* message);
+                                                      const wLogMessage* message);
 typedef BOOL (*WLOG_APPENDER_SET)(wLogAppender* appender, const char* setting, void* value);
 typedef void (*WLOG_APPENDER_FREE)(wLogAppender* appender);
 
-#define WLOG_APPENDER_COMMON()                                \
-	DWORD Type;                                               \
-	BOOL active;                                              \
-	wLogLayout* Layout;                                       \
-	CRITICAL_SECTION lock;                                    \
-	BOOL recursive;                                           \
-	void* TextMessageContext;                                 \
-	void* DataMessageContext;                                 \
-	void* ImageMessageContext;                                \
-	void* PacketMessageContext;                               \
-	WLOG_APPENDER_OPEN_FN Open;                               \
-	WLOG_APPENDER_CLOSE_FN Close;                             \
-	WLOG_APPENDER_WRITE_MESSAGE_FN WriteMessage;              \
-	WLOG_APPENDER_WRITE_DATA_MESSAGE_FN WriteDataMessage;     \
-	WLOG_APPENDER_WRITE_IMAGE_MESSAGE_FN WriteImageMessage;   \
-	WLOG_APPENDER_WRITE_PACKET_MESSAGE_FN WritePacketMessage; \
-	WLOG_APPENDER_FREE Free;                                  \
-	WLOG_APPENDER_SET Set
-
 struct s_wLogAppender
 {
-	WLOG_APPENDER_COMMON();
+	DWORD Type;
+	BOOL active;
+	wLogLayout* Layout;
+	CRITICAL_SECTION lock;
+	BOOL recursive;
+	void* TextMessageContext;
+	void* DataMessageContext;
+	void* ImageMessageContext;
+	void* PacketMessageContext;
+	WINPR_ATTR_NODISCARD WLOG_APPENDER_OPEN_FN Open;
+	WINPR_ATTR_NODISCARD WLOG_APPENDER_CLOSE_FN Close;
+	WINPR_ATTR_NODISCARD WLOG_APPENDER_WRITE_MESSAGE_FN WriteMessage;
+	WINPR_ATTR_NODISCARD WLOG_APPENDER_WRITE_DATA_MESSAGE_FN WriteDataMessage;
+	WINPR_ATTR_NODISCARD WLOG_APPENDER_WRITE_IMAGE_MESSAGE_FN WriteImageMessage;
+	WINPR_ATTR_NODISCARD WLOG_APPENDER_WRITE_PACKET_MESSAGE_FN WritePacketMessage;
+	WLOG_APPENDER_FREE Free;
+	WLOG_APPENDER_SET Set;
 };
 
 struct s_wLog
@@ -79,12 +75,18 @@ struct s_wLog
 	DWORD ChildrenCount;
 	DWORD ChildrenSize;
 	CRITICAL_SECTION lock;
-	const char* (*custom)(void*);
+	WINPR_ATTR_NODISCARD const char* (*custom)(void*);
 	void* context;
+	BOOL independent;
 };
 
-extern const char* WLOG_LEVELS[7];
-BOOL WLog_Layout_GetMessagePrefix(wLog* log, wLogLayout* layout, wLogMessage* message);
+WINPR_LOCAL extern const char* WLOG_LEVELS[7];
+WINPR_LOCAL BOOL WLog_Layout_GetMessagePrefix(wLog* log, wLogLayout* layout,
+                                              const wLogMessage* message, char* prefix,
+                                              size_t prefixlen);
+
+WINPR_ATTR_NODISCARD
+WINPR_LOCAL const char* WLog_GetGlobalPrefix(void);
 
 #include "Layout.h"
 #include "Appender.h"

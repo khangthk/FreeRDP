@@ -53,7 +53,7 @@ UINT32 audio_format_compute_time_length(const AUDIO_FORMAT* format, size_t size)
 
 			if ((format->cbSize == 2) && (format->data))
 			{
-				nSamplesPerBlock = *((UINT16*)format->data);
+				nSamplesPerBlock = *(WINPR_PACKED_ALIGN_CAST(UINT16*, format->data));
 				const size_t samples = (size / format->nBlockAlign) * nSamplesPerBlock;
 				WINPR_ASSERT(samples <= UINT32_MAX);
 				wSamples = (UINT32)samples;
@@ -111,9 +111,9 @@ const char* audio_format_get_tag_string(UINT16 wFormatTag)
 
 		case WAVE_FORMAT_AAC_MS:
 			return "WAVE_FORMAT_AAC_MS";
+		default:
+			return "WAVE_FORMAT_UNKNOWN";
 	}
-
-	return "WAVE_FORMAT_UNKNOWN";
 }
 
 void audio_format_print(wLog* log, DWORD level, const AUDIO_FORMAT* format)
@@ -164,7 +164,7 @@ BOOL audio_format_read(wStream* s, AUDIO_FORMAT* format)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, format->cbSize))
 		return FALSE;
 
-	format->data = NULL;
+	format->data = nullptr;
 
 	if (format->cbSize > 0)
 	{
@@ -250,20 +250,6 @@ BOOL audio_format_compatible(const AUDIO_FORMAT* with, const AUDIO_FORMAT* what)
 		if (with->wBitsPerSample != what->wBitsPerSample)
 			return FALSE;
 	}
-
-	return TRUE;
-}
-
-static BOOL audio_format_valid(const AUDIO_FORMAT* format)
-{
-	if (!format)
-		return FALSE;
-
-	if (format->nChannels == 0)
-		return FALSE;
-
-	if (format->nSamplesPerSec == 0)
-		return FALSE;
 
 	return TRUE;
 }

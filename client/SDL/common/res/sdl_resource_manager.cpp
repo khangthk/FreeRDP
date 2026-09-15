@@ -17,15 +17,7 @@
  */
 #include "sdl_resource_manager.hpp"
 #include <iostream>
-#if __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#elif __has_include(<experimental/filesystem>)
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#else
-#error Could not find system header "<filesystem>" or "<experimental/filesystem>"
-#endif
+#include "../filesystem.hpp"
 
 std::string SDLResourceManager::typeFonts()
 {
@@ -68,7 +60,8 @@ const std::vector<unsigned char>* SDLResourceManager::data(const std::string& ty
 #endif
 }
 
-std::string SDLResourceManager::filename(const std::string& type, const std::string& id)
+std::string SDLResourceManager::filename([[maybe_unused]] const std::string& type,
+                                         [[maybe_unused]] const std::string& id)
 {
 #if defined(SDL_RESOURCE_ROOT)
 	std::string uuid = type + "/" + id;

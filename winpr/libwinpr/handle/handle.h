@@ -20,8 +20,11 @@
 #ifndef WINPR_HANDLE_PRIVATE_H
 #define WINPR_HANDLE_PRIVATE_H
 
+#include <stdlib.h>
+
 #include <winpr/handle.h>
 #include <winpr/file.h>
+#include <winpr/interlocked.h>
 #include <winpr/synch.h>
 #include <winpr/winsock.h>
 
@@ -111,9 +114,11 @@ typedef struct
 	ULONG Type;
 	ULONG Mode;
 	HANDLE_OPS* ops;
+	volatile LONG refCount;
 } WINPR_HANDLE;
 
-static INLINE BOOL WINPR_HANDLE_IS_HANDLED(HANDLE handle, ULONG type, BOOL invalidValue)
+WINPR_ATTR_NODISCARD
+static inline BOOL WINPR_HANDLE_IS_HANDLED(HANDLE handle, ULONG type, BOOL invalidValue)
 {
 	WINPR_HANDLE* pWinprHandle = (WINPR_HANDLE*)handle;
 	BOOL invalid = !pWinprHandle;
@@ -133,23 +138,25 @@ static INLINE BOOL WINPR_HANDLE_IS_HANDLED(HANDLE handle, ULONG type, BOOL inval
 	return TRUE;
 }
 
-static INLINE void WINPR_HANDLE_SET_TYPE_AND_MODE(void* _handle, ULONG _type, ULONG _mode)
+static inline void WINPR_HANDLE_SET_TYPE_AND_MODE(void* _handle, ULONG _type, ULONG _mode)
 {
 	WINPR_HANDLE* hdl = (WINPR_HANDLE*)_handle;
 
 	hdl->Type = _type;
 	hdl->Mode = _mode;
+	hdl->refCount = 1;
 }
 
-static INLINE BOOL winpr_Handle_GetInfo(HANDLE handle, ULONG* pType, WINPR_HANDLE** pObject)
+WINPR_ATTR_NODISCARD
+static inline BOOL winpr_Handle_GetInfo(HANDLE handle, ULONG* pType, WINPR_HANDLE** pObject)
 {
-	WINPR_HANDLE* wHandle = NULL;
+	WINPR_HANDLE* wHandle = nullptr;
 
-	if (handle == NULL)
+	if (handle == nullptr)
 		return FALSE;
 
-		/* INVALID_HANDLE_VALUE is an invalid value for every handle, but it
-		 * confuses the clang scanbuild analyzer. */
+	/* INVALID_HANDLE_VALUE is an invalid value for every handle, but it
+	 * confuses the clang scanbuild analyzer. */
 #ifndef __clang_analyzer__
 	if (handle == INVALID_HANDLE_VALUE)
 		return FALSE;
@@ -158,14 +165,48 @@ static INLINE BOOL winpr_Handle_GetInfo(HANDLE handle, ULONG* pType, WINPR_HANDL
 	wHandle = (WINPR_HANDLE*)handle;
 
 	*pType = wHandle->Type;
-	*pObject = handle;
+	*pObject = wHandle;
 
 	return TRUE;
 }
 
-static INLINE int winpr_Handle_getFd(HANDLE handle)
+static inline void winpr_Handle_AddRef(HANDLE handle)
 {
-	WINPR_HANDLE* hdl = NULL;
+	ULONG type = 0;
+	WINPR_HANDLE* hdl = nullptr;
+
+	if (!winpr_Handle_GetInfo(handle, &type, &hdl) || !hdl)
+		return;
+
+	InterlockedIncrement(&hdl->refCount);
+}
+
+/* implemented in nonehandle.c: turns an already-released handle (see CloseHandle() in handle.c)
+ * into a harmless placeholder, for as long as other references to the same struct remain. */
+void winpr_Handle_ConvertToNone(HANDLE handle);
+
+/* decrements refCount and frees the struct once it reaches zero - does not touch the underlying
+ * OS resource, that's the type's real CloseHandle op's job (see CloseHandle() in handle.c).
+ * Returns TRUE if this was the last reference (the handle has been freed). */
+static inline BOOL winpr_Handle_Release(HANDLE handle)
+{
+	ULONG type = 0;
+	WINPR_HANDLE* hdl = nullptr;
+
+	if (!winpr_Handle_GetInfo(handle, &type, &hdl) || !hdl)
+		return FALSE;
+
+	if (InterlockedDecrement(&hdl->refCount) > 0)
+		return FALSE;
+
+	free(hdl);
+	return TRUE;
+}
+
+WINPR_ATTR_NODISCARD
+static inline int winpr_Handle_getFd(HANDLE handle)
+{
+	WINPR_HANDLE* hdl = nullptr;
 	ULONG type = 0;
 
 	if (!winpr_Handle_GetInfo(handle, &type, &hdl))
@@ -177,9 +218,10 @@ static INLINE int winpr_Handle_getFd(HANDLE handle)
 	return hdl->ops->GetFd(handle);
 }
 
-static INLINE DWORD winpr_Handle_cleanup(HANDLE handle)
+WINPR_ATTR_NODISCARD
+static inline DWORD winpr_Handle_cleanup(HANDLE handle)
 {
-	WINPR_HANDLE* hdl = NULL;
+	WINPR_HANDLE* hdl = nullptr;
 	ULONG type = 0;
 
 	if (!winpr_Handle_GetInfo(handle, &type, &hdl))
@@ -194,5 +236,8 @@ static INLINE DWORD winpr_Handle_cleanup(HANDLE handle)
 
 	return hdl->ops->CleanupHandle(handle);
 }
+
+WINPR_ATTR_NODISCARD
+BOOL winpr_set_cloexec(int fd, BOOL cloexec);
 
 #endif /* WINPR_HANDLE_PRIVATE_H */

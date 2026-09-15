@@ -58,19 +58,17 @@ struct rdp_brush_cache
 
 static BOOL update_gdi_patblt(rdpContext* context, PATBLT_ORDER* patblt)
 {
-	BYTE style = 0;
 	BOOL ret = TRUE;
-	rdpBrush* brush = NULL;
-	const rdpCache* cache = NULL;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(patblt);
 
-	cache = context->cache;
+	const rdpCache* cache = context->cache;
 	WINPR_ASSERT(cache);
 
-	brush = &patblt->brush;
-	style = brush->style;
+	rdpBrush* brush = &patblt->brush;
+	WINPR_ASSERT(brush->style <= UINT8_MAX);
+	const BYTE style = (BYTE)brush->style;
 
 	if (brush->style & CACHED_BRUSH)
 	{
@@ -86,7 +84,7 @@ static BOOL update_gdi_patblt(rdpContext* context, PATBLT_ORDER* patblt)
 
 static BOOL update_gdi_polygon_sc(rdpContext* context, const POLYGON_SC_ORDER* polygon_sc)
 {
-	rdpCache* cache = NULL;
+	rdpCache* cache = nullptr;
 	WINPR_ASSERT(context);
 	cache = context->cache;
 	WINPR_ASSERT(cache);
@@ -96,19 +94,17 @@ static BOOL update_gdi_polygon_sc(rdpContext* context, const POLYGON_SC_ORDER* p
 
 static BOOL update_gdi_polygon_cb(rdpContext* context, POLYGON_CB_ORDER* polygon_cb)
 {
-	BYTE style = 0;
-	rdpBrush* brush = NULL;
-	rdpCache* cache = NULL;
 	BOOL ret = TRUE;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(polygon_cb);
 
-	cache = context->cache;
+	rdpCache* cache = context->cache;
 	WINPR_ASSERT(cache);
 
-	brush = &polygon_cb->brush;
-	style = brush->style;
+	rdpBrush* brush = &polygon_cb->brush;
+	WINPR_ASSERT(brush->style <= UINT8_MAX);
+	const BYTE style = (UINT8)brush->style;
 
 	if (brush->style & CACHED_BRUSH)
 	{
@@ -125,8 +121,8 @@ static BOOL update_gdi_polygon_cb(rdpContext* context, POLYGON_CB_ORDER* polygon
 static BOOL update_gdi_cache_brush(rdpContext* context, const CACHE_BRUSH_ORDER* cacheBrush)
 {
 	UINT32 length = 0;
-	void* data = NULL;
-	rdpCache* cache = NULL;
+	void* data = nullptr;
+	rdpCache* cache = nullptr;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(cacheBrush);
@@ -147,20 +143,20 @@ static BOOL update_gdi_cache_brush(rdpContext* context, const CACHE_BRUSH_ORDER*
 
 void* brush_cache_get(rdpBrushCache* brushCache, UINT32 index, UINT32* bpp)
 {
-	void* entry = NULL;
+	void* entry = nullptr;
 
 	if (!brushCache)
-		return NULL;
+		return nullptr;
 
 	if (!bpp)
-		return NULL;
+		return nullptr;
 
 	if (*bpp == 1)
 	{
 		if (index >= brushCache->maxMonoEntries)
 		{
 			WLog_ERR(TAG, "invalid brush (%" PRIu32 " bpp) index: 0x%08" PRIX32 "", *bpp, index);
-			return NULL;
+			return nullptr;
 		}
 
 		*bpp = brushCache->monoEntries[index].bpp;
@@ -171,17 +167,17 @@ void* brush_cache_get(rdpBrushCache* brushCache, UINT32 index, UINT32* bpp)
 		if (index >= brushCache->maxEntries)
 		{
 			WLog_ERR(TAG, "invalid brush (%" PRIu32 " bpp) index: 0x%08" PRIX32 "", *bpp, index);
-			return NULL;
+			return nullptr;
 		}
 
 		*bpp = brushCache->entries[index].bpp;
 		entry = brushCache->entries[index].entry;
 	}
 
-	if (entry == NULL)
+	if (entry == nullptr)
 	{
 		WLog_ERR(TAG, "invalid brush (%" PRIu32 " bpp) at index: 0x%08" PRIX32 "", *bpp, index);
-		return NULL;
+		return nullptr;
 	}
 
 	return entry;
@@ -246,14 +242,14 @@ void brush_cache_register_callbacks(rdpUpdate* update)
 
 rdpBrushCache* brush_cache_new(rdpContext* context)
 {
-	rdpBrushCache* brushCache = NULL;
+	rdpBrushCache* brushCache = nullptr;
 
 	WINPR_ASSERT(context);
 
 	brushCache = (rdpBrushCache*)calloc(1, sizeof(rdpBrushCache));
 
 	if (!brushCache)
-		return NULL;
+		return nullptr;
 
 	brushCache->context = context;
 	brushCache->maxEntries = 64;
@@ -274,7 +270,7 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	brush_cache_free(brushCache);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void brush_cache_free(rdpBrushCache* brushCache)
@@ -309,7 +305,7 @@ void free_cache_brush_order(rdpContext* context, CACHE_BRUSH_ORDER* order)
 
 CACHE_BRUSH_ORDER* copy_cache_brush_order(rdpContext* context, const CACHE_BRUSH_ORDER* order)
 {
-	CACHE_BRUSH_ORDER* dst = NULL;
+	CACHE_BRUSH_ORDER* dst = nullptr;
 
 	WINPR_ASSERT(context);
 
@@ -322,5 +318,5 @@ CACHE_BRUSH_ORDER* copy_cache_brush_order(rdpContext* context, const CACHE_BRUSH
 	return dst;
 fail:
 	free_cache_brush_order(context, dst);
-	return NULL;
+	return nullptr;
 }

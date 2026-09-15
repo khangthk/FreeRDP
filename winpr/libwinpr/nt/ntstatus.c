@@ -23,6 +23,8 @@
 #include <winpr/crt.h>
 #include <winpr/nt.h>
 
+#define HAVE_SORTED_STRUCT 1
+
 struct ntstatus_map
 {
 	DWORD code;
@@ -4613,16 +4615,16 @@ static int ntstatus_compare(const void* pKey, const void* pValue)
 	return *key < cur->code ? -1 : 1;
 }
 
-const char* NtStatus2Tag(DWORD ntstatus)
+const char* NtStatus2Tag(NTSTATUS ntstatus)
 {
 
-#if 1 /* Requires sorted struct */
+#if defined(HAVE_SORTED_STRUCT) /* Requires sorted struct */
 	size_t count = ARRAYSIZE(ntstatusmap);
 	size_t base = sizeof(ntstatusmap[0]);
 	const struct ntstatus_map* found =
 	    bsearch(&ntstatus, ntstatusmap, count, base, ntstatus_compare);
 	if (!found)
-		return NULL;
+		return nullptr;
 	return found->tag;
 #else
 	for (size_t x = 0; x < ARRAYSIZE(ntstatusmap); x++)
@@ -4632,20 +4634,20 @@ const char* NtStatus2Tag(DWORD ntstatus)
 			return cur->tag;
 	}
 
-	return NULL;
+	return nullptr;
 #endif
 }
 
 const char* Win32ErrorCode2Tag(UINT16 code)
 {
-#if 1 /* Requires sorted struct */
+#if defined(HAVE_SORTED_STRUCT) /* Requires sorted struct */
 	DWORD ntstatus = code;
 	size_t count = ARRAYSIZE(win32errmap);
 	size_t base = sizeof(win32errmap[0]);
 	const struct ntstatus_map* found =
 	    bsearch(&ntstatus, win32errmap, count, base, ntstatus_compare);
 	if (!found)
-		return NULL;
+		return nullptr;
 	return found->tag;
 #else
 	for (size_t x = 0; x < ARRAYSIZE(win32errmap); x++)
@@ -4655,6 +4657,6 @@ const char* Win32ErrorCode2Tag(UINT16 code)
 			return cur->tag;
 	}
 
-	return NULL;
+	return nullptr;
 #endif
 }

@@ -77,15 +77,15 @@
 // #define VGIDS_SE_ALGOID_CT_RSA_4096 0x09
 
 #define VGIDS_SE_ALGOID_DST_PAD_PKCS1 0x40
-#define VGIDS_SE_ALGOID_DST_RSA_1024 0x06
-#define VGIDS_SE_ALGOID_DST_RSA_2048 0x07
-#define VGIDS_SE_ALGOID_DST_RSA_3072 0x08
-#define VGIDS_SE_ALGOID_DST_RSA_4096 0x09
-#define VGIDS_SE_ALGOID_DST_ECDSA_P192 0x0A
-#define VGIDS_SE_ALGOID_DST_ECDSA_P224 0x0B
-#define VGIDS_SE_ALGOID_DST_ECDSA_P256 0x0C
-#define VGIDS_SE_ALGOID_DST_ECDSA_P384 0x0D
-#define VGIDS_SE_ALGOID_DST_ECDSA_P512 0x0E
+// #define VGIDS_SE_ALGOID_DST_RSA_1024 0x06
+// #define VGIDS_SE_ALGOID_DST_RSA_2048 0x07
+// #define VGIDS_SE_ALGOID_DST_RSA_3072 0x08
+// #define VGIDS_SE_ALGOID_DST_RSA_4096 0x09
+// #define VGIDS_SE_ALGOID_DST_ECDSA_P192 0x0A
+// #define VGIDS_SE_ALGOID_DST_ECDSA_P224 0x0B
+// #define VGIDS_SE_ALGOID_DST_ECDSA_P256 0x0C
+// #define VGIDS_SE_ALGOID_DST_ECDSA_P384 0x0D
+// #define VGIDS_SE_ALGOID_DST_ECDSA_P512 0x0E
 
 #define VGIDS_DEFAULT_KEY_REF 0x81
 
@@ -273,13 +273,14 @@ static vgidsEF* vgids_ef_new(vgidsContext* ctx, USHORT id)
 	vgidsEF* ef = calloc(1, sizeof(vgidsEF));
 
 	ef->id = id;
-	ef->data = Stream_New(NULL, 1024);
+	ef->data = Stream_New(nullptr, 1024);
 	if (!ef->data)
 	{
 		WLog_ERR(TAG, "Failed to create file data stream");
 		goto create_failed;
 	}
-	Stream_SetLength(ef->data, 0);
+	if (!Stream_SetLength(ef->data, 0))
+		goto create_failed;
 
 	if (!ArrayList_Append(ctx->files, ef))
 	{
@@ -291,11 +292,13 @@ static vgidsEF* vgids_ef_new(vgidsContext* ctx, USHORT id)
 
 create_failed:
 	vgids_ef_free(ef);
-	return NULL;
+	return nullptr;
 }
 
-static BOOL vgids_write_tlv(wStream* s, UINT16 tag, const void* data, DWORD dataSize)
+static BOOL vgids_write_tlv(wStream* s, UINT16 tag, const void* data, size_t dataSize)
 {
+	WINPR_ASSERT(dataSize <= UINT16_MAX);
+
 	/* A maximum of 5 additional bytes is needed */
 	if (!Stream_EnsureRemainingCapacity(s, dataSize + 5))
 	{
@@ -337,11 +340,7 @@ static BOOL vgids_ef_write_do(vgidsEF* ef, UINT16 doID, const void* data, DWORD 
 static BOOL vgids_ef_read_do(vgidsEF* ef, UINT16 doID, BYTE** data, DWORD* dataSize)
 {
 	/* Read the given DO from the file: 2-Byte ID, 1-Byte Len, Data */
-	if (!Stream_SetPosition(ef->data, 0))
-	{
-		WLog_ERR(TAG, "Failed to seek to front of file");
-		return FALSE;
-	}
+	Stream_ResetPosition(ef->data);
 
 	/* Look for the requested DO */
 	while (Stream_GetRemainingLength(ef->data) > 3)
@@ -381,10 +380,13 @@ static BOOL vgids_ef_read_do(vgidsEF* ef, UINT16 doID, BYTE** data, DWORD* dataS
 
 		if (nextDOID == doID)
 		{
-			BYTE* outData = NULL;
+			BYTE* outData = nullptr;
 
 			/* Include Tag and length in result */
 			doSize += (UINT16)(Stream_GetPosition(ef->data) - curPos);
+			if (!Stream_SetPosition(ef->data, curPos))
+				return FALSE;
+
 			outData = malloc(doSize);
 			if (!outData)
 			{
@@ -392,7 +394,6 @@ static BOOL vgids_ef_read_do(vgidsEF* ef, UINT16 doID, BYTE** data, DWORD* dataS
 				return FALSE;
 			}
 
-			Stream_SetPosition(ef->data, curPos);
 			Stream_Read(ef->data, outData, doSize);
 			*data = outData;
 			*dataSize = doSize;
@@ -423,7 +424,7 @@ static BOOL vgids_prepare_fstable(const vgidsFilesysTableEntry* fstable, DWORD n
                                   BYTE** outData, DWORD* outDataSize)
 {
 	/* Filesystem table:
-	    BYTE unkonwn: 0x01
+	    BYTE unknown: 0x01
 	    Array of vgidsFilesysTableEntry
 	*/
 	BYTE* data = malloc(sizeof(vgidsFilesysTableEntry) * numEntries + 1);
@@ -452,14 +453,14 @@ static BOOL vgids_prepare_certificate(const rdpCertificate* cert, BYTE** kxc, DW
 	    ZLIB compressed cert
 	*/
 	uLongf destSize = 0;
-	wStream* s = NULL;
-	BYTE* comprData = NULL;
+	wStream* s = nullptr;
+	BYTE* comprData = nullptr;
 
 	WINPR_ASSERT(cert);
 
 	size_t certSize = 0;
 	BYTE* certData = freerdp_certificate_get_der(cert, &certSize);
-	if (!certData || (certSize == 0))
+	if (!certData || (certSize == 0) || (certSize > UINT16_MAX))
 	{
 		WLog_ERR(TAG, "Failed to get certificate size");
 		goto handle_error;
@@ -473,17 +474,18 @@ static BOOL vgids_prepare_certificate(const rdpCertificate* cert, BYTE** kxc, DW
 	}
 
 	/* compress certificate data */
-	destSize = certSize;
-	if (compress(comprData, &destSize, certData, certSize) != Z_OK)
+	destSize = WINPR_ASSERTING_INT_CAST(uint16_t, certSize);
+	if (compress(comprData, &destSize, certData, WINPR_ASSERTING_INT_CAST(uint16_t, certSize)) !=
+	    Z_OK)
 	{
 		WLog_ERR(TAG, "Failed to compress certificate data");
 		goto handle_error;
 	}
 
 	/* Write container data */
-	s = Stream_New(NULL, destSize + 4);
+	s = Stream_New(nullptr, destSize + 4);
 	Stream_Write_UINT16(s, 0x0001);
-	Stream_Write_UINT16(s, (UINT16)certSize);
+	Stream_Write_UINT16(s, WINPR_ASSERTING_INT_CAST(uint16_t, certSize));
 	Stream_Write(s, comprData, destSize);
 	Stream_SealLength(s);
 
@@ -534,10 +536,10 @@ static BYTE vgids_get_algid(vgidsContext* p_Ctx)
 static BOOL vgids_prepare_keymap(vgidsContext* context, BYTE** outData, DWORD* outDataSize)
 {
 	/* Key map record table:
-	    BYTE unkonwn (count?): 0x01
+	    BYTE unknown (count?): 0x01
 	    Array of vgidsKeymapRecord
 	*/
-	BYTE* data = NULL;
+	BYTE* data = nullptr;
 	vgidsKeymapRecord record = {
 		1,                                /* state */
 		0,                                /* algo */
@@ -640,7 +642,7 @@ static BOOL vgids_create_response(UINT16 status, const BYTE* answer, DWORD answe
 
 static BOOL vgids_read_do_fkt(void* data, size_t index, va_list ap)
 {
-	BYTE* response = NULL;
+	BYTE* response = nullptr;
 	DWORD responseSize = 0;
 	vgidsEF* file = (vgidsEF*)data;
 	vgidsContext* context = va_arg(ap, vgidsContext*);
@@ -654,6 +656,8 @@ static BOOL vgids_read_do_fkt(void* data, size_t index, va_list ap)
 		if (vgids_ef_read_do(file, doID, &response, &responseSize))
 		{
 			context->responseData = Stream_New(response, (size_t)responseSize);
+			if (!context->responseData)
+				free(response);
 			return FALSE;
 		}
 	}
@@ -661,21 +665,21 @@ static BOOL vgids_read_do_fkt(void* data, size_t index, va_list ap)
 	return TRUE;
 }
 
-static void vgids_read_do(vgidsContext* context, UINT16 efID, UINT16 doID)
+static BOOL vgids_read_do(vgidsContext* context, UINT16 efID, UINT16 doID)
 {
-	ArrayList_ForEach(context->files, vgids_read_do_fkt, context, efID, doID);
+	return ArrayList_ForEach(context->files, vgids_read_do_fkt, context, efID, doID);
 }
 
 static void vgids_reset_context_response(vgidsContext* context)
 {
 	Stream_Free(context->responseData, TRUE);
-	context->responseData = NULL;
+	context->responseData = nullptr;
 }
 
 static void vgids_reset_context_command_data(vgidsContext* context)
 {
 	Stream_Free(context->commandData, TRUE);
-	context->commandData = NULL;
+	context->commandData = nullptr;
 }
 
 static BOOL vgids_ins_select(vgidsContext* context, wStream* s, BYTE** response,
@@ -685,12 +689,12 @@ static BOOL vgids_ins_select(vgidsContext* context, wStream* s, BYTE** response,
 	BYTE p2 = 0;
 	BYTE lc = 0;
 	DWORD resultDataSize = 0;
-	const BYTE* resultData = NULL;
+	const BYTE* resultData = nullptr;
 	UINT16 status = ISO_STATUS_SUCCESS;
 
 	/* The only select operations performed are either select by AID or select 3FFF (return
 	 * information about the currently selected DF) */
-	if (!vgids_parse_apdu_header(s, NULL, NULL, &p1, &p2, &lc, NULL))
+	if (!vgids_parse_apdu_header(s, nullptr, nullptr, &p1, &p2, &lc, nullptr))
 		return FALSE;
 
 	/* Check P1 for selection mode */
@@ -700,7 +704,7 @@ static BOOL vgids_ins_select(vgidsContext* context, wStream* s, BYTE** response,
 		case 0x04:
 		{
 			/* read AID from APDU */
-			BYTE aid[ISO_AID_MAX_SIZE] = { 0 };
+			BYTE aid[ISO_AID_MAX_SIZE] = WINPR_C_ARRAY_INIT;
 			if (lc > ISO_AID_MAX_SIZE)
 			{
 				WLog_ERR(TAG, "The LC byte is greater than the maximum AID length");
@@ -710,7 +714,7 @@ static BOOL vgids_ins_select(vgidsContext* context, wStream* s, BYTE** response,
 
 			/* Check if we select MS GIDS App (only one we know) */
 			Stream_Read(s, aid, lc);
-			if (memcmp(aid, g_MsGidsAID, lc) != 0)
+			if ((lc > sizeof(g_MsGidsAID)) || (memcmp(aid, g_MsGidsAID, lc) != 0))
 			{
 				status = ISO_STATUS_FILENOTFOUND;
 				break;
@@ -747,9 +751,9 @@ static BOOL vgids_ins_select(vgidsContext* context, wStream* s, BYTE** response,
 		{
 			/* read FID from APDU */
 			UINT16 fid = 0;
-			if (lc > 2)
+			if (lc != 2)
 			{
-				WLog_ERR(TAG, "The LC byte for the file ID is greater than 2");
+				WLog_ERR(TAG, "The LC byte for the file ID must be 2");
 				status = ISO_STATUS_INVALIDLC;
 				break;
 			}
@@ -800,8 +804,8 @@ static UINT16 vgids_handle_chained_response(vgidsContext* context, const BYTE** 
 static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 {
 	BOOL rc = FALSE;
-	wStream* pubKey = NULL;
-	wStream* response = NULL;
+	wStream* pubKey = nullptr;
+	wStream* response = nullptr;
 
 	WINPR_ASSERT(context);
 
@@ -815,14 +819,14 @@ static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 	if (!n || !e)
 		goto handle_error;
 
-	pubKey = Stream_New(NULL, nSize + eSize + 0x10);
+	pubKey = Stream_New(nullptr, nSize + eSize + 0x10);
 	if (!pubKey)
 	{
 		WLog_ERR(TAG, "Failed to allocate public key stream");
 		goto handle_error;
 	}
 
-	response = Stream_New(NULL, Stream_Capacity(pubKey) + 0x10);
+	response = Stream_New(nullptr, Stream_Capacity(pubKey) + 0x10);
 	if (!response)
 	{
 		WLog_ERR(TAG, "Failed to allocate response stream");
@@ -841,9 +845,9 @@ static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 		goto handle_error;
 
 	/* set response data */
-	Stream_SetPosition(response, 0);
+	Stream_ResetPosition(response);
 	context->responseData = response;
-	response = NULL;
+	response = nullptr;
 
 	rc = TRUE;
 handle_error:
@@ -863,21 +867,21 @@ static BOOL vgids_ins_getdata(vgidsContext* context, wStream* s, BYTE** response
 	BYTE p2 = 0;
 	BYTE lc = 0;
 	DWORD resultDataSize = 0;
-	const BYTE* resultData = NULL;
+	const BYTE* resultData = nullptr;
 	UINT16 status = ISO_STATUS_SUCCESS;
 
 	/* GetData is called a lot!
 	     - To retrieve DOs from files
 	     - To retrieve public key information
 	*/
-	if (!vgids_parse_apdu_header(s, NULL, NULL, &p1, &p2, &lc, NULL))
+	if (!vgids_parse_apdu_header(s, nullptr, nullptr, &p1, &p2, &lc, nullptr))
 		return FALSE;
 
 	/* free any previous queried data */
 	vgids_reset_context_response(context);
 
 	/* build up file identifier */
-	fileId = ((UINT16)p1 << 8) | p2;
+	fileId = (UINT16)(((UINT16)p1 << 8) | p2);
 
 	/* Do we have a DO reference? */
 	switch (lc)
@@ -895,7 +899,10 @@ static BOOL vgids_ins_getdata(vgidsContext* context, wStream* s, BYTE** response
 			}
 
 			Stream_Read_UINT16_BE(s, doId);
-			vgids_read_do(context, fileId, doId);
+
+			/* the function only returns if the ID was found in the list and iteration aborted early
+			 * or not. we can ignore this here. */
+			(void)vgids_read_do(context, fileId, doId);
 			break;
 		}
 		case 0xA:
@@ -981,14 +988,14 @@ static BOOL vgids_ins_manage_security_environment(vgidsContext* context, wStream
 	BYTE p2 = 0;
 	BYTE lc = 0;
 	DWORD resultDataSize = 0;
-	const BYTE* resultData = NULL;
+	const BYTE* resultData = nullptr;
 	UINT16 status = ISO_STATUS_SUCCESS;
 
 	vgids_reset_context_command_data(context);
 	vgids_reset_context_response(context);
 
 	/* Manage security environment prepares the card for performing crypto operations. */
-	if (!vgids_parse_apdu_header(s, NULL, NULL, &p1, &p2, &lc, NULL))
+	if (!vgids_parse_apdu_header(s, nullptr, nullptr, &p1, &p2, &lc, nullptr))
 		return FALSE;
 
 	/* Check APDU params */
@@ -1030,7 +1037,7 @@ static BOOL vgids_ins_manage_security_environment(vgidsContext* context, wStream
 	Stream_Read_UINT8(s, context->currentSE.keyRef);
 
 create_response:
-	/* If an error occured reset SE */
+	/* If an error occurred reset SE */
 	if (status != ISO_STATUS_SUCCESS)
 		memset(&context->currentSE, 0, sizeof(context->currentSE));
 	return vgids_create_response(status, resultData, resultDataSize, response, responseSize);
@@ -1040,7 +1047,7 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 {
 	size_t sigSize = 0;
 	size_t msgSize = 0;
-	EVP_PKEY_CTX* ctx = NULL;
+	EVP_PKEY_CTX* ctx = nullptr;
 	EVP_PKEY* pk = freerdp_key_get_evp_pkey(context->privateKey);
 	const vgidsDigestInfoMap gidsDigestInfo[VGIDS_MAX_DIGEST_INFO] = {
 		{ g_PKCS1_SHA1, sizeof(g_PKCS1_SHA1), EVP_sha1() },
@@ -1063,7 +1070,7 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 	vgids_reset_context_response(context);
 
 	/* for each digest info */
-	Stream_SetPosition(context->commandData, 0);
+	Stream_ResetPosition(context->commandData);
 	for (int i = 0; i < VGIDS_MAX_DIGEST_INFO; ++i)
 	{
 		/* have we found our digest? */
@@ -1078,7 +1085,7 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 			msgSize = Stream_GetRemainingLength(context->commandData);
 
 			/* setup signing context */
-			ctx = EVP_PKEY_CTX_new(pk, NULL);
+			ctx = EVP_PKEY_CTX_new(pk, nullptr);
 			if (!ctx)
 			{
 				WLog_ERR(TAG, "Failed to create signing context");
@@ -1108,14 +1115,14 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 			}
 
 			/* Determine buffer length */
-			if (EVP_PKEY_sign(ctx, NULL, &sigSize, Stream_Pointer(context->commandData), msgSize) <=
-			    0)
+			if (EVP_PKEY_sign(ctx, nullptr, &sigSize, Stream_Pointer(context->commandData),
+			                  msgSize) <= 0)
 			{
 				WLog_ERR(TAG, "Failed to determine signature size");
 				goto sign_failed;
 			}
 
-			context->responseData = Stream_New(NULL, sigSize);
+			context->responseData = Stream_New(nullptr, sigSize);
 			if (!context->responseData)
 			{
 				WLog_ERR(TAG, "Failed to allocate signing buffer");
@@ -1130,7 +1137,9 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 				goto sign_failed;
 			}
 
-			Stream_SetLength(context->responseData, sigSize);
+			if (!Stream_SetLength(context->responseData, sigSize))
+				goto sign_failed;
+
 			EVP_PKEY_CTX_free(ctx);
 			break;
 		}
@@ -1150,7 +1159,7 @@ sign_failed:
 
 static BOOL vgids_perform_decrypt(vgidsContext* context)
 {
-	EVP_PKEY_CTX* ctx = NULL;
+	EVP_PKEY_CTX* ctx = nullptr;
 	BOOL rc = FALSE;
 	int res = 0;
 	int padding = RSA_NO_PADDING;
@@ -1167,7 +1176,7 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 	EVP_PKEY* pkey = freerdp_key_get_evp_pkey(context->privateKey);
 	if (!pkey)
 		goto decrypt_failed;
-	ctx = EVP_PKEY_CTX_new(pkey, NULL);
+	ctx = EVP_PKEY_CTX_new(pkey, nullptr);
 	if (!ctx)
 		goto decrypt_failed;
 	if (EVP_PKEY_decrypt_init(ctx) <= 0)
@@ -1176,35 +1185,37 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 		goto decrypt_failed;
 
 	/* Determine buffer length */
-	const size_t inlen = Stream_Length(context->commandData);
-	size_t outlen = 0;
-	res = EVP_PKEY_decrypt(ctx, NULL, &outlen, Stream_Buffer(context->commandData), inlen);
-	if (res < 0)
 	{
-		WLog_ERR(TAG, "Failed to decrypt data");
-		goto decrypt_failed;
+		const size_t inlen = Stream_Length(context->commandData);
+		size_t outlen = 0;
+		res = EVP_PKEY_decrypt(ctx, nullptr, &outlen, Stream_Buffer(context->commandData), inlen);
+		if (res < 0)
+		{
+			WLog_ERR(TAG, "Failed to decrypt data");
+			goto decrypt_failed;
+		}
+
+		/* Prepare output buffer */
+		context->responseData = Stream_New(nullptr, outlen);
+
+		if (!context->responseData)
+		{
+			WLog_ERR(TAG, "Failed to create decryption buffer");
+			goto decrypt_failed;
+		}
+
+		/* Decrypt */
+		res = EVP_PKEY_decrypt(ctx, Stream_Buffer(context->responseData), &outlen,
+		                       Stream_Buffer(context->commandData), inlen);
+
+		if (res < 0)
+		{
+			WLog_ERR(TAG, "Failed to decrypt data");
+			goto decrypt_failed;
+		}
+
+		rc = Stream_SetLength(context->responseData, outlen);
 	}
-
-	/* Prepare output buffer */
-	context->responseData = Stream_New(NULL, outlen);
-	if (!context->responseData)
-	{
-		WLog_ERR(TAG, "Failed to create decryption buffer");
-		goto decrypt_failed;
-	}
-
-	/* Decrypt */
-	res = EVP_PKEY_decrypt(ctx, Stream_Buffer(context->responseData), &outlen,
-	                       Stream_Buffer(context->commandData), inlen);
-
-	if (res < 0)
-	{
-		WLog_ERR(TAG, "Failed to decrypt data");
-		goto decrypt_failed;
-	}
-
-	Stream_SetLength(context->responseData, outlen);
-	rc = TRUE;
 
 decrypt_failed:
 	EVP_PKEY_CTX_free(ctx);
@@ -1223,11 +1234,11 @@ static BOOL vgids_ins_perform_security_operation(vgidsContext* context, wStream*
 	BYTE p2 = 0;
 	BYTE lc = 0;
 	DWORD resultDataSize = 0;
-	const BYTE* resultData = NULL;
+	const BYTE* resultData = nullptr;
 	UINT16 status = ISO_STATUS_SUCCESS;
 
 	/* Perform security operation */
-	if (!vgids_parse_apdu_header(s, &cla, NULL, &p1, &p2, &lc, NULL))
+	if (!vgids_parse_apdu_header(s, &cla, nullptr, &p1, &p2, &lc, nullptr))
 		return FALSE;
 
 	if (lc == 0)
@@ -1253,7 +1264,7 @@ static BOOL vgids_ins_perform_security_operation(vgidsContext* context, wStream*
 	/* Append the data to the context command buffer (PSO might chain command data) */
 	if (!context->commandData)
 	{
-		context->commandData = Stream_New(NULL, lc);
+		context->commandData = Stream_New(nullptr, lc);
 		if (!context->commandData)
 			return FALSE;
 	}
@@ -1313,7 +1324,7 @@ static BOOL vgids_ins_getresponse(vgidsContext* context, wStream* s, BYTE** resp
 	BYTE p2 = 0;
 	BYTE le = 0;
 	DWORD resultDataSize = 0;
-	const BYTE* resultData = NULL;
+	const BYTE* resultData = nullptr;
 	DWORD expectedLen = 0;
 	DWORD remainingSize = 0;
 	UINT16 status = ISO_STATUS_SUCCESS;
@@ -1326,7 +1337,7 @@ static BOOL vgids_ins_getresponse(vgidsContext* context, wStream* s, BYTE** resp
 		goto create_response;
 	}
 
-	if (!vgids_parse_apdu_header(s, NULL, NULL, &p1, &p2, NULL, &le))
+	if (!vgids_parse_apdu_header(s, nullptr, nullptr, &p1, &p2, nullptr, &le))
 		return FALSE;
 
 	/* Check APDU params */
@@ -1371,10 +1382,10 @@ static BOOL vgids_ins_verify(vgidsContext* context, wStream* s, BYTE** response,
 	BYTE p2 = 0;
 	BYTE lc = 0;
 	UINT16 status = ISO_STATUS_SUCCESS;
-	char pin[VGIDS_MAX_PIN_SIZE + 1] = { 0 };
+	char pin[VGIDS_MAX_PIN_SIZE + 1] = WINPR_C_ARRAY_INIT;
 
 	/* Verify is always called for the application password (PIN) P2=0x80 */
-	if (!vgids_parse_apdu_header(s, NULL, &ins, &p1, &p2, NULL, NULL))
+	if (!vgids_parse_apdu_header(s, nullptr, &ins, &p1, &p2, nullptr, nullptr))
 		return FALSE;
 
 	/* Check APDU params */
@@ -1429,12 +1440,12 @@ static BOOL vgids_ins_verify(vgidsContext* context, wStream* s, BYTE** response,
 	}
 
 create_response:
-	return vgids_create_response(status, NULL, 0, response, responseSize);
+	return vgids_create_response(status, nullptr, 0, response, responseSize);
 }
 
 vgidsContext* vgids_new(void)
 {
-	wObject* obj = NULL;
+	wObject* obj = nullptr;
 	vgidsContext* ctx = calloc(1, sizeof(vgidsContext));
 
 	ctx->files = ArrayList_New(FALSE);
@@ -1451,7 +1462,7 @@ vgidsContext* vgids_new(void)
 
 create_failed:
 	vgids_free(ctx);
-	return NULL;
+	return nullptr;
 }
 
 BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, const char* pin)
@@ -1460,13 +1471,13 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	DWORD keymapSize = 0;
 	DWORD fsTableSize = 0;
 	BOOL rc = FALSE;
-	BYTE* kxc = NULL;
-	BYTE* keymap = NULL;
-	BYTE* fsTable = NULL;
-	vgidsEF* masterEF = NULL;
-	vgidsEF* cardidEF = NULL;
-	vgidsEF* commonEF = NULL;
-	BYTE cardid[VGIDS_CARDID_SIZE] = { 0 };
+	BYTE* kxc = nullptr;
+	BYTE* keymap = nullptr;
+	BYTE* fsTable = nullptr;
+	vgidsEF* masterEF = nullptr;
+	vgidsEF* cardidEF = nullptr;
+	vgidsEF* commonEF = nullptr;
+	BYTE cardid[VGIDS_CARDID_SIZE] = WINPR_C_ARRAY_INIT;
 	vgidsContainerMapEntry cmrec = { { 'P', 'r', 'i', 'v', 'a', 't', 'e', ' ', 'K', 'e', 'y', ' ',
 		                               '0', '0' },
 		                             CONTAINER_MAP_VALID_CONTAINER |
@@ -1486,8 +1497,10 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	/* Check params */
 	if (!cert || !privateKey || !pin)
 	{
-		WLog_DBG(TAG, "Passed invalid NULL argument: cert=%p, privateKey=%p, pin=%p", cert,
-		         privateKey, pin);
+		WLog_DBG(TAG, "Passed invalid nullptr argument: cert=%p, privateKey=%p, pin=%p",
+		         WINPR_CXX_COMPAT_CAST(const void*, cert),
+		         WINPR_CXX_COMPAT_CAST(const void*, privateKey),
+		         WINPR_CXX_COMPAT_CAST(const void*, pin));
 		goto init_failed;
 	}
 
@@ -1496,24 +1509,28 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	if (!ctx->certificate)
 		goto init_failed;
 
-	ctx->privateKey = freerdp_key_new_from_pem(privateKey);
+	ctx->privateKey = freerdp_key_new_from_pem_enc(privateKey, nullptr);
 	if (!ctx->privateKey)
 		goto init_failed;
 
 	/* create masterfile */
+	// NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
 	masterEF = vgids_ef_new(ctx, VGIDS_EFID_MASTER);
 	if (!masterEF)
 		goto init_failed;
 
 	/* create cardid file with cardid DO */
+	// NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
 	cardidEF = vgids_ef_new(ctx, VGIDS_EFID_CARDID);
 	if (!cardidEF)
 		goto init_failed;
-	winpr_RAND(cardid, sizeof(cardid));
+	if (winpr_RAND(cardid, sizeof(cardid)) < 0)
+		goto init_failed;
 	if (!vgids_ef_write_do(cardidEF, VGIDS_DO_CARDID, cardid, sizeof(cardid)))
 		goto init_failed;
 
 	/* create user common file */
+	// NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
 	commonEF = vgids_ef_new(ctx, VGIDS_EFID_COMMON);
 	if (!commonEF)
 		goto init_failed;
@@ -1523,11 +1540,13 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 		goto init_failed;
 
 	/* write container map DO */
-	const size_t size = get_rsa_key_size(ctx->privateKey);
-	if ((size == 0) || (size > UINT16_MAX / 8))
-		goto init_failed;
+	{
+		const size_t size = get_rsa_key_size(ctx->privateKey);
+		if ((size == 0) || (size > UINT16_MAX / 8))
+			goto init_failed;
 
-	cmrec.wKeyExchangeKeySizeBits = (WORD)size * 8;
+		cmrec.wKeyExchangeKeySizeBits = (WORD)size * 8;
+	}
 	if (!vgids_ef_write_do(commonEF, VGIDS_DO_CMAPFILE, &cmrec, sizeof(cmrec)))
 		goto init_failed;
 
@@ -1581,7 +1600,7 @@ BOOL vgids_process_apdu(vgidsContext* context, const BYTE* data, DWORD dataSize,
 	/* Check params */
 	if (!context || !data || !response || !responseSize)
 	{
-		WLog_ERR(TAG, "Invalid NULL pointer passed");
+		WLog_ERR(TAG, "Invalid nullptr pointer passed");
 		return FALSE;
 	}
 
@@ -1614,7 +1633,7 @@ BOOL vgids_process_apdu(vgidsContext* context, const BYTE* data, DWORD dataSize,
 	}
 
 	/* return command not allowed */
-	return vgids_create_response(ISO_STATUS_COMMANDNOTALLOWED, NULL, 0, response, responseSize);
+	return vgids_create_response(ISO_STATUS_COMMANDNOTALLOWED, nullptr, 0, response, responseSize);
 }
 
 void vgids_free(vgidsContext* context)

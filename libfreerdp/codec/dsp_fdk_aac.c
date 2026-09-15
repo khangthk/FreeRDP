@@ -24,21 +24,21 @@
 #include <freerdp/log.h>
 #define TAG FREERDP_TAG("dsp.fdk")
 
-static void write_log(unsigned log_level, const char* fmt, ...)
+WINPR_ATTR_FORMAT_ARG(2, 3)
+static void write_log(unsigned log_level, WINPR_FORMAT_ARG const char* fmt, ...)
 {
 	wLog* log = WLog_Get(TAG);
 
 	if (WLog_IsLevelActive(log, log_level))
 	{
-		char buffer[1024] = { 0 };
+		char buffer[1024] = WINPR_C_ARRAY_INIT;
 
-		va_list ap = { 0 };
+		va_list ap = WINPR_C_ARRAY_INIT;
 		va_start(ap, fmt);
-		vsnprintf(buffer, sizeof(buffer), fmt, ap);
+		(void)vsnprintf(buffer, sizeof(buffer), fmt, ap);
 		va_end(ap);
 
-		WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, __LINE__, __FILE__, __func__, "%s",
-		                  buffer);
+		WLog_PrintTextMessage(log, log_level, __LINE__, __FILE__, __func__, "%s", buffer);
 	}
 }
 

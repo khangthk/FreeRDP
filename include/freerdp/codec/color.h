@@ -56,7 +56,7 @@ extern "C"
 /*** Design considerations
  *
  * The format naming scheme is based on byte position in memory.
- * RGBA for example names a byte array with red on positon 0, green on 1 etc.
+ * RGBA for example names a byte array with red on position 0, green on 1 etc.
  *
  * To read and write the appropriate format from / to memory use FreeRDPReadColor and
  * FreeRDPWriteColor.
@@ -117,36 +117,48 @@ typedef struct gdi_palette gdiPalette;
 
 	/* Compare two color formats but ignore differences in alpha channel.
 	 */
-	FREERDP_API DWORD FreeRDPAreColorFormatsEqualNoAlpha(DWORD first, DWORD second);
+WINPR_ATTR_NODISCARD
+FREERDP_API DWORD FreeRDPAreColorFormatsEqualNoAlpha(DWORD first, DWORD second);
 
-	/* Color Space Conversions: http://msdn.microsoft.com/en-us/library/ff566496/ */
+/* Color Space Conversions: http://msdn.microsoft.com/en-us/library/ff566496/ */
 
-	/***
-	 *
-	 * Get a string representation of a color
-	 *
-	 * @param format The pixel color format
-	 *
-	 * @return A string representation of format
-	 */
+/***
+ *
+ * Get a string representation of a color
+ *
+ * @param format The pixel color format
+ *
+ * @return A string representation of format
+ */
 #if defined(WITH_FREERDP_DEPRECATED)
 #define GetColorFormatName(...) FreeRDPGetColorFormatName(__VA_ARGS__)
 #endif
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* FreeRDPGetColorFormatName(UINT32 format);
 
-	/***
+	/** @brief convert a string to a \ref PIXEL_FORMAT
 	 *
-	 * Converts a pixel color in internal representation to its red, green, blue
-	 * and alpha components.
+	 *  @param name The string representing the format
 	 *
-	 * @param color  The color in format internal representation
-	 * @param format one of PIXEL_FORMAT_* color format defines
-	 * @param _r      red color value
-	 * @param _g      green color value
-	 * @param _b      blue color value
-	 * @param _a      alpha color value
-	 * @param palette pallete to use (only used for 8 bit color!)
+	 *  @return the \ref PIXEL_FORMAT value or \b 0 for failure
+	 *  @since version 3.18.0
 	 */
+	WINPR_ATTR_NODISCARD
+	FREERDP_API uint32_t FreeRDPGetColorFromatFromName(const char* name);
+
+/***
+ *
+ * Converts a pixel color in internal representation to its red, green, blue
+ * and alpha components.
+ *
+ * @param color  The color in format internal representation
+ * @param format one of PIXEL_FORMAT_* color format defines
+ * @param _r      red color value
+ * @param _g      green color value
+ * @param _b      blue color value
+ * @param _a      alpha color value
+ * @param palette palette to use (only used for 8 bit color!)
+ */
 #if defined(WITH_FREERDP_DEPRECATED)
 #define SplitColor(...) FreeRDPSplitColor(__VA_ARGS__)
 #endif
@@ -169,6 +181,7 @@ typedef struct gdi_palette gdiPalette;
 #if defined(WITH_FREERDP_DEPRECATED)
 #define GetColor(...) FreeRDPGetColor(__VA_ARGS__)
 #endif
+	WINPR_ATTR_NODISCARD
 	FREERDP_API UINT32 FreeRDPGetColor(UINT32 format, BYTE r, BYTE g, BYTE b, BYTE a);
 
 	/***
@@ -182,7 +195,8 @@ typedef struct gdi_palette gdiPalette;
 #if defined(WITH_FREERDP_DEPRECATED)
 #define GetBitsPerPixel(...) FreeRDPGetBitsPerPixel(__VA_ARGS__)
 #endif
-	static INLINE UINT32 FreeRDPGetBitsPerPixel(UINT32 format)
+	WINPR_ATTR_NODISCARD
+	static inline UINT32 FreeRDPGetBitsPerPixel(UINT32 format)
 	{
 		return (((format) >> 24) & 0x3F);
 	}
@@ -195,14 +209,12 @@ typedef struct gdi_palette gdiPalette;
 #if defined(WITH_FREERDP_DEPRECATED)
 #define ColorHasAlpha(...) FreeRDPColorHasAlpha(__VA_ARGS__)
 #endif
-	static INLINE BOOL FreeRDPColorHasAlpha(UINT32 format)
+	WINPR_ATTR_NODISCARD
+	static inline BOOL FreeRDPColorHasAlpha(UINT32 format)
 	{
 		UINT32 alpha = (((format) >> 12) & 0x0F);
 
-		if (alpha == 0)
-			return FALSE;
-
-		return TRUE;
+		return (alpha != 0);
 	}
 
 	/***
@@ -217,6 +229,7 @@ typedef struct gdi_palette gdiPalette;
 #if defined(WITH_FREERDP_DEPRECATED)
 #define ReadColor(...) FreeRDPReadColor(__VA_ARGS__)
 #endif
+	WINPR_ATTR_NODISCARD
 	FREERDP_API UINT32 FreeRDPReadColor(const BYTE* WINPR_RESTRICT src, UINT32 format);
 
 	/***
@@ -234,6 +247,7 @@ typedef struct gdi_palette gdiPalette;
 #define WriteColorIgnoreAlpha(...) FreeRDPWriteColorIgnoreAlpha(__VA_ARGS__)
 #endif
 	FREERDP_API BOOL FreeRDPWriteColor(BYTE* WINPR_RESTRICT dst, UINT32 format, UINT32 color);
+
 	FREERDP_API BOOL FreeRDPWriteColorIgnoreAlpha(BYTE* WINPR_RESTRICT dst, UINT32 format,
 	                                              UINT32 color);
 
@@ -245,14 +259,15 @@ typedef struct gdi_palette gdiPalette;
 	 * @param color      The pixel color in srcFormat representation
 	 * @param srcFormat  The PIXEL_FORMAT_* of color
 	 * @param dstFormat  The PIXEL_FORMAT_* of the return.
-	 * @param palette    pallete to use (only used for 8 bit color!)
+	 * @param palette    palette to use (only used for 8 bit color!)
 	 *
 	 * @return           The converted pixel color in dstFormat representation
 	 */
 #if defined(WITH_FREERDP_DEPRECATED)
 #define ConvertColor(...) FreeRDPConvertColor(__VA_ARGS__)
 #endif
-	static INLINE UINT32 FreeRDPConvertColor(UINT32 color, UINT32 srcFormat, UINT32 dstFormat,
+	WINPR_ATTR_NODISCARD
+	static inline UINT32 FreeRDPConvertColor(UINT32 color, UINT32 srcFormat, UINT32 dstFormat,
 	                                         const gdiPalette* palette)
 	{
 		BYTE r = 0;
@@ -274,11 +289,13 @@ typedef struct gdi_palette gdiPalette;
 #if defined(WITH_FREERDP_DEPRECATED)
 #define GetBytesPerPixel(...) FreeRDPGetBytesPerPixel(__VA_ARGS__)
 #endif
-	static INLINE UINT32 FreeRDPGetBytesPerPixel(UINT32 format)
+	WINPR_ATTR_NODISCARD
+	static inline UINT32 FreeRDPGetBytesPerPixel(UINT32 format)
 	{
 		return (FreeRDPGetBitsPerPixel(format) + 7) / 8;
 	}
 
+#if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
 	/***
 	 *
 	 * @param width    width to copy in pixels
@@ -286,11 +303,30 @@ typedef struct gdi_palette gdiPalette;
 	 * @param data      source buffer, must be (nWidth + 7) / 8 bytes long
 	 *
 	 * @return          A buffer allocated with winpr_aligned_malloc(width * height, 16)
-	 *                  if successful, NULL otherwise.
+	 *                  if successful, nullptr otherwise.
+	 */
+
+	WINPR_DEPRECATED_VAR("[since 3.21.0] use freerdp_glyph_convert_ex instead",
+	                     WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
+	                         WINPR_ATTR_NODISCARD FREERDP_API BYTE* freerdp_glyph_convert(
+	                             UINT32 width, UINT32 height, const BYTE* WINPR_RESTRICT data));
+#endif
+
+	/***
+	 *
+	 * @param width    width to copy in pixels
+	 * @param height   height to copy in pixels
+	 * @param data     source buffer, must be (nWidth + 7) / 8 bytes long
+	 * @param len      the length of \ref data in bytes
+	 *
+	 * @return          A buffer allocated with winpr_aligned_malloc(width * height, 16)
+	 *                  if successful, nullptr otherwise.
+	 * @since version 3.21.0
 	 */
 	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
-	FREERDP_API BYTE* freerdp_glyph_convert(UINT32 width, UINT32 height,
-	                                        const BYTE* WINPR_RESTRICT data);
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BYTE* freerdp_glyph_convert_ex(UINT32 width, UINT32 height,
+	                                           const BYTE* WINPR_RESTRICT data, size_t len);
 
 	/***
 	 *
@@ -308,6 +344,7 @@ typedef struct gdi_palette gdiPalette;
 	 *
 	 * @return          TRUE if success, FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_copy_from_monochrome(
 	    BYTE* WINPR_RESTRICT pDstData, UINT32 DstFormat, UINT32 nDstStep, UINT32 nXDst,
 	    UINT32 nYDst, UINT32 nWidth, UINT32 nHeight, const BYTE* WINPR_RESTRICT pSrcData,
@@ -315,13 +352,17 @@ typedef struct gdi_palette gdiPalette;
 
 	/***
 	 *
-	 * @param pDstData      destination buffer
+	 * @param pDstData      destination buffer. Must be able to hold \ref nWidth * nHeight pixels at
+	 * \ref nXDst x \ref nYDst offset
 	 * @param DstFormat     destination buffer format
-	 * @param nDstStep      destination buffer stride (line in bytes) 0 for default
-	 * @param nXDst         destination buffer offset x
-	 * @param nYDst         destination buffer offset y
-	 * @param nWidth        width to copy in pixels
-	 * @param nHeight       height to copy in pixels
+	 * @param nDstStep      destination buffer stride (line in bytes) 0 for default, otherwise must
+	 * be large enough to hold a full line with current \ref DstFormat
+	 * @param nXDst         destination buffer offset x. Must be within \ref pDstData
+	 * @param nYDst         destination buffer offset y. Must be within \ref pDstData
+	 * @param nWidth        width to copy in pixels. Must be within \ref pDstData at offseet \ref
+	 * nXDst
+	 * @param nHeight       height to copy in pixels. Must be within \ref pDstData at offset \ref
+	 * nYDst
 	 * @param bitsColor     icon's image data buffer
 	 * @param cbBitsColor   length of the image data buffer in bytes
 	 * @param bitsMask      icon's 1bpp image mask buffer
@@ -332,6 +373,7 @@ typedef struct gdi_palette gdiPalette;
 	 *
 	 * @return              TRUE if success, FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_copy_from_icon_data(
 	    BYTE* WINPR_RESTRICT pDstData, UINT32 DstFormat, UINT32 nDstStep, UINT32 nXDst,
 	    UINT32 nYDst, UINT16 nWidth, UINT16 nHeight, const BYTE* WINPR_RESTRICT bitsColor,
@@ -340,13 +382,17 @@ typedef struct gdi_palette gdiPalette;
 
 	/***
 	 *
-	 * @param pDstData      destination buffer
+	 * @param pDstData      destination buffer. Must be able to hold \ref nWidth * nHeight pixels at
+	 * \ref nXDst x \ref nYDst offset
 	 * @param DstFormat     destination buffer format
-	 * @param nDstStep      destination buffer stride (line in bytes) 0 for default
-	 * @param nXDst         destination buffer offset x
-	 * @param nYDst         destination buffer offset y
-	 * @param nWidth        width to copy in pixels
-	 * @param nHeight       height to copy in pixels
+	 * @param nDstStep      destination buffer stride (line in bytes) 0 for default, otherwise must
+	 * be large enough to hold a full line with current \ref DstFormat
+	 * @param nXDst         destination buffer offset x. Must be within \ref pDstData
+	 * @param nYDst         destination buffer offset y. Must be within \ref pDstData
+	 * @param nWidth        width to copy in pixels. Must be within \ref pDstData at offseet \ref
+	 * nXDst
+	 * @param nHeight       height to copy in pixels. Must be within \ref pDstData at offset \ref
+	 * nYDst
 	 * @param xorMask       XOR mask buffer
 	 * @param xorMaskLength XOR mask length in bytes
 	 * @param andMask       AND mask buffer
@@ -356,6 +402,7 @@ typedef struct gdi_palette gdiPalette;
 	 *
 	 * @return              TRUE if success, FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_copy_from_pointer_data(
 	    BYTE* WINPR_RESTRICT pDstData, UINT32 DstFormat, UINT32 nDstStep, UINT32 nXDst,
 	    UINT32 nYDst, UINT32 nWidth, UINT32 nHeight, const BYTE* WINPR_RESTRICT xorMask,
@@ -365,13 +412,17 @@ typedef struct gdi_palette gdiPalette;
 	/*** Copies an image from source to destination, converting if necessary.
 	 * Source and destination may overlap.
 	 *
-	 * @param pDstData  destination buffer
-	 * @param DstFormat destination buffer format
-	 * @param nDstStep  destination buffer stride (line in bytes) 0 for default
-	 * @param nXDst     destination buffer offset x
-	 * @param nYDst     destination buffer offset y
-	 * @param nWidth    width to copy in pixels
-	 * @param nHeight   height to copy in pixels
+	 * @param pDstData      destination buffer. Must be able to hold \ref nWidth * nHeight pixels at
+	 * \ref nXDst x \ref nYDst offset
+	 * @param DstFormat     destination buffer format
+	 * @param nDstStep      destination buffer stride (line in bytes) 0 for default, otherwise must
+	 * be large enough to hold a full line with current \ref DstFormat
+	 * @param nXDst         destination buffer offset x. Must be within \ref pDstData
+	 * @param nYDst         destination buffer offset y. Must be within \ref pDstData
+	 * @param nWidth        width to copy in pixels. Must be within \ref pDstData at offseet \ref
+	 * nXDst
+	 * @param nHeight       height to copy in pixels. Must be within \ref pDstData at offset \ref
+	 * nYDst
 	 * @param pSrcData  source buffer
 	 * @param SrcFormat source buffer format
 	 * @param nSrcStep  source buffer stride (line in bytes) 0 for default
@@ -382,6 +433,7 @@ typedef struct gdi_palette gdiPalette;
 	 *
 	 * @return          TRUE if success, FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_copy(BYTE* pDstData, DWORD DstFormat, UINT32 nDstStep,
 	                                    UINT32 nXDst, UINT32 nYDst, UINT32 nWidth, UINT32 nHeight,
 	                                    const BYTE* pSrcData, DWORD SrcFormat, UINT32 nSrcStep,
@@ -392,6 +444,7 @@ typedef struct gdi_palette gdiPalette;
 	 * @brief Same as @ref freerdp_image_copy but only for overlapping source and destination
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_copy_overlap(
 	    BYTE* pDstData, DWORD DstFormat, UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst, UINT32 nWidth,
 	    UINT32 nHeight, const BYTE* pSrcData, DWORD SrcFormat, UINT32 nSrcStep, UINT32 nXSrc,
@@ -400,6 +453,7 @@ typedef struct gdi_palette gdiPalette;
 	/*** Same as @ref freerdp_image_copy but only for non overlapping source and destination
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_copy_no_overlap(
 	    BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat, UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
 	    UINT32 nWidth, UINT32 nHeight, const BYTE* WINPR_RESTRICT pSrcData, DWORD SrcFormat,
@@ -425,6 +479,7 @@ typedef struct gdi_palette gdiPalette;
 	 *
 	 * @return          TRUE if success, FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_scale(BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat,
 	                                     UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
 	                                     UINT32 nDstWidth, UINT32 nDstHeight,
@@ -432,11 +487,11 @@ typedef struct gdi_palette gdiPalette;
 	                                     UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc,
 	                                     UINT32 nSrcWidth, UINT32 nSrcHeight);
 
-	/***
+	/** @brief fill an area with the color provided.
 	 *
-	 * @param pDstData  destionation buffer
-	 * @param DstFormat destionation buffer format
-	 * @param nDstStep  destionation buffer stride (line in bytes) 0 for default
+	 * @param pDstData  destination buffer
+	 * @param DstFormat destination buffer format
+	 * @param nDstStep  destination buffer stride (line in bytes) 0 for default
 	 * @param nXDst     destination buffer offset x
 	 * @param nYDst     destination buffer offset y
 	 * @param nWidth    width to copy in pixels
@@ -446,9 +501,36 @@ typedef struct gdi_palette gdiPalette;
 	 *
 	 * @return          TRUE if success, FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_image_fill(BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat,
 	                                    UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst, UINT32 nWidth,
 	                                    UINT32 nHeight, UINT32 color);
+
+#define FREERDP_IMAGE_FILL_IGNORE_ALPHA 1 /** @since version 3.13.0 */
+
+	/** @brief fill an area with the color provided. If flag \b FREERDP_IMAGE_FILL_IGNORE_ALPHA is
+	 * set the destination alpha value will be kept.
+	 *
+	 * @param pDstData  destination buffer
+	 * @param DstFormat destination buffer format
+	 * @param nDstStep  destination buffer stride (line in bytes) 0 for default
+	 * @param nXDst     destination buffer offset x
+	 * @param nYDst     destination buffer offset y
+	 * @param nWidth    width to copy in pixels
+	 * @param nHeight   height to copy in pixels
+	 * @param color     Pixel color in DstFormat (internal representation format,
+	 *                  use FreeRDPGetColor to create)
+	 * @param flags \b FREERDP_IMAGE_FILL_* flags
+	 *
+	 * @return          TRUE if success, FALSE otherwise
+	 *
+	 * @since version 3.13.0
+	 */
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BOOL freerdp_image_fill_ex(BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat,
+	                                       UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
+	                                       UINT32 nWidth, UINT32 nHeight, UINT32 color,
+	                                       UINT32 flags);
 
 #ifdef __cplusplus
 }

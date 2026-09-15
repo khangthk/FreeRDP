@@ -29,12 +29,16 @@
 
 #include "dsp_fdk_impl.h"
 
-#define WLOG_TRACE 0
+#if (defined(__STDC_VERSION__) && (__STDC_VERSION__ < 202003L))
+#define nullptr NULL
+#endif
+
+// #define WLOG_TRACE 0
 #define WLOG_DEBUG 1
-#define WLOG_INFO 2
+// #define WLOG_INFO 2
 #define WLOG_WARN 3
 #define WLOG_ERROR 4
-#define WLOG_FATAL 5
+// #define WLOG_FATAL 5
 
 static const char* enc_err_str(AACENC_ERROR err)
 {
@@ -162,12 +166,13 @@ static const char* dec_err_str(AAC_DECODER_ERROR err)
 	}
 }
 
-static void log_dec_info(const CStreamInfo* info, void (*log)(const char* fmt, ...))
+static void log_dec_info(const CStreamInfo* info, fdk_log_fkt_t log)
 {
 	assert(info);
 	assert(log);
 
-	log("info:"
+	log(WLOG_DEBUG,
+	    "info:"
 	    "aacSampleRate: %d, "
 	    "frameSize: %d, "
 	    "numChannels: %d, "
@@ -219,7 +224,7 @@ static void log_enc_info(const AACENC_InfoStruct* info, fdk_log_fkt_t log)
 
 	for (size_t x = 0; x < 64; x++)
 	{
-		rc = snprintf(&confBuf[offset], remain - offset, "0x%02x%s", (int)info->confBuf[x],
+		rc = snprintf(&confBuf[offset], remain - offset, "0x%02x%s", (unsigned)info->confBuf[x],
 		              (x > 0) ? ", " : "");
 		if (rc <= 0)
 			return;
@@ -319,7 +324,7 @@ int fdk_aac_dsp_impl_init(void** handle, int encoder, fdk_log_fkt_t log)
 	else
 	{
 		HANDLE_AACDECODER* h = (HANDLE_AACDECODER*)handle;
-		assert(NULL == *h);
+		assert(nullptr == *h);
 
 		*h = aacDecoder_Open(TT_MP4_RAW, 1);
 		if (!*h)
@@ -350,7 +355,7 @@ void fdk_aac_dsp_impl_uninit(void** handle, int encoder, fdk_log_fkt_t log)
 			aacDecoder_Close(*h);
 	}
 
-	*handle = NULL;
+	*handle = nullptr;
 }
 
 ssize_t fdk_aac_dsp_impl_decode_read(void* handle, void* dst, size_t dstSize, fdk_log_fkt_t log)
@@ -369,8 +374,9 @@ ssize_t fdk_aac_dsp_impl_decode_read(void* handle, void* dst, size_t dstSize, fd
 		case AAC_DEC_NOT_ENOUGH_BITS:
 			return 0;
 		default:
-			log(WLOG_ERROR, "aacDecoder_DecodeFrame failed with %s", dec_err_str(err));
-			return -1;
+			log(WLOG_WARN, "aacDecoder_DecodeFrame failed with %s, discarding...",
+			    dec_err_str(err));
+			return 0;
 	}
 }
 
@@ -420,14 +426,19 @@ int fdk_aac_dsp_impl_config(void* handle, size_t* pbuffersize, int encoder, unsi
 		UINT value;
 	};
 
-	const struct t_param_pair params[] = { { AACENC_AOT, 2 },
-		                                   { AACENC_SAMPLERATE, samplerate },
-		                                   { AACENC_CHANNELMODE, get_channelmode(channels) },
-		                                   { AACENC_CHANNELORDER, 0 },
-		                                   { AACENC_BITRATE, bytes_per_second * 8 },
-		                                   { AACENC_TRANSMUX, 0 },
-		                                   { AACENC_AFTERBURNER, 1 } };
-	HANDLE_AACENCODER self = NULL;
+	const struct t_param_pair params[] = {
+		{ AACENC_AOT, 2 },
+		{ AACENC_SAMPLERATE, samplerate },
+		{ AACENC_CHANNELMODE, get_channelmode(channels) },
+		{ AACENC_CHANNELORDER, 0 },
+		{ AACENC_BITRATE, bytes_per_second * 8 },
+		{ AACENC_TRANSMUX, 0 },
+		{ AACENC_AFTERBURNER, 1 }
+		// The value supplied via RDP of 441 packets is not compatible, so skip this here.
+		//,	{ AACENC_GRANULE_LENGTH, frames_per_packet }
+	};
+
+	HANDLE_AACENCODER self = nullptr;
 	if (encoder)
 		self = (HANDLE_AACENCODER)handle;
 	else
@@ -453,7 +464,7 @@ int fdk_aac_dsp_impl_config(void* handle, size_t* pbuffersize, int encoder, unsi
 		}
 	}
 
-	AACENC_ERROR err = aacEncEncode(self, NULL, NULL, NULL, NULL);
+	AACENC_ERROR err = aacEncEncode(self, nullptr, nullptr, nullptr, nullptr);
 	if (err != AACENC_OK)
 	{
 		log(WLOG_ERROR, "aacEncEncode failed with %s", enc_err_str(err));
@@ -480,7 +491,7 @@ int fdk_aac_dsp_impl_config(void* handle, size_t* pbuffersize, int encoder, unsi
 		if (err != AACENC_OK)
 			log(WLOG_WARN, "aacEncClose failed with %s", enc_err_str(err));
 
-		*pbuffersize = info.frameLength * info.inputChannels * sizeof(INT_PCM);
+		*pbuffersize = sizeof(INT_PCM) * info.frameLength * info.inputChannels;
 
 		HANDLE_AACDECODER aacdec = (HANDLE_AACDECODER)handle;
 
@@ -503,8 +514,8 @@ ssize_t fdk_aac_dsp_impl_decode_fill(void* handle, const void* data, size_t size
 {
 	assert(handle);
 	assert(log);
-
-	UINT leftBytes = size;
+	assert(size <= UINT_MAX);
+	UINT leftBytes = (UINT)size;
 	HANDLE_AACDECODER self = (HANDLE_AACDECODER)handle;
 
 	union
@@ -514,7 +525,7 @@ ssize_t fdk_aac_dsp_impl_decode_fill(void* handle, const void* data, size_t size
 	} cnv;
 	cnv.cpv = data;
 	UCHAR* pBuffer[] = { cnv.puc };
-	const UINT bufferSize[] = { size };
+	const UINT bufferSize[] = { leftBytes };
 
 	assert(handle);
 	assert(data || (size == 0));
@@ -554,15 +565,20 @@ ssize_t fdk_aac_dsp_impl_stream_info(void* handle, int encoder, fdk_log_fkt_t lo
 			log(WLOG_ERROR, "aacDecoder_GetStreamInfo failed");
 			return -1;
 		}
-
-		return sizeof(INT_PCM) * info->numChannels * info->frameSize;
+		log_dec_info(info, log);
+		if (info->numChannels <= 0)
+			return -1;
+		if (info->frameSize <= 0)
+			return -1;
+		const size_t rsize = sizeof(INT_PCM) * (size_t)info->numChannels * (size_t)info->frameSize;
+		return (ssize_t)rsize;
 	}
 }
 
 ssize_t fdk_aac_dsp_impl_encode(void* handle, const void* data, size_t size, void* dst,
                                 size_t dstSize, fdk_log_fkt_t log)
 {
-	INT inSizes[] = { size };
+	INT inSizes[] = { (INT)size };
 	INT inElSizes[] = { sizeof(INT_PCM) };
 	INT inIdentifiers[] = { IN_AUDIO_DATA };
 	union
@@ -581,7 +597,7 @@ ssize_t fdk_aac_dsp_impl_encode(void* handle, const void* data, size_t size, voi
 		.bufElSizes = inElSizes /* TODO: 8/16 bit input? */
 	};
 
-	INT outSizes[] = { dstSize };
+	INT outSizes[] = { (INT)dstSize };
 	INT outElSizes[] = { 1 };
 	INT outIdentifiers[] = { OUT_BITSTREAM_DATA };
 	void* outBuffers[] = { dst };
@@ -592,7 +608,7 @@ ssize_t fdk_aac_dsp_impl_encode(void* handle, const void* data, size_t size, voi
 		                                .bufElSizes = outElSizes };
 
 	const AACENC_InArgs inArgs = { .numInSamples =
-		                               size / sizeof(INT_PCM), /* TODO: 8/16 bit input? */
+		                               (INT)(size / sizeof(INT_PCM)), /* TODO: 8/16 bit input? */
 		                           .numAncBytes = 0 };
 	AACENC_OutArgs outArgs = { 0 };
 

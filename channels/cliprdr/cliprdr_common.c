@@ -32,6 +32,8 @@ static const char* CB_MSG_TYPE_STR(UINT32 type)
 {
 	switch (type)
 	{
+		case CB_TYPE_NONE:
+			return "CB_TYPE_NONE";
 		case CB_MONITOR_READY:
 			return "CB_MONITOR_READY";
 		case CB_FORMAT_LIST:
@@ -78,7 +80,7 @@ const char* CB_MSG_FLAGS_STRING(UINT16 msgFlags, char* buffer, size_t size)
 	if (!len)
 		winpr_str_append("NONE", buffer, size, "");
 
-	char val[32] = { 0 };
+	char val[32] = WINPR_C_ARRAY_INIT;
 	(void)_snprintf(val, sizeof(val), "[0x%04" PRIx16 "]", msgFlags);
 	winpr_str_append(val, buffer, size, "|");
 	return buffer;
@@ -99,7 +101,7 @@ static BOOL cliprdr_validate_file_contents_request(const CLIPRDR_FILE_CONTENTS_R
 	{
 		if (request->cbRequested != sizeof(UINT64))
 		{
-			WLog_ERR(TAG, "cbRequested must be %" PRIu32 ", got %" PRIu32 "", sizeof(UINT64),
+			WLog_ERR(TAG, "cbRequested must be %" PRIuz ", got %" PRIu32 "", sizeof(UINT64),
 			         request->cbRequested);
 			return FALSE;
 		}
@@ -114,15 +116,15 @@ static BOOL cliprdr_validate_file_contents_request(const CLIPRDR_FILE_CONTENTS_R
 	return TRUE;
 }
 
-wStream* cliprdr_packet_new(UINT16 msgType, UINT16 msgFlags, UINT32 dataLen)
+wStream* cliprdr_packet_new(UINT16 msgType, UINT16 msgFlags, size_t dataLen)
 {
-	wStream* s = NULL;
-	s = Stream_New(NULL, dataLen + 8);
+	WINPR_ASSERT(dataLen < UINT32_MAX);
+	wStream* s = Stream_New(nullptr, dataLen + 8ULL);
 
 	if (!s)
 	{
 		WLog_ERR(TAG, "Stream_New failed!");
-		return NULL;
+		return nullptr;
 	}
 
 	Stream_Write_UINT16(s, msgType);
@@ -146,7 +148,7 @@ static void cliprdr_write_file_contents_request(wStream* s,
 		Stream_Write_UINT32(s, request->clipDataId); /* clipDataId (4 bytes) */
 }
 
-static INLINE void cliprdr_write_lock_unlock_clipdata(wStream* s, UINT32 clipDataId)
+static inline void cliprdr_write_lock_unlock_clipdata(wStream* s, UINT32 clipDataId)
 {
 	Stream_Write_UINT32(s, clipDataId);
 }
@@ -172,15 +174,15 @@ static void cliprdr_write_file_contents_response(wStream* s,
 
 wStream* cliprdr_packet_lock_clipdata_new(const CLIPRDR_LOCK_CLIPBOARD_DATA* lockClipboardData)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	if (!lockClipboardData)
-		return NULL;
+		return nullptr;
 
 	s = cliprdr_packet_new(CB_LOCK_CLIPDATA, 0, 4);
 
 	if (!s)
-		return NULL;
+		return nullptr;
 
 	cliprdr_write_lock_clipdata(s, lockClipboardData);
 	return s;
@@ -189,15 +191,15 @@ wStream* cliprdr_packet_lock_clipdata_new(const CLIPRDR_LOCK_CLIPBOARD_DATA* loc
 wStream*
 cliprdr_packet_unlock_clipdata_new(const CLIPRDR_UNLOCK_CLIPBOARD_DATA* unlockClipboardData)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	if (!unlockClipboardData)
-		return NULL;
+		return nullptr;
 
 	s = cliprdr_packet_new(CB_UNLOCK_CLIPDATA, 0, 4);
 
 	if (!s)
-		return NULL;
+		return nullptr;
 
 	cliprdr_write_unlock_clipdata(s, unlockClipboardData);
 	return s;
@@ -205,15 +207,15 @@ cliprdr_packet_unlock_clipdata_new(const CLIPRDR_UNLOCK_CLIPBOARD_DATA* unlockCl
 
 wStream* cliprdr_packet_file_contents_request_new(const CLIPRDR_FILE_CONTENTS_REQUEST* request)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	if (!request)
-		return NULL;
+		return nullptr;
 
 	s = cliprdr_packet_new(CB_FILECONTENTS_REQUEST, 0, 28);
 
 	if (!s)
-		return NULL;
+		return nullptr;
 
 	cliprdr_write_file_contents_request(s, request);
 	return s;
@@ -221,16 +223,16 @@ wStream* cliprdr_packet_file_contents_request_new(const CLIPRDR_FILE_CONTENTS_RE
 
 wStream* cliprdr_packet_file_contents_response_new(const CLIPRDR_FILE_CONTENTS_RESPONSE* response)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	if (!response)
-		return NULL;
+		return nullptr;
 
 	s = cliprdr_packet_new(CB_FILECONTENTS_RESPONSE, response->common.msgFlags,
 	                       4 + response->cbRequested);
 
 	if (!s)
-		return NULL;
+		return nullptr;
 
 	cliprdr_write_file_contents_response(s, response);
 	return s;
@@ -257,7 +259,7 @@ wStream* cliprdr_packet_format_list_new(const CLIPRDR_FORMAT_LIST* formatList,
 	if (!s)
 	{
 		WLog_ERR(TAG, "cliprdr_packet_new failed!");
-		return NULL;
+		return nullptr;
 	}
 
 	for (UINT32 index = 0; index < formatList->numFormats; index++)
@@ -266,8 +268,15 @@ wStream* cliprdr_packet_format_list_new(const CLIPRDR_FORMAT_LIST* formatList,
 
 		const char* szFormatName = format->formatName;
 		size_t formatNameLength = 0;
+		size_t formatNameStrLength = 0;
 		if (szFormatName)
-			formatNameLength = strlen(szFormatName);
+		{
+			formatNameStrLength = strlen(szFormatName);
+			const SSIZE_T wlen = ConvertUtf8ToWChar(szFormatName, nullptr, 0);
+			if (wlen < 0)
+				goto fail;
+			formatNameLength = WINPR_ASSERTING_INT_CAST(size_t, wlen);
+		}
 
 		size_t formatNameMaxLength = formatNameLength + 1; /* Ensure '\0' termination in output */
 		if (!Stream_EnsureRemainingCapacity(s,
@@ -291,8 +300,10 @@ wStream* cliprdr_packet_format_list_new(const CLIPRDR_FORMAT_LIST* formatList,
 			}
 			else
 			{
+				const size_t formatNameWriteLength =
+				    MIN(formatNameStrLength, formatNameMaxLength - 1);
 				if (Stream_Write_UTF16_String_From_UTF8(s, formatNameMaxLength, szFormatName,
-				                                        formatNameLength, TRUE) < 0)
+				                                        formatNameWriteLength, TRUE) < 0)
 					goto fail;
 			}
 		}
@@ -304,7 +315,7 @@ wStream* cliprdr_packet_format_list_new(const CLIPRDR_FORMAT_LIST* formatList,
 
 fail:
 	Stream_Free(s, TRUE);
-	return NULL;
+	return nullptr;
 }
 
 UINT cliprdr_read_unlock_clipdata(wStream* s, CLIPRDR_UNLOCK_CLIPBOARD_DATA* unlockClipboardData)
@@ -327,14 +338,17 @@ UINT cliprdr_read_format_data_request(wStream* s, CLIPRDR_FORMAT_DATA_REQUEST* r
 
 UINT cliprdr_read_format_data_response(wStream* s, CLIPRDR_FORMAT_DATA_RESPONSE* response)
 {
-	response->requestedFormatData = NULL;
+	response->requestedFormatData = nullptr;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, response->common.dataLen))
 		return ERROR_INVALID_DATA;
 
-	if (response->common.dataLen)
+	if (response->common.dataLen > 0)
+	{
 		response->requestedFormatData = Stream_ConstPointer(s);
-
+		if (!Stream_SafeSeek(s, response->common.dataLen))
+			return ERROR_INVALID_DATA;
+	}
 	return CHANNEL_RC_OK;
 }
 
@@ -371,26 +385,35 @@ UINT cliprdr_read_file_contents_response(wStream* s, CLIPRDR_FILE_CONTENTS_RESPO
 	Stream_Read_UINT32(s, response->streamId);   /* streamId (4 bytes) */
 	response->requestedData = Stream_ConstPointer(s); /* requestedFileContentsData */
 
-	WINPR_ASSERT(response->common.dataLen >= 4);
+	if (response->common.dataLen < 4)
+	{
+		WLog_WARN(TAG, "dataLen=%" PRIu32 " but expected >= 4", response->common.dataLen);
+		return ERROR_INVALID_DATA;
+	}
+
 	response->cbRequested = response->common.dataLen - 4;
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, response->cbRequested))
+		return ERROR_INVALID_DATA;
+	Stream_Seek(s, response->cbRequested);
 	return CHANNEL_RC_OK;
 }
 
-UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL useLongFormatNames)
+UINT cliprdr_read_format_list(wLog* log, wStream* s, CLIPRDR_FORMAT_LIST* formatList,
+                              BOOL useLongFormatNames)
 {
 	UINT32 index = 0;
 	size_t formatNameLength = 0;
-	const char* szFormatName = NULL;
-	const WCHAR* wszFormatName = NULL;
-	wStream sub1buffer = { 0 };
-	CLIPRDR_FORMAT* formats = NULL;
+	const char* szFormatName = nullptr;
+	const WCHAR* wszFormatName = nullptr;
+	wStream sub1buffer = WINPR_C_ARRAY_INIT;
+	CLIPRDR_FORMAT* formats = nullptr;
 	UINT error = ERROR_INTERNAL_ERROR;
 
-	const BOOL asciiNames = (formatList->common.msgFlags & CB_ASCII_NAMES) ? TRUE : FALSE;
+	const BOOL asciiNames = (formatList->common.msgFlags & CB_ASCII_NAMES) != 0;
 
 	index = 0;
 	/* empty format list */
-	formatList->formats = NULL;
+	formatList->formats = nullptr;
 	formatList->numFormats = 0;
 
 	wStream* sub1 =
@@ -406,7 +429,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 		const size_t cap = Stream_Capacity(sub1) / 36ULL;
 		if (cap > UINT32_MAX)
 		{
-			WLog_ERR(TAG, "Invalid short format list length: %" PRIuz "", cap);
+			WLog_Print(log, WLOG_ERROR, "Invalid short format list length: %" PRIuz "", cap);
 			return ERROR_INTERNAL_ERROR;
 		}
 		formatList->numFormats = (UINT32)cap;
@@ -416,7 +439,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 
 		if (!formats)
 		{
-			WLog_ERR(TAG, "calloc failed!");
+			WLog_Print(log, WLOG_ERROR, "calloc failed!");
 			return CHANNEL_RC_NO_MEMORY;
 		}
 
@@ -424,6 +447,9 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 
 		while (Stream_GetRemainingLength(sub1) >= 4)
 		{
+			if (index >= formatList->numFormats)
+				goto error_out;
+
 			CLIPRDR_FORMAT* format = &formats[index];
 
 			Stream_Read_UINT32(sub1, format->formatId); /* formatId (4 bytes) */
@@ -433,7 +459,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 			 * or 16 Unicode characters)"
 			 * However, both Windows RDSH and mstsc violate this specs as seen in the following
 			 * example of a transferred short format name string: [R.i.c.h. .T.e.x.t. .F.o.r.m.a.t.]
-			 * These are 16 unicode charaters - *without* terminating null !
+			 * These are 16 unicode characters - *without* terminating null !
 			 */
 
 			szFormatName = Stream_ConstPointer(sub1);
@@ -442,7 +468,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 				goto error_out;
 
 			free(format->formatName);
-			format->formatName = NULL;
+			format->formatName = nullptr;
 
 			if (asciiNames)
 			{
@@ -452,7 +478,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 					format->formatName = strndup(szFormatName, 31);
 					if (!format->formatName)
 					{
-						WLog_ERR(TAG, "malloc failed!");
+						WLog_Print(log, WLOG_ERROR, "malloc failed!");
 						error = CHANNEL_RC_NO_MEMORY;
 						goto error_out;
 					}
@@ -462,7 +488,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 			{
 				if (wszFormatName[0])
 				{
-					format->formatName = ConvertWCharNToUtf8Alloc(wszFormatName, 16, NULL);
+					format->formatName = ConvertWCharNToUtf8Alloc(wszFormatName, 16, nullptr);
 					if (!format->formatName)
 						goto error_out;
 				}
@@ -476,7 +502,9 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 		wStream sub2buffer = sub1buffer;
 		wStream* sub2 = &sub2buffer;
 
-		while (Stream_GetRemainingLength(sub1) > 0)
+		/* Bound must match the read pass below: some clients pad the format list with
+		 * trailing bytes that do not start another entry. */
+		while (Stream_GetRemainingLength(sub1) >= 4)
 		{
 			size_t rest = 0;
 			if (!Stream_SafeSeek(sub1, 4)) /* formatId (4 bytes) */
@@ -496,7 +524,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 
 		if (!formats)
 		{
-			WLog_ERR(TAG, "calloc failed!");
+			WLog_Print(log, WLOG_ERROR, "calloc failed!");
 			return CHANNEL_RC_NO_MEMORY;
 		}
 
@@ -504,13 +532,16 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 
 		while (Stream_GetRemainingLength(sub2) >= 4)
 		{
+			if (index >= formatList->numFormats)
+				goto error_out;
+
 			size_t rest = 0;
 			CLIPRDR_FORMAT* format = &formats[index];
 
 			Stream_Read_UINT32(sub2, format->formatId); /* formatId (4 bytes) */
 
 			free(format->formatName);
-			format->formatName = NULL;
+			format->formatName = nullptr;
 
 			wszFormatName = Stream_ConstPointer(sub2);
 			rest = Stream_GetRemainingLength(sub2);
@@ -521,7 +552,7 @@ UINT cliprdr_read_format_list(wStream* s, CLIPRDR_FORMAT_LIST* formatList, BOOL 
 			if (formatNameLength)
 			{
 				format->formatName =
-				    ConvertWCharNToUtf8Alloc(wszFormatName, formatNameLength, NULL);
+				    ConvertWCharNToUtf8Alloc(wszFormatName, formatNameLength, nullptr);
 				if (!format->formatName)
 					goto error_out;
 			}
@@ -539,7 +570,7 @@ error_out:
 
 void cliprdr_free_format_list(CLIPRDR_FORMAT_LIST* formatList)
 {
-	if (formatList == NULL)
+	if (formatList == nullptr)
 		return;
 
 	if (formatList->formats)
@@ -550,7 +581,7 @@ void cliprdr_free_format_list(CLIPRDR_FORMAT_LIST* formatList)
 		}
 
 		free(formatList->formats);
-		formatList->formats = NULL;
+		formatList->formats = nullptr;
 		formatList->numFormats = 0;
 	}
 }

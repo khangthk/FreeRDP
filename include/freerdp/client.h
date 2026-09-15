@@ -3,6 +3,7 @@
  * Client Interface
  *
  * Copyright 2013 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2025 Siemens
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +22,7 @@
 #define FREERDP_CLIENT_H
 
 #include <winpr/cmdline.h>
+#include <freerdp/client/cmdline.h>
 
 #include <freerdp/config.h>
 #include <freerdp/api.h>
@@ -39,6 +41,11 @@
 #if defined(CHANNEL_ENCOMSP_CLIENT)
 #include <freerdp/client/encomsp.h>
 #endif
+
+/** @brief Opaqye handle for AAD wrapper
+ * @since version 3.16.0
+ */
+typedef struct MIBClientWrapper MIBClientWrapper;
 
 #ifdef __cplusplus
 extern "C"
@@ -65,14 +72,14 @@ extern "C"
 
 		rdpSettings* settings;
 
-		pRdpGlobalInit GlobalInit;
+		WINPR_ATTR_NODISCARD pRdpGlobalInit GlobalInit;
 		pRdpGlobalUninit GlobalUninit;
 
 		DWORD ContextSize;
-		pRdpClientNew ClientNew;
+		WINPR_ATTR_NODISCARD pRdpClientNew ClientNew;
 		pRdpClientFree ClientFree;
 
-		pRdpClientStart ClientStart;
+		WINPR_ATTR_NODISCARD pRdpClientStart ClientStart;
 		pRdpClientStop ClientStop;
 	};
 
@@ -135,7 +142,10 @@ extern "C"
 #endif
 		ALIGN64 FreeRDP_TouchContact contacts[FREERDP_MAX_TOUCH_CONTACTS]; /**< (offset 8) */
 		ALIGN64 FreeRDP_PenDevice pens[FREERDP_MAX_PEN_DEVICES];           /**< (offset 9) */
-		UINT64 reserved[128 - 9];                                          /**< (offset 9) */
+
+		ALIGN64 MIBClientWrapper* mibClientWrapper; /**< (offset 10) @since version 3.16.0 */
+		ALIGN64 BOOL pressed_buttons[5];            /**< (offset 11) @since version 3.17.0 */
+		UINT64 reserved[129 - 16];                  /**< (offset 16) */
 	};
 
 	/* Common client functions */
@@ -143,14 +153,21 @@ extern "C"
 	FREERDP_API void freerdp_client_context_free(rdpContext* context);
 
 	WINPR_ATTR_MALLOC(freerdp_client_context_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API rdpContext* freerdp_client_context_new(const RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_start(rdpContext* context);
+
 	FREERDP_API int freerdp_client_stop(rdpContext* context);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API freerdp* freerdp_client_get_instance(rdpContext* context);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API HANDLE freerdp_client_get_thread(rdpContext* context);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_settings_parse_command_line(rdpSettings* settings, int argc,
 	                                                           char** argv, BOOL allowUnknown);
 
@@ -167,39 +184,65 @@ extern "C"
 	 * @return >=0 for success, <0 in case of parsing failures
 	 * @since version 3.9.0
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_settings_parse_command_line_ex(
 	    rdpSettings* settings, int argc, char** argv, BOOL allowUnknown,
 	    COMMAND_LINE_ARGUMENT_A* args, size_t count,
-	    int (*handle_option)(const COMMAND_LINE_ARGUMENT_A* arg, void* custom),
-	    void* handle_userdata);
+	    freerdp_command_line_handle_option_t handle_option, void* handle_userdata);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_settings_parse_connection_file(rdpSettings* settings,
 	                                                              const char* filename);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_settings_parse_connection_file_buffer(rdpSettings* settings,
 	                                                                     const BYTE* buffer,
 	                                                                     size_t size);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_settings_write_connection_file(const rdpSettings* settings,
 	                                                              const char* filename,
 	                                                              BOOL unicode);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_settings_parse_assistance_file(rdpSettings* settings, int argc,
 	                                                              char* argv[]);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_cli_authenticate_ex(freerdp* instance, char** username, char** password,
 	                                            char** domain, rdp_auth_reason reason);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_cli_choose_smartcard(freerdp* instance, SmartcardCertInfo** cert_list,
 	                                             DWORD count, DWORD* choice, BOOL gateway);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int client_cli_logon_error_info(freerdp* instance, UINT32 data, UINT32 type);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_cli_get_access_token(freerdp* instance, AccessTokenType tokenType,
 	                                             char** token, size_t count, ...);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_common_get_access_token(freerdp* instance, const char* request,
 	                                                char** token);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API SSIZE_T client_common_retry_dialog(freerdp* instance, const char* what,
 	                                               size_t current, void* userarg);
+
+	/** @brief Handle SaveSessionInfo data
+	 *
+	 *  @param context The RDP context to operate on
+	 *  @param type The type of session info received, see \ref RDP_LOGON_INFO_TYPE
+	 *  @param data Additional type specific data. See \ref logon_info and \ref logon_info_ex
+	 *
+	 *  @return TRUE for success, FALSE otherwise
+	 *  @since version 3.31.0
+	 */
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BOOL client_common_save_session_info(rdpContext* context, UINT32 type,
+	                                                 const void* data);
 
 	FREERDP_API void
 	freerdp_client_OnChannelConnectedEventHandler(void* context,
@@ -209,47 +252,50 @@ extern "C"
 	                                                 const ChannelDisconnectedEventArgs* e);
 
 #if defined(WITH_FREERDP_DEPRECATED)
-	FREERDP_API WINPR_DEPRECATED_VAR("Use client_cli_authenticate_ex",
-	                                 BOOL client_cli_authenticate(freerdp* instance,
-	                                                              char** username, char** password,
-	                                                              char** domain));
-	FREERDP_API
 	WINPR_DEPRECATED_VAR("Use client_cli_authenticate_ex",
-	                     BOOL client_cli_gw_authenticate(freerdp* instance, char** username,
-	                                                     char** password, char** domain));
+	                     WINPR_ATTR_NODISCARD FREERDP_API BOOL client_cli_authenticate(
+	                         freerdp* instance, char** username, char** password, char** domain));
+	WINPR_DEPRECATED_VAR("Use client_cli_authenticate_ex",
+	                     WINPR_ATTR_NODISCARD FREERDP_API BOOL client_cli_gw_authenticate(
+	                         freerdp* instance, char** username, char** password, char** domain));
 
-	FREERDP_API WINPR_DEPRECATED_VAR(
-	    "Use client_cli_verify_certificate_ex",
-	    DWORD client_cli_verify_certificate(freerdp* instance, const char* common_name,
-	                                        const char* subject, const char* issuer,
-	                                        const char* fingerprint, BOOL host_mismatch));
+	WINPR_DEPRECATED_VAR("Use client_cli_verify_certificate_ex",
+	                     WINPR_ATTR_NODISCARD FREERDP_API DWORD client_cli_verify_certificate(
+	                         freerdp* instance, const char* common_name, const char* subject,
+	                         const char* issuer, const char* fingerprint, BOOL host_mismatch));
 #endif
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API DWORD client_cli_verify_certificate_ex(freerdp* instance, const char* host,
 	                                                   UINT16 port, const char* common_name,
 	                                                   const char* subject, const char* issuer,
 	                                                   const char* fingerprint, DWORD flags);
 
 #if defined(WITH_FREERDP_DEPRECATED)
-	FREERDP_API WINPR_DEPRECATED_VAR("Use client_cli_verify_changed_certificate_ex",
-	                                 DWORD client_cli_verify_changed_certificate(
-	                                     freerdp* instance, const char* common_name,
-	                                     const char* subject, const char* issuer,
-	                                     const char* fingerprint, const char* old_subject,
-	                                     const char* old_issuer, const char* old_fingerprint));
+	WINPR_DEPRECATED_VAR(
+	    "Use client_cli_verify_changed_certificate_ex",
+	    WINPR_ATTR_NODISCARD FREERDP_API DWORD client_cli_verify_changed_certificate(
+	        freerdp* instance, const char* common_name, const char* subject, const char* issuer,
+	        const char* fingerprint, const char* old_subject, const char* old_issuer,
+	        const char* old_fingerprint));
 #endif
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API DWORD client_cli_verify_changed_certificate_ex(
 	    freerdp* instance, const char* host, UINT16 port, const char* common_name,
 	    const char* subject, const char* issuer, const char* fingerprint, const char* old_subject,
 	    const char* old_issuer, const char* old_fingerprint, DWORD flags);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_cli_present_gateway_message(freerdp* instance, UINT32 type,
 	                                                    BOOL isDisplayMandatory,
 	                                                    BOOL isConsentMandatory, size_t length,
 	                                                    const WCHAR* message);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_auto_reconnect(freerdp* instance);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL client_auto_reconnect_ex(freerdp* instance,
 	                                          BOOL (*window_events)(freerdp* instance));
 
@@ -258,6 +304,7 @@ extern "C"
 		FREERDP_TOUCH_DOWN = 0x01,
 		FREERDP_TOUCH_UP = 0x02,
 		FREERDP_TOUCH_MOTION = 0x04,
+		FREERDP_TOUCH_CANCEL = 0x08, /** @since version 3.22.0 */
 		FREERDP_TOUCH_HAS_PRESSURE = 0x100
 	} FreeRDPTouchEventType;
 
@@ -281,14 +328,12 @@ extern "C"
 
 	FREERDP_API BOOL freerdp_client_handle_pen(rdpClientContext* cctx, UINT32 flags, INT32 deviceid,
 	                                           ...);
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_client_is_pen(rdpClientContext* cctx, INT32 deviceid);
 
 	FREERDP_API BOOL freerdp_client_pen_cancel_all(rdpClientContext* cctx);
 
 	FREERDP_API BOOL freerdp_client_send_wheel_event(rdpClientContext* cctx, UINT16 mflags);
-
-	FREERDP_API BOOL freerdp_client_send_mouse_event(rdpClientContext* cctx, UINT64 mflags, INT32 x,
-	                                                 INT32 y);
 
 	/** @brief this function checks if relative mouse events are supported and enabled for this
 	 * session.
@@ -297,6 +342,7 @@ extern "C"
 	 *
 	 *  @return \b TRUE if relative mouse events are to be sent, \b FALSE otherwise
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_client_use_relative_mouse_events(rdpClientContext* cctx);
 
 	FREERDP_API BOOL freerdp_client_send_button_event(rdpClientContext* cctx, BOOL relative,
@@ -306,15 +352,41 @@ extern "C"
 	                                                           BOOL relative, UINT16 mflags,
 	                                                           INT32 x, INT32 y);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_client_common_stop(rdpContext* context);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_client_load_channels(freerdp* instance);
 
 #if defined(CHANNEL_ENCOMSP_CLIENT)
 	FREERDP_API BOOL freerdp_client_encomsp_toggle_control(EncomspClientContext* encomsp);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_client_encomsp_set_control(EncomspClientContext* encomsp,
 	                                                    BOOL control);
 #endif
+
+	/** @brief type of AAD request
+	 * @since version 3.16.0
+	 */
+	typedef enum
+	{
+		FREERDP_CLIENT_AAD_AUTH_REQUEST,
+		FREERDP_CLIENT_AAD_TOKEN_REQUEST,
+		FREERDP_CLIENT_AAD_AVD_AUTH_REQUEST,
+		FREERDP_CLIENT_AAD_AVD_TOKEN_REQUEST,
+	} freerdp_client_aad_type;
+
+	/** @brief helper function to construct a connection URL for AAD authentication
+	 *
+	 *  @param cctx The client context to use
+	 *  @return An allocated string that can be used to connect
+	 *  @since version 3.16.0
+	 */
+	WINPR_ATTR_MALLOC(free, 1)
+	WINPR_ATTR_NODISCARD
+	FREERDP_API char* freerdp_client_get_aad_url(rdpClientContext* cctx,
+	                                             freerdp_client_aad_type type, ...);
 
 #ifdef __cplusplus
 }

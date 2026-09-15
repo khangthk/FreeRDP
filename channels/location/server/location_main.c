@@ -17,6 +17,8 @@
  * limitations under the License.
  */
 
+#include <math.h>
+
 #include <freerdp/config.h>
 
 #include <freerdp/freerdp.h>
@@ -75,9 +77,9 @@ static UINT location_server_open_channel(location_server* location)
 {
 	LocationServerContext* context = &location->context;
 	DWORD Error = ERROR_SUCCESS;
-	HANDLE hEvent = NULL;
+	HANDLE hEvent = nullptr;
 	DWORD BytesReturned = 0;
-	PULONG pSessionId = NULL;
+	PULONG pSessionId = nullptr;
 	UINT32 channelId = 0;
 	BOOL status = TRUE;
 
@@ -125,19 +127,38 @@ static UINT location_server_open_channel(location_server* location)
 static UINT location_server_recv_client_ready(LocationServerContext* context, wStream* s,
                                               const RDPLOCATION_HEADER* header)
 {
-	RDPLOCATION_CLIENT_READY_PDU pdu = { 0 };
 	UINT error = CHANNEL_RC_OK;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	pdu.header = *header;
+	RDPLOCATION_CLIENT_READY_PDU pdu = { .header = *header,
+		                                 .protocolVersion = RDPLOCATION_PROTOCOL_VERSION_100,
+		                                 .flags = 0 };
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return ERROR_NO_DATA;
 
-	Stream_Read_UINT32(s, pdu.protocolVersion);
+	{
+		const UINT32 version = Stream_Get_UINT32(s);
+		switch (version)
+		{
+			case RDPLOCATION_PROTOCOL_VERSION_100:
+				pdu.protocolVersion = RDPLOCATION_PROTOCOL_VERSION_100;
+				break;
+			case RDPLOCATION_PROTOCOL_VERSION_200:
+				pdu.protocolVersion = RDPLOCATION_PROTOCOL_VERSION_200;
+				break;
+			default:
+				pdu.protocolVersion = RDPLOCATION_PROTOCOL_VERSION_200;
+				WLog_WARN(TAG,
+				          "Received unsupported protocol version %" PRIu32
+				          ", setting to highest supported %u",
+				          version, pdu.protocolVersion);
+				break;
+		}
+	}
 
 	if (Stream_GetRemainingLength(s) >= 4)
 		Stream_Read_UINT32(s, pdu.flags);
@@ -152,18 +173,24 @@ static UINT location_server_recv_client_ready(LocationServerContext* context, wS
 static UINT location_server_recv_base_location3d(LocationServerContext* context, wStream* s,
                                                  const RDPLOCATION_HEADER* header)
 {
-	RDPLOCATION_BASE_LOCATION3D_PDU pdu = { 0 };
 	UINT error = CHANNEL_RC_OK;
 	double speed = 0.0;
 	double heading = 0.0;
 	double horizontalAccuracy = 0.0;
-	LOCATIONSOURCE source = 0;
+	LOCATIONSOURCE source = LOCATIONSOURCE_IP;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	pdu.header = *header;
+	RDPLOCATION_BASE_LOCATION3D_PDU pdu = { .header = *header,
+		                                    .latitude = FP_NAN,
+		                                    .longitude = FP_NAN,
+		                                    .altitude = 0,
+		                                    .speed = nullptr,
+		                                    .heading = nullptr,
+		                                    .horizontalAccuracy = nullptr,
+		                                    .source = nullptr };
 
 	if (!freerdp_read_four_byte_float(s, &pdu.latitude) ||
 	    !freerdp_read_four_byte_float(s, &pdu.longitude) ||
@@ -178,7 +205,21 @@ static UINT location_server_recv_base_location3d(LocationServerContext* context,
 		    !Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
-		Stream_Read_UINT8(s, source);
+		{
+			const UINT8 src = Stream_Get_UINT8(s);
+			switch (src)
+			{
+				case LOCATIONSOURCE_IP:
+				case LOCATIONSOURCE_WIFI:
+				case LOCATIONSOURCE_CELL:
+				case LOCATIONSOURCE_GNSS:
+					break;
+				default:
+					WLog_ERR(TAG, "Invalid LOCATIONSOURCE value %" PRIu8 "", src);
+					return FALSE;
+			}
+			source = (LOCATIONSOURCE)src;
+		}
 
 		pdu.speed = &speed;
 		pdu.heading = &heading;
@@ -196,7 +237,6 @@ static UINT location_server_recv_base_location3d(LocationServerContext* context,
 static UINT location_server_recv_location2d_delta(LocationServerContext* context, wStream* s,
                                                   const RDPLOCATION_HEADER* header)
 {
-	RDPLOCATION_LOCATION2D_DELTA_PDU pdu = { 0 };
 	UINT error = CHANNEL_RC_OK;
 	double speedDelta = 0.0;
 	double headingDelta = 0.0;
@@ -205,7 +245,11 @@ static UINT location_server_recv_location2d_delta(LocationServerContext* context
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	pdu.header = *header;
+	RDPLOCATION_LOCATION2D_DELTA_PDU pdu = { .header = *header,
+		                                     .latitudeDelta = FP_NAN,
+		                                     .longitudeDelta = FP_NAN,
+		                                     .speedDelta = nullptr,
+		                                     .headingDelta = nullptr };
 
 	if (!freerdp_read_four_byte_float(s, &pdu.latitudeDelta) ||
 	    !freerdp_read_four_byte_float(s, &pdu.longitudeDelta))
@@ -231,7 +275,6 @@ static UINT location_server_recv_location2d_delta(LocationServerContext* context
 static UINT location_server_recv_location3d_delta(LocationServerContext* context, wStream* s,
                                                   const RDPLOCATION_HEADER* header)
 {
-	RDPLOCATION_LOCATION3D_DELTA_PDU pdu = { 0 };
 	UINT error = CHANNEL_RC_OK;
 	double speedDelta = 0.0;
 	double headingDelta = 0.0;
@@ -240,7 +283,11 @@ static UINT location_server_recv_location3d_delta(LocationServerContext* context
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	pdu.header = *header;
+	RDPLOCATION_LOCATION3D_DELTA_PDU pdu = { .header = *header,
+		                                     .latitudeDelta = FP_NAN,
+		                                     .longitudeDelta = FP_NAN,
+		                                     .speedDelta = nullptr,
+		                                     .headingDelta = nullptr };
 
 	if (!freerdp_read_four_byte_float(s, &pdu.latitudeDelta) ||
 	    !freerdp_read_four_byte_float(s, &pdu.longitudeDelta) ||
@@ -266,20 +313,18 @@ static UINT location_server_recv_location3d_delta(LocationServerContext* context
 
 static UINT location_process_message(location_server* location)
 {
-	BOOL rc = 0;
 	UINT error = ERROR_INTERNAL_ERROR;
 	ULONG BytesReturned = 0;
-	RDPLOCATION_HEADER header = { 0 };
-	wStream* s = NULL;
 
 	WINPR_ASSERT(location);
 	WINPR_ASSERT(location->location_channel);
 
-	s = location->buffer;
+	wStream* s = location->buffer;
 	WINPR_ASSERT(s);
 
-	Stream_SetPosition(s, 0);
-	rc = WTSVirtualChannelRead(location->location_channel, 0, NULL, 0, &BytesReturned);
+	Stream_ResetPosition(s);
+	const BOOL rc =
+	    WTSVirtualChannelRead(location->location_channel, 0, nullptr, 0, &BytesReturned);
 	if (!rc)
 		goto out;
 
@@ -303,31 +348,36 @@ static UINT location_process_message(location_server* location)
 		goto out;
 	}
 
-	Stream_SetLength(s, BytesReturned);
+	if (!Stream_SetLength(s, BytesReturned))
+		goto out;
+
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, LOCATION_HEADER_SIZE))
 		return ERROR_NO_DATA;
 
-	Stream_Read_UINT16(s, header.pduType);
-	Stream_Read_UINT32(s, header.pduLength);
-
-	switch (header.pduType)
 	{
-		case PDUTYPE_CLIENT_READY:
-			error = location_server_recv_client_ready(&location->context, s, &header);
-			break;
-		case PDUTYPE_BASE_LOCATION3D:
-			error = location_server_recv_base_location3d(&location->context, s, &header);
-			break;
-		case PDUTYPE_LOCATION2D_DELTA:
-			error = location_server_recv_location2d_delta(&location->context, s, &header);
-			break;
-		case PDUTYPE_LOCATION3D_DELTA:
-			error = location_server_recv_location3d_delta(&location->context, s, &header);
-			break;
-		default:
-			WLog_ERR(TAG, "location_process_message: unknown or invalid pduType %" PRIu8 "",
-			         header.pduType);
-			break;
+		const UINT16 pduType = Stream_Get_UINT16(s);
+		const RDPLOCATION_HEADER header = { .pduType = (LOCATION_PDUTYPE)pduType,
+			                                .pduLength = Stream_Get_UINT32(s) };
+
+		switch (pduType)
+		{
+			case PDUTYPE_CLIENT_READY:
+				error = location_server_recv_client_ready(&location->context, s, &header);
+				break;
+			case PDUTYPE_BASE_LOCATION3D:
+				error = location_server_recv_base_location3d(&location->context, s, &header);
+				break;
+			case PDUTYPE_LOCATION2D_DELTA:
+				error = location_server_recv_location2d_delta(&location->context, s, &header);
+				break;
+			case PDUTYPE_LOCATION3D_DELTA:
+				error = location_server_recv_location3d_delta(&location->context, s, &header);
+				break;
+			default:
+				WLog_ERR(TAG, "location_process_message: unknown or invalid pduType %" PRIu16 "",
+				         pduType);
+				break;
+		}
 	}
 
 out:
@@ -356,6 +406,8 @@ static UINT location_server_context_poll_int(LocationServerContext* context)
 		case LOCATION_OPENED:
 			error = location_process_message(location);
 			break;
+		default:
+			break;
 	}
 
 	return error;
@@ -363,9 +415,9 @@ static UINT location_server_context_poll_int(LocationServerContext* context)
 
 static HANDLE location_server_get_channel_handle(location_server* location)
 {
-	void* buffer = NULL;
+	void* buffer = nullptr;
 	DWORD BytesReturned = 0;
-	HANDLE ChannelEvent = NULL;
+	HANDLE ChannelEvent = nullptr;
 
 	WINPR_ASSERT(location);
 
@@ -373,7 +425,7 @@ static HANDLE location_server_get_channel_handle(location_server* location)
 	                           &BytesReturned) == TRUE)
 	{
 		if (BytesReturned == sizeof(HANDLE))
-			CopyMemory(&ChannelEvent, buffer, sizeof(HANDLE));
+			ChannelEvent = *(HANDLE*)buffer;
 
 		WTSFreeMemory(buffer);
 	}
@@ -384,7 +436,7 @@ static HANDLE location_server_get_channel_handle(location_server* location)
 static DWORD WINAPI location_server_thread_func(LPVOID arg)
 {
 	DWORD nCount = 0;
-	HANDLE events[2] = { 0 };
+	HANDLE events[2] = WINPR_C_ARRAY_INIT;
 	location_server* location = (location_server*)arg;
 	UINT error = CHANNEL_RC_OK;
 	DWORD status = 0;
@@ -423,11 +475,13 @@ static DWORD WINAPI location_server_thread_func(LPVOID arg)
 						break;
 				}
 				break;
+			default:
+				break;
 		}
 	}
 
 	(void)WTSVirtualChannelClose(location->location_channel);
-	location->location_channel = NULL;
+	location->location_channel = nullptr;
 
 	if (error && location->context.rdpcontext)
 		setChannelError(location->context.rdpcontext, error,
@@ -443,21 +497,22 @@ static UINT location_server_open(LocationServerContext* context)
 
 	WINPR_ASSERT(location);
 
-	if (!location->externalThread && (location->thread == NULL))
+	if (!location->externalThread && (location->thread == nullptr))
 	{
-		location->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+		location->stopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 		if (!location->stopEvent)
 		{
 			WLog_ERR(TAG, "CreateEvent failed!");
 			return ERROR_INTERNAL_ERROR;
 		}
 
-		location->thread = CreateThread(NULL, 0, location_server_thread_func, location, 0, NULL);
+		location->thread =
+		    CreateThread(nullptr, 0, location_server_thread_func, location, 0, nullptr);
 		if (!location->thread)
 		{
 			WLog_ERR(TAG, "CreateThread failed!");
 			(void)CloseHandle(location->stopEvent);
-			location->stopEvent = NULL;
+			location->stopEvent = nullptr;
 			return ERROR_INTERNAL_ERROR;
 		}
 	}
@@ -486,15 +541,15 @@ static UINT location_server_close(LocationServerContext* context)
 
 		(void)CloseHandle(location->thread);
 		(void)CloseHandle(location->stopEvent);
-		location->thread = NULL;
-		location->stopEvent = NULL;
+		location->thread = nullptr;
+		location->stopEvent = nullptr;
 	}
 	if (location->externalThread)
 	{
 		if (location->state != LOCATION_INITIAL)
 		{
 			(void)WTSVirtualChannelClose(location->location_channel);
-			location->location_channel = NULL;
+			location->location_channel = nullptr;
 			location->state = LOCATION_INITIAL;
 		}
 	}
@@ -542,8 +597,7 @@ static UINT location_server_packet_send(LocationServerContext* context, wStream*
 	WINPR_ASSERT(s);
 
 	const size_t pos = Stream_GetPosition(s);
-	if (pos > UINT32_MAX)
-		return ERROR_OUTOFMEMORY;
+	WINPR_ASSERT(pos <= UINT32_MAX);
 	if (!WTSVirtualChannelWrite(location->location_channel, Stream_BufferAs(s, char), (ULONG)pos,
 	                            &written))
 	{
@@ -566,7 +620,7 @@ out:
 static UINT location_server_send_server_ready(LocationServerContext* context,
                                               const RDPLOCATION_SERVER_READY_PDU* serverReady)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT32 pduLength = 0;
 	UINT32 protocolVersion = 0;
 
@@ -577,7 +631,7 @@ static UINT location_server_send_server_ready(LocationServerContext* context,
 
 	pduLength = LOCATION_HEADER_SIZE + 4 + 4;
 
-	s = Stream_New(NULL, pduLength);
+	s = Stream_New(nullptr, pduLength);
 	if (!s)
 	{
 		WLog_ERR(TAG, "Stream_New failed!");
@@ -599,7 +653,7 @@ LocationServerContext* location_server_context_new(HANDLE vcm)
 	location_server* location = (location_server*)calloc(1, sizeof(location_server));
 
 	if (!location)
-		return NULL;
+		return nullptr;
 
 	location->context.vcm = vcm;
 	location->context.Initialize = location_server_initialize;
@@ -610,7 +664,7 @@ LocationServerContext* location_server_context_new(HANDLE vcm)
 
 	location->context.ServerReady = location_server_send_server_ready;
 
-	location->buffer = Stream_New(NULL, 4096);
+	location->buffer = Stream_New(nullptr, 4096);
 	if (!location->buffer)
 		goto fail;
 
@@ -620,7 +674,7 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	location_server_context_free(&location->context);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void location_server_context_free(LocationServerContext* context)

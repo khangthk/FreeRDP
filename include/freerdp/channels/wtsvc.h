@@ -59,16 +59,28 @@ extern "C"
 	 * WTSVirtualChannelManager functions are FreeRDP extensions to the API.
 	 */
 #if defined(WITH_FREERDP_DEPRECATED)
-	FREERDP_API WINPR_DEPRECATED_VAR(
-	    "Use WTSVirtualChannelManagerGetEventHandle",
-	    void WTSVirtualChannelManagerGetFileDescriptor(HANDLE hServer, void** fds, int* fds_count));
+	WINPR_DEPRECATED_VAR("Use WTSVirtualChannelManagerGetEventHandle",
+	                     FREERDP_API void WTSVirtualChannelManagerGetFileDescriptor(
+	                         HANDLE hServer, void** fds, int* fds_count));
 #endif
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL WTSVirtualChannelManagerOpen(HANDLE hServer);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL WTSVirtualChannelManagerCheckFileDescriptor(HANDLE hServer);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL WTSVirtualChannelManagerCheckFileDescriptorEx(HANDLE hServer, BOOL autoOpen);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API HANDLE WTSVirtualChannelManagerGetEventHandle(HANDLE hServer);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL WTSVirtualChannelManagerIsChannelJoined(HANDLE hServer, const char* name);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BYTE WTSVirtualChannelManagerGetDrdynvcState(HANDLE hServer);
+
 	FREERDP_API void WTSVirtualChannelManagerSetDVCCreationCallback(HANDLE hServer,
 	                                                                psDVCCreationStatusCallback cb,
 	                                                                void* userdata);
@@ -76,19 +88,38 @@ extern "C"
 	/**
 	 * Extended FreeRDP WTS functions for channel handling
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API UINT16 WTSChannelGetId(freerdp_peer* client, const char* channel_name);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL WTSIsChannelJoinedByName(freerdp_peer* client, const char* channel_name);
-	FREERDP_API BOOL WTSIsChannelJoinedById(freerdp_peer* client, const UINT16 channel_id);
+
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BOOL WTSIsChannelJoinedById(freerdp_peer* client, UINT16 channel_id);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL WTSChannelSetHandleByName(freerdp_peer* client, const char* channel_name,
 	                                           void* handle);
-	FREERDP_API BOOL WTSChannelSetHandleById(freerdp_peer* client, const UINT16 channel_id,
-	                                         void* handle);
+
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BOOL WTSChannelSetHandleById(freerdp_peer* client, UINT16 channel_id, void* handle);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API void* WTSChannelGetHandleByName(freerdp_peer* client, const char* channel_name);
-	FREERDP_API void* WTSChannelGetHandleById(freerdp_peer* client, const UINT16 channel_id);
+
+	WINPR_ATTR_NODISCARD
+	FREERDP_API void* WTSChannelGetHandleById(freerdp_peer* client, UINT16 channel_id);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* WTSChannelGetName(freerdp_peer* client, UINT16 channel_id);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API char** WTSGetAcceptedChannelNames(freerdp_peer* client, size_t* count);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API INT64 WTSChannelGetOptions(freerdp_peer* client, UINT16 channel_id);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API UINT32 WTSChannelGetIdByHandle(HANDLE hChannelHandle);
 
 #ifdef __cplusplus

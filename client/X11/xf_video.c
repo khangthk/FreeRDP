@@ -23,6 +23,7 @@
 #include <freerdp/gdi/video.h>
 
 #include "xf_video.h"
+#include "xf_utils.h"
 
 #include <freerdp/log.h>
 #define TAG CLIENT_TAG("video")
@@ -36,36 +37,39 @@ typedef struct
 static VideoSurface* xfVideoCreateSurface(VideoClientContext* video, UINT32 x, UINT32 y,
                                           UINT32 width, UINT32 height)
 {
-	xfContext* xfc = NULL;
-	xfVideoSurface* ret = NULL;
+	xfContext* xfc = nullptr;
+	xfVideoSurface* ret = nullptr;
 
 	WINPR_ASSERT(video);
 	ret = (xfVideoSurface*)VideoClient_CreateCommonContext(sizeof(xfContext), x, y, width, height);
 	if (!ret)
-		return NULL;
+		return nullptr;
 
 	xfc = (xfContext*)video->custom;
 	WINPR_ASSERT(xfc);
 
-	ret->image = XCreateImage(xfc->display, xfc->visual, xfc->depth, ZPixmap, 0,
-	                          (char*)ret->base.data, width, height, 8, ret->base.scanline);
+	ret->image = LogDynAndXCreateImage(xfc->log, xfc->display, xfc->visual,
+	                                   WINPR_ASSERTING_INT_CAST(uint32_t, xfc->depth), ZPixmap, 0,
+	                                   (char*)ret->base.data, width, height, 8,
+	                                   WINPR_ASSERTING_INT_CAST(int, ret->base.scanline));
 
 	if (!ret->image)
 	{
 		WLog_ERR(TAG, "unable to create surface image");
 		VideoClient_DestroyCommonContext(&ret->base);
-		return NULL;
+		return nullptr;
 	}
 
 	return &ret->base;
 }
 
 static BOOL xfVideoShowSurface(VideoClientContext* video, const VideoSurface* surface,
-                               UINT32 destinationWidth, UINT32 destinationHeight)
+                               WINPR_ATTR_UNUSED UINT32 destinationWidth,
+                               WINPR_ATTR_UNUSED UINT32 destinationHeight)
 {
 	const xfVideoSurface* xfSurface = (const xfVideoSurface*)surface;
-	xfContext* xfc = NULL;
-	const rdpSettings* settings = NULL;
+	xfContext* xfc = nullptr;
+	const rdpSettings* settings = nullptr;
 
 	WINPR_ASSERT(video);
 	WINPR_ASSERT(xfSurface);
@@ -81,15 +85,20 @@ static BOOL xfVideoShowSurface(VideoClientContext* video, const VideoSurface* su
 	if (freerdp_settings_get_bool(settings, FreeRDP_SmartSizing) ||
 	    freerdp_settings_get_bool(settings, FreeRDP_MultiTouchGestures))
 	{
-		XPutImage(xfc->display, xfc->primary, xfc->gc, xfSurface->image, 0, 0, surface->x,
-		          surface->y, surface->w, surface->h);
-		xf_draw_screen(xfc, surface->x, surface->y, surface->w, surface->h);
+		LogDynAndXPutImage(xfc->log, xfc->display, xfc->primary, xfc->gc, xfSurface->image, 0, 0,
+		                   WINPR_ASSERTING_INT_CAST(int, surface->x),
+		                   WINPR_ASSERTING_INT_CAST(int, surface->y), surface->w, surface->h);
+		xf_draw_screen(xfc, WINPR_ASSERTING_INT_CAST(int32_t, surface->x),
+		               WINPR_ASSERTING_INT_CAST(int32_t, surface->y),
+		               WINPR_ASSERTING_INT_CAST(int32_t, surface->w),
+		               WINPR_ASSERTING_INT_CAST(int32_t, surface->h));
 	}
 	else
 #endif
 	{
-		XPutImage(xfc->display, xfc->drawable, xfc->gc, xfSurface->image, 0, 0, surface->x,
-		          surface->y, surface->w, surface->h);
+		LogDynAndXPutImage(xfc->log, xfc->display, xfc->drawable, xfc->gc, xfSurface->image, 0, 0,
+		                   WINPR_ASSERTING_INT_CAST(int, surface->x),
+		                   WINPR_ASSERTING_INT_CAST(int, surface->y), surface->w, surface->h);
 	}
 
 	return TRUE;

@@ -1,5 +1,7 @@
 #include <cassert>
+#include <limits>
 #include <algorithm>
+#include <cinttypes>
 
 #include "sdl_input_widgets.hpp"
 
@@ -17,26 +19,30 @@ SdlInputWidgetList::SdlInputWidgetList(const std::string& title,
 	const std::vector<std::string> buttonlabels = { "accept", "cancel" };
 
 	const size_t widget_width = 300;
-	const size_t widget_heigth = 50;
+	const size_t widget_height = 50;
 
 	const size_t total_width = widget_width + widget_width;
-	const size_t input_height = labels.size() * (widget_heigth + vpadding) + vpadding;
-	const size_t total_height = input_height + widget_heigth;
+	const size_t input_height = labels.size() * (widget_height + vpadding) + vpadding;
+	const size_t total_height = input_height + widget_height;
 
-	auto wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_INPUT_FOCUS;
-	auto rc = SDL_CreateWindowAndRenderer(total_width, total_height, wflags, &_window, &_renderer);
+	assert(total_width <= INT32_MAX);
+	assert(total_height <= INT32_MAX);
+	Uint32 wflags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_INPUT_FOCUS;
+	auto rc =
+	    SDL_CreateWindowAndRenderer(static_cast<int>(total_width), static_cast<int>(total_height),
+	                                wflags, &_window, &_renderer);
 	if (rc != 0)
 		widget_log_error(rc, "SDL_CreateWindowAndRenderer");
 	else
 	{
 		SDL_SetWindowTitle(_window, title.c_str());
 		for (size_t x = 0; x < labels.size(); x++)
-			_list.emplace_back(_renderer, labels[x], initial[x], flags[x], x, widget_width,
-			                   widget_heigth);
+			_list.emplace_back(_renderer, labels.at(x), initial.at(x), flags.at(x), x, widget_width,
+			                   widget_height);
 
 		_buttons.populate(_renderer, buttonlabels, buttonids, total_width,
 		                  static_cast<Sint32>(input_height), static_cast<Sint32>(widget_width),
-		                  static_cast<Sint32>(widget_heigth));
+		                  static_cast<Sint32>(widget_height));
 		_buttons.set_highlight(0);
 	}
 }
@@ -73,7 +79,7 @@ bool SdlInputWidgetList::valid(ssize_t current) const
 	auto s = static_cast<size_t>(current);
 	if (s >= _list.size())
 		return false;
-	return !_list[s].readonly();
+	return !_list.at(s).readonly();
 }
 
 SdlInputWidget* SdlInputWidgetList::get(ssize_t index)
@@ -83,7 +89,7 @@ SdlInputWidget* SdlInputWidgetList::get(ssize_t index)
 	auto s = static_cast<size_t>(index);
 	if (s >= _list.size())
 		return nullptr;
-	return &_list[s];
+	return &_list.at(s);
 }
 
 SdlInputWidgetList::~SdlInputWidgetList()
@@ -111,13 +117,15 @@ ssize_t SdlInputWidgetList::get_index(const SDL_MouseButtonEvent& button)
 {
 	const Sint32 x = button.x;
 	const Sint32 y = button.y;
+
+	assert(_list.size() <= std::numeric_limits<ssize_t>::max());
 	for (size_t i = 0; i < _list.size(); i++)
 	{
-		auto& cur = _list[i];
+		auto& cur = _list.at(i);
 		auto r = cur.input_rect();
 
 		if ((x >= r.x) && (x <= r.x + r.w) && (y >= r.y) && (y <= r.y + r.h))
-			return i;
+			return static_cast<ssize_t>(i);
 	}
 	return -1;
 }
@@ -138,13 +146,13 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 		while (running)
 		{
 			if (!clear_window(_renderer))
-				throw;
+				throw std::exception();
 
 			if (!update(_renderer))
-				throw;
+				throw std::exception();
 
 			if (!_buttons.update(_renderer))
-				throw;
+				throw std::exception();
 
 			SDL_Event event = {};
 			SDL_WaitEvent(&event);
@@ -163,7 +171,7 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 							if (cur)
 							{
 								if (!cur->remove_str(_renderer, 1))
-									throw;
+									throw std::exception();
 							}
 						}
 						break;
@@ -183,7 +191,7 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 						case SDLK_v:
 							if (pressed.size() == 2)
 							{
-								if ((pressed[0] == SDLK_LCTRL) || (pressed[0] == SDLK_RCTRL))
+								if ((pressed.at(0) == SDLK_LCTRL) || (pressed.at(0) == SDLK_RCTRL))
 								{
 									auto cur = get(CurrentActiveTextInput);
 									if (cur)
@@ -208,7 +216,7 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 					if (cur)
 					{
 						if (!cur->append_str(_renderer, event.text.text))
-							throw;
+							throw std::exception();
 					}
 				}
 				break;
@@ -218,13 +226,13 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 					for (auto& cur : _list)
 					{
 						if (!cur.set_mouseover(_renderer, false))
-							throw;
+							throw std::exception();
 					}
 					if (TextInputIndex >= 0)
 					{
-						auto& cur = _list[static_cast<size_t>(TextInputIndex)];
+						auto& cur = _list.at(static_cast<size_t>(TextInputIndex));
 						if (!cur.set_mouseover(_renderer, true))
-							throw;
+							throw std::exception();
 					}
 
 					_buttons.set_mouseover(event.button.x, event.button.y);
@@ -267,13 +275,13 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 			for (auto& cur : _list)
 			{
 				if (!cur.set_highlight(_renderer, false))
-					throw;
+					throw std::exception();
 			}
 			auto cur = get(CurrentActiveTextInput);
 			if (cur)
 			{
 				if (!cur->set_highlight(_renderer, true))
-					throw;
+					throw std::exception();
 			}
 
 			SDL_RenderPresent(_renderer);
@@ -284,6 +292,7 @@ int SdlInputWidgetList::run(std::vector<std::string>& result)
 	}
 	catch (...)
 	{
+		res = -2;
 	}
 
 	return res;

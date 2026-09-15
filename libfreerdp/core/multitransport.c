@@ -53,7 +53,7 @@ state_run_t multitransport_recv_request(rdpMultitransport* multi, wStream* s)
 	WINPR_ASSERT(multi);
 	rdpSettings* settings = multi->rdp->settings;
 
-	if (settings->ServerMode)
+	if (freerdp_settings_get_bool(settings, FreeRDP_ServerMode))
 	{
 		WLog_ERR(TAG, "not expecting a multi-transport request in server mode");
 		return STATE_RUN_FAILED;
@@ -65,7 +65,7 @@ state_run_t multitransport_recv_request(rdpMultitransport* multi, wStream* s)
 	UINT32 requestId = 0;
 	UINT16 requestedProto = 0;
 	UINT16 reserved = 0;
-	const BYTE* cookie = NULL;
+	const BYTE* cookie = nullptr;
 
 	Stream_Read_UINT32(s, requestId);      /* requestId (4 bytes) */
 	Stream_Read_UINT16(s, requestedProto); /* requestedProtocol (2 bytes) */
@@ -85,7 +85,8 @@ state_run_t multitransport_recv_request(rdpMultitransport* multi, wStream* s)
 		WLog_WARN(TAG,
 		          "reserved is %" PRIu16 " instead of 0, skipping %" PRIuz "bytes of unknown data",
 		          reserved, Stream_GetRemainingLength(s));
-		(void)Stream_SafeSeek(s, Stream_GetRemainingLength(s));
+		if (!Stream_SafeSeek(s, Stream_GetRemainingLength(s)))
+			return STATE_RUN_FAILED;
 	}
 
 	WINPR_ASSERT(multi->MtRequest);
@@ -96,7 +97,8 @@ static BOOL multitransport_request_send(rdpMultitransport* multi, UINT32 reqId, 
                                         const BYTE* cookie)
 {
 	WINPR_ASSERT(multi);
-	wStream* s = rdp_message_channel_pdu_init(multi->rdp);
+	UINT16 sec_flags = 0;
+	wStream* s = rdp_message_channel_pdu_init(multi->rdp, &sec_flags);
 	if (!s)
 		return FALSE;
 
@@ -111,7 +113,7 @@ static BOOL multitransport_request_send(rdpMultitransport* multi, UINT32 reqId, 
 	Stream_Zero(s, 2);                          /* reserved (2 bytes) */
 	Stream_Write(s, cookie, RDPUDP_COOKIE_LEN); /* securityCookie (16 bytes) */
 
-	return rdp_send_message_channel_pdu(multi->rdp, s, SEC_TRANSPORT_REQ);
+	return rdp_send_message_channel_pdu(multi->rdp, s, sec_flags | SEC_TRANSPORT_REQ);
 }
 
 state_run_t multitransport_server_request(rdpMultitransport* multi, UINT16 reqProto)
@@ -124,7 +126,8 @@ state_run_t multitransport_server_request(rdpMultitransport* multi, UINT16 reqPr
 	if (reqProto == INITIATE_REQUEST_PROTOCOL_UDPFECR)
 	{
 		multi->reliableReqId = reqId++;
-		winpr_RAND(multi->reliableCookie, sizeof(multi->reliableCookie));
+		if (winpr_RAND(multi->reliableCookie, sizeof(multi->reliableCookie)) < 0)
+			return STATE_RUN_FAILED;
 
 		return multitransport_request_send(multi, multi->reliableReqId, reqProto,
 		                                   multi->reliableCookie)
@@ -140,7 +143,8 @@ BOOL multitransport_client_send_response(rdpMultitransport* multi, UINT32 reqId,
 {
 	WINPR_ASSERT(multi);
 
-	wStream* s = rdp_message_channel_pdu_init(multi->rdp);
+	UINT16 sec_flags = 0;
+	wStream* s = rdp_message_channel_pdu_init(multi->rdp, &sec_flags);
 	if (!s)
 		return FALSE;
 
@@ -151,8 +155,12 @@ BOOL multitransport_client_send_response(rdpMultitransport* multi, UINT32 reqId,
 	}
 
 	Stream_Write_UINT32(s, reqId); /* requestId (4 bytes) */
-	Stream_Write_UINT32(s, hr);    /* HResult (4 bytes) */
-	return rdp_send_message_channel_pdu(multi->rdp, s, SEC_TRANSPORT_RSP);
+
+	/* [MS-RDPBCGR] 2.2.15.2 Client Initiate Multitransport Response PDU defines this as 4byte
+	 * UNSIGNED but https://learn.microsoft.com/en-us/windows/win32/learnwin32/error-codes-in-com
+	 * defines this as signed... assume the spec is (implicitly) assuming twos complement. */
+	Stream_Write_INT32(s, hr); /* HResult (4 bytes) */
+	return rdp_send_message_channel_pdu(multi->rdp, s, sec_flags | SEC_TRANSPORT_RSP);
 }
 
 state_run_t multitransport_recv_response(rdpMultitransport* multi, wStream* s)
@@ -163,7 +171,7 @@ state_run_t multitransport_recv_response(rdpMultitransport* multi, wStream* s)
 	rdpSettings* settings = multi->rdp->settings;
 	WINPR_ASSERT(settings);
 
-	if (!settings->ServerMode)
+	if (!freerdp_settings_get_bool(settings, FreeRDP_ServerMode))
 	{
 		WLog_ERR(TAG, "client is not expecting a multi-transport resp packet");
 		return STATE_RUN_FAILED;
@@ -173,23 +181,27 @@ state_run_t multitransport_recv_response(rdpMultitransport* multi, wStream* s)
 		return STATE_RUN_FAILED;
 
 	UINT32 requestId = 0;
-	HRESULT hr = 0;
+	UINT32 hr = 0;
 
 	Stream_Read_UINT32(s, requestId); /* requestId (4 bytes) */
 	Stream_Read_UINT32(s, hr);        /* hrResponse (4 bytes) */
 
-	return IFCALLRESULT(STATE_RUN_SUCCESS, multi->MtResponse, multi, requestId, hr);
+	state_run_t res = STATE_RUN_SUCCESS;
+	IFCALLRET(multi->MtResponse, res, multi, requestId, hr);
+	return res;
 }
 
-static state_run_t multitransport_no_udp(rdpMultitransport* multi, UINT32 reqId, UINT16 reqProto,
-                                         const BYTE* cookie)
+static state_run_t multitransport_no_udp(rdpMultitransport* multi, UINT32 reqId,
+                                         WINPR_ATTR_UNUSED UINT16 reqProto,
+                                         WINPR_ATTR_UNUSED const BYTE* cookie)
 {
 	return multitransport_client_send_response(multi, reqId, E_ABORT) ? STATE_RUN_SUCCESS
 	                                                                  : STATE_RUN_FAILED;
 }
 
-static state_run_t multitransport_server_handle_response(rdpMultitransport* multi, UINT32 reqId,
-                                                         UINT32 hrResponse)
+static state_run_t multitransport_server_handle_response(rdpMultitransport* multi,
+                                                         WINPR_ATTR_UNUSED UINT32 reqId,
+                                                         WINPR_ATTR_UNUSED UINT32 hrResponse)
 {
 	rdpRdp* rdp = multi->rdp;
 
@@ -199,7 +211,7 @@ static state_run_t multitransport_server_handle_response(rdpMultitransport* mult
 	return STATE_RUN_CONTINUE;
 }
 
-rdpMultitransport* multitransport_new(rdpRdp* rdp, UINT16 protocol)
+rdpMultitransport* multitransport_new(rdpRdp* rdp, WINPR_ATTR_UNUSED UINT16 protocol)
 {
 	WINPR_ASSERT(rdp);
 
@@ -208,9 +220,9 @@ rdpMultitransport* multitransport_new(rdpRdp* rdp, UINT16 protocol)
 
 	rdpMultitransport* multi = calloc(1, sizeof(rdpMultitransport));
 	if (!multi)
-		return NULL;
+		return nullptr;
 
-	if (settings->ServerMode)
+	if (freerdp_settings_get_bool(settings, FreeRDP_ServerMode))
 	{
 		multi->MtResponse = multitransport_server_handle_response;
 	}

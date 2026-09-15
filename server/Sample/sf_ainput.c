@@ -38,8 +38,9 @@
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT sf_peer_ainput_mouse_event(ainput_server_context* context, UINT64 timestamp,
-                                       UINT64 flags, INT32 x, INT32 y)
+WINPR_ATTR_NODISCARD
+static UINT sf_peer_ainput_mouse_event(WINPR_ATTR_UNUSED ainput_server_context* context,
+                                       UINT64 timestamp, UINT64 flags, INT32 x, INT32 y)
 {
 	/* TODO: Implement */
 	WINPR_ASSERT(context);

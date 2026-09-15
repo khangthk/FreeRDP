@@ -21,15 +21,13 @@ set(MODULE_PREFIX "FREERDP_SERVER_WINDOWS_CLI")
 
 include_directories(..)
 
-set(${MODULE_PREFIX}_SRCS
-	wfreerdp.c
-	wfreerdp.h)
+set(${MODULE_PREFIX}_SRCS wfreerdp.c wfreerdp.h)
 
-AddTargetWithResourceFile(${MODULE_NAME} TRUE "${FREERDP_VERSION}" ${MODULE_PREFIX}_SRCS)
+addtargetwithresourcefile(${MODULE_NAME} TRUE "${FREERDP_VERSION}" ${MODULE_PREFIX}_SRCS)
 
 set(${MODULE_PREFIX}_LIBS wfreerdp-server)
 
-target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
+target_link_libraries(${MODULE_NAME} PRIVATE ${${MODULE_PREFIX}_LIBS})
 
 install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT server)
 

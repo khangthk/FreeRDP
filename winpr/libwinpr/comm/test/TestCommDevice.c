@@ -24,8 +24,7 @@
 
 static int test_CommDevice(LPCTSTR lpDeviceName, BOOL expectedResult)
 {
-	TCHAR lpTargetPath[MAX_PATH] = { 0 };
-	size_t tcslen = 0;
+	TCHAR lpTargetPath[MAX_PATH] = WINPR_C_ARRAY_INIT;
 
 	BOOL result = DefineCommDevice(lpDeviceName, _T("/dev/test"));
 	if ((!expectedResult && result) || (expectedResult && !result)) /* logical XOR */
@@ -45,17 +44,18 @@ static int test_CommDevice(LPCTSTR lpDeviceName, BOOL expectedResult)
 		return FALSE;
 	}
 
-	tcslen = (size_t)QueryCommDevice(lpDeviceName, lpTargetPath, MAX_PATH);
+	const size_t tclen = QueryCommDevice(lpDeviceName, lpTargetPath, MAX_PATH);
 	if (expectedResult)
 	{
-		if (tcslen <= _tcslen(lpTargetPath)) /* at least 2 more TCHAR are expected */
+		const size_t tlen = _tcsnlen(lpTargetPath, ARRAYSIZE(lpTargetPath) - 1);
+		if (tclen <= tlen) /* at least 2 more TCHAR are expected */
 		{
 			_tprintf(_T("QueryCommDevice failure: didn't find the device name: %s\n"),
 			         lpDeviceName);
 			return FALSE;
 		}
 
-		if (_tcscmp(_T("/dev/test"), lpTargetPath) != 0)
+		if (_tcsncmp(_T("/dev/test"), lpTargetPath, ARRAYSIZE(lpTargetPath)) != 0)
 		{
 			_tprintf(
 			    _T("QueryCommDevice failure: device name: %s, expected result: %s, result: %s\n"),
@@ -64,21 +64,22 @@ static int test_CommDevice(LPCTSTR lpDeviceName, BOOL expectedResult)
 			return FALSE;
 		}
 
-		if (lpTargetPath[_tcslen(lpTargetPath) + 1] != 0)
+		if ((tlen >= (ARRAYSIZE(lpTargetPath) - 1)) || (lpTargetPath[tlen + 1] != 0))
 		{
-			_tprintf(_T("QueryCommDevice failure: device name: %s, the second NULL character is ")
-			         _T("missing at the end of the buffer\n"),
-			         lpDeviceName);
+			_tprintf(
+			    _T("QueryCommDevice failure: device name: %s, the second nullptr character is ")
+			    _T("missing at the end of the buffer\n"),
+			    lpDeviceName);
 			return FALSE;
 		}
 	}
 	else
 	{
-		if (tcslen > 0)
+		if (tclen > 0)
 		{
 			_tprintf(_T("QueryCommDevice failure: device name: %s, expected result: <none>, ")
 			         _T("result: %") _T(PRIuz) _T(" %s\n"),
-			         lpDeviceName, tcslen, lpTargetPath);
+			         lpDeviceName, tclen, lpTargetPath);
 
 			return FALSE;
 		}

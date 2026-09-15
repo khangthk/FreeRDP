@@ -24,11 +24,19 @@
 #include <winpr/crt.h>
 #include <winpr/platform.h>
 #include <winpr/error.h>
+#include <winpr/file.h>
 #include <winpr/string.h>
+#include <winpr/wlog.h>
 
 #include <winpr/environment.h>
 
+#include "../log.h"
+
+#define TAG WINPR_TAG("environment")
+
 #ifndef _WIN32
+
+#include <errno.h>
 
 #ifdef WINPR_HAVE_UNISTD_H
 #include <unistd.h>
@@ -43,25 +51,40 @@
 
 DWORD GetCurrentDirectoryA(DWORD nBufferLength, LPSTR lpBuffer)
 {
-	char* cwd = NULL;
 	size_t length = 0;
+	char* cwd = nullptr;
+	char* ccwd = nullptr;
 
-	cwd = getcwd(NULL, 0);
+	do
+	{
+		length += MAX_PATH;
+		char* tmp = realloc(cwd, length);
+		if (!tmp)
+		{
+			free(cwd);
+			return 0;
+		}
+		cwd = tmp;
 
-	if (!cwd)
-		return 0;
+		ccwd = getcwd(cwd, length);
+	} while (!ccwd && (errno == ERANGE));
 
-	length = strlen(cwd);
-
-	if ((nBufferLength == 0) && (lpBuffer == NULL))
+	if (!ccwd)
 	{
 		free(cwd);
+		return 0;
+	}
 
+	length = strnlen(cwd, length);
+
+	if ((nBufferLength == 0) && (lpBuffer == nullptr))
+	{
+		free(cwd);
 		return (DWORD)length;
 	}
 	else
 	{
-		if (lpBuffer == NULL)
+		if (lpBuffer == nullptr)
 		{
 			free(cwd);
 			return 0;
@@ -79,50 +102,61 @@ DWORD GetCurrentDirectoryA(DWORD nBufferLength, LPSTR lpBuffer)
 	}
 }
 
-DWORD GetCurrentDirectoryW(DWORD nBufferLength, LPWSTR lpBuffer)
+DWORD GetCurrentDirectoryW(WINPR_ATTR_UNUSED DWORD nBufferLength, WINPR_ATTR_UNUSED LPWSTR lpBuffer)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return 0;
 }
 
-BOOL SetCurrentDirectoryA(LPCSTR lpPathName)
+BOOL SetCurrentDirectoryA(WINPR_ATTR_UNUSED LPCSTR lpPathName)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return TRUE;
 }
 
-BOOL SetCurrentDirectoryW(LPCWSTR lpPathName)
+BOOL SetCurrentDirectoryW(WINPR_ATTR_UNUSED LPCWSTR lpPathName)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return TRUE;
 }
 
-DWORD SearchPathA(LPCSTR lpPath, LPCSTR lpFileName, LPCSTR lpExtension, DWORD nBufferLength,
-                  LPSTR lpBuffer, LPSTR* lpFilePart)
+DWORD SearchPathA(WINPR_ATTR_UNUSED LPCSTR lpPath, WINPR_ATTR_UNUSED LPCSTR lpFileName,
+                  WINPR_ATTR_UNUSED LPCSTR lpExtension, WINPR_ATTR_UNUSED DWORD nBufferLength,
+                  WINPR_ATTR_UNUSED LPSTR lpBuffer, WINPR_ATTR_UNUSED LPSTR* lpFilePart)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return 0;
 }
 
-DWORD SearchPathW(LPCWSTR lpPath, LPCWSTR lpFileName, LPCWSTR lpExtension, DWORD nBufferLength,
-                  LPWSTR lpBuffer, LPWSTR* lpFilePart)
+DWORD SearchPathW(WINPR_ATTR_UNUSED LPCWSTR lpPath, WINPR_ATTR_UNUSED LPCWSTR lpFileName,
+                  WINPR_ATTR_UNUSED LPCWSTR lpExtension, WINPR_ATTR_UNUSED DWORD nBufferLength,
+                  WINPR_ATTR_UNUSED LPWSTR lpBuffer, WINPR_ATTR_UNUSED LPWSTR* lpFilePart)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return 0;
 }
 
 LPSTR GetCommandLineA(VOID)
 {
-	return NULL;
+	WLog_ERR(TAG, "TODO: not implemented");
+	return nullptr;
 }
 
 LPWSTR GetCommandLineW(VOID)
 {
-	return NULL;
+	WLog_ERR(TAG, "TODO: not implemented");
+	return nullptr;
 }
 
-BOOL NeedCurrentDirectoryForExePathA(LPCSTR ExeName)
+BOOL NeedCurrentDirectoryForExePathA(WINPR_ATTR_UNUSED LPCSTR ExeName)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return TRUE;
 }
 
-BOOL NeedCurrentDirectoryForExePathW(LPCWSTR ExeName)
+BOOL NeedCurrentDirectoryForExePathW(WINPR_ATTR_UNUSED LPCWSTR ExeName)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return TRUE;
 }
 
@@ -134,9 +168,9 @@ DWORD GetEnvironmentVariableA(LPCSTR lpName, LPSTR lpBuffer, DWORD nSize)
 {
 #if !defined(_UWP)
 	size_t length = 0;
-	char* env = NULL;
 
-	env = getenv(lpName);
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+	char* env = getenv(lpName);
 
 	if (!env)
 	{
@@ -159,8 +193,10 @@ DWORD GetEnvironmentVariableA(LPCSTR lpName, LPSTR lpBuffer, DWORD nSize)
 #endif
 }
 
-DWORD GetEnvironmentVariableW(LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize)
+DWORD GetEnvironmentVariableW(WINPR_ATTR_UNUSED LPCWSTR lpName, WINPR_ATTR_UNUSED LPWSTR lpBuffer,
+                              WINPR_ATTR_UNUSED DWORD nSize)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	SetLastError(ERROR_ENVVAR_NOT_FOUND);
 	return 0;
 }
@@ -173,11 +209,13 @@ BOOL SetEnvironmentVariableA(LPCSTR lpName, LPCSTR lpValue)
 
 	if (lpValue)
 	{
+		// NOLINTNEXTLINE(concurrency-mt-unsafe)
 		if (0 != setenv(lpName, lpValue, 1))
 			return FALSE;
 	}
 	else
 	{
+		// NOLINTNEXTLINE(concurrency-mt-unsafe)
 		if (0 != unsetenv(lpName))
 			return FALSE;
 	}
@@ -188,8 +226,9 @@ BOOL SetEnvironmentVariableA(LPCSTR lpName, LPCSTR lpValue)
 #endif
 }
 
-BOOL SetEnvironmentVariableW(LPCWSTR lpName, LPCWSTR lpValue)
+BOOL SetEnvironmentVariableW(WINPR_ATTR_UNUSED LPCWSTR lpName, WINPR_ATTR_UNUSED LPCWSTR lpValue)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return FALSE;
 }
 
@@ -211,84 +250,116 @@ BOOL SetEnvironmentVariableW(LPCWSTR lpName, LPCWSTR lpValue)
 
 extern char** environ;
 
-LPCH GetEnvironmentStringsA(VOID)
+WINPR_ATTR_MALLOC(FreeEnvironmentStringsA, 1)
+static LPCH GetEnvironmentStringsAN(size_t* pLen)
 {
 #if !defined(_UWP)
-	char* p = NULL;
 	size_t offset = 0;
-	size_t length = 0;
-	char** envp = NULL;
-	DWORD cchEnvironmentBlock = 0;
-	LPCH lpszEnvironmentBlock = NULL;
+	char** envp = environ;
+	const size_t blocksize = 128;
+	size_t cchEnvironmentBlock = blocksize;
+	LPCH lpszEnvironmentBlock = (LPCH)calloc(cchEnvironmentBlock, sizeof(CHAR));
 
-	offset = 0;
-	envp = environ;
+	if (pLen)
+		*pLen = 0;
 
-	cchEnvironmentBlock = 128;
-	lpszEnvironmentBlock = (LPCH)calloc(cchEnvironmentBlock, sizeof(CHAR));
 	if (!lpszEnvironmentBlock)
-		return NULL;
+		return nullptr;
 
 	while (*envp)
 	{
-		length = strlen(*envp);
-
-		while ((offset + length + 8) > cchEnvironmentBlock)
+		const size_t length = strlen(*envp);
+		const size_t required = offset + length + 8ull;
+		if (required > UINT32_MAX)
 		{
-			DWORD new_size = 0;
-			LPCH new_blk = NULL;
+			WLog_ERR(TAG, "Environment block too large: %" PRIuz, required);
 
-			new_size = cchEnvironmentBlock * 2;
-			new_blk = (LPCH)realloc(lpszEnvironmentBlock, new_size * sizeof(CHAR));
+			free(lpszEnvironmentBlock);
+			return nullptr;
+		}
+
+		if (required > cchEnvironmentBlock)
+		{
+			size_t new_size = cchEnvironmentBlock;
+			do
+			{
+				new_size += blocksize;
+			} while (new_size <= required);
+			LPCH new_blk = (LPCH)realloc(lpszEnvironmentBlock, new_size * sizeof(CHAR));
 			if (!new_blk)
 			{
 				free(lpszEnvironmentBlock);
-				return NULL;
+				return nullptr;
 			}
 
+			const size_t diff = new_size - cchEnvironmentBlock;
+			const size_t old = cchEnvironmentBlock;
 			lpszEnvironmentBlock = new_blk;
 			cchEnvironmentBlock = new_size;
+
+			memset(&lpszEnvironmentBlock[old], 0, diff);
 		}
 
-		p = &(lpszEnvironmentBlock[offset]);
+		char* p = &(lpszEnvironmentBlock[offset]);
 
 		CopyMemory(p, *envp, length * sizeof(CHAR));
 		p[length] = '\0';
 
-		offset += (length + 1);
+		offset += (length + 1ull);
 		envp++;
 	}
 
 	lpszEnvironmentBlock[offset] = '\0';
+	if (pLen)
+		*pLen = cchEnvironmentBlock;
 
 	return lpszEnvironmentBlock;
 #else
-	return NULL;
+	if (pLen)
+		*pLen = 0;
+	return nullptr;
 #endif
+}
+
+LPCH GetEnvironmentStringsA(VOID)
+{
+	return GetEnvironmentStringsAN(nullptr);
 }
 
 LPWCH GetEnvironmentStringsW(VOID)
 {
-	return NULL;
+	size_t len = 0;
+	LPCH env = GetEnvironmentStringsAN(&len);
+	if (!env)
+		return nullptr;
+	LPWCH envW = ConvertMszUtf8NToWCharAlloc(env, len, nullptr);
+	FreeEnvironmentStringsA(env);
+	return envW;
 }
 
-BOOL SetEnvironmentStringsA(LPCH NewEnvironment)
+BOOL SetEnvironmentStringsA(WINPR_ATTR_UNUSED LPCH NewEnvironment)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return TRUE;
 }
 
-BOOL SetEnvironmentStringsW(LPWCH NewEnvironment)
+BOOL SetEnvironmentStringsW(WINPR_ATTR_UNUSED LPWCH NewEnvironment)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return TRUE;
 }
 
-DWORD ExpandEnvironmentStringsA(LPCSTR lpSrc, LPSTR lpDst, DWORD nSize)
+DWORD ExpandEnvironmentStringsA(WINPR_ATTR_UNUSED LPCSTR lpSrc, WINPR_ATTR_UNUSED LPSTR lpDst,
+                                WINPR_ATTR_UNUSED DWORD nSize)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return 0;
 }
 
-DWORD ExpandEnvironmentStringsW(LPCWSTR lpSrc, LPWSTR lpDst, DWORD nSize)
+DWORD ExpandEnvironmentStringsW(WINPR_ATTR_UNUSED LPCWSTR lpSrc, WINPR_ATTR_UNUSED LPWSTR lpDst,
+                                WINPR_ATTR_UNUSED DWORD nSize)
 {
+	WLog_ERR(TAG, "TODO: not implemented");
 	return 0;
 }
 
@@ -310,24 +381,24 @@ BOOL FreeEnvironmentStringsW(LPWCH lpszEnvironmentBlock)
 
 LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 {
-	const char* cp = NULL;
-	char* p = NULL;
+	const char* cp = nullptr;
+	char* p = nullptr;
 	size_t offset = 0;
 	size_t length = 0;
-	const char* envp = NULL;
+	const char* envp = nullptr;
 	DWORD cchEnvironmentBlock = 0;
-	LPCH lpszEnvironmentBlock = NULL;
-	const char** mergeStrings = NULL;
+	LPCH lpszEnvironmentBlock = nullptr;
+	const char** mergeStrings = nullptr;
 	size_t mergeStringLength = 0;
 	size_t mergeArraySize = 128;
 	size_t mergeLength = 0;
 	size_t foundMerge = 0;
-	char* foundEquals = NULL;
+	char* foundEquals = nullptr;
 
 	mergeStrings = (LPCSTR*)calloc(mergeArraySize, sizeof(char*));
 
 	if (!mergeStrings)
-		return NULL;
+		return nullptr;
 
 	mergeStringLength = 0;
 
@@ -339,7 +410,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 
 		if (mergeStringLength == mergeArraySize)
 		{
-			const char** new_str = NULL;
+			const char** new_str = nullptr;
 
 			mergeArraySize += 128;
 			new_str = (const char**)realloc((void*)mergeStrings, mergeArraySize * sizeof(char*));
@@ -347,7 +418,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 			if (!new_str)
 			{
 				free((void*)mergeStrings);
-				return NULL;
+				return nullptr;
 			}
 			mergeStrings = new_str;
 		}
@@ -365,12 +436,12 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 	if (!lpszEnvironmentBlock)
 	{
 		free((void*)mergeStrings);
-		return NULL;
+		return nullptr;
 	}
 
 	envp = original;
 
-	while ((original != NULL) && (*envp && *(envp + 1)))
+	while ((original != nullptr) && (*envp && *(envp + 1)))
 	{
 		size_t old_offset = offset;
 		length = strlen(envp);
@@ -384,7 +455,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 			{
 				free((void*)lpszEnvironmentBlock);
 				free((void*)mergeStrings);
-				return NULL;
+				return nullptr;
 			}
 			lpszEnvironmentBlock = tmp;
 		}
@@ -404,7 +475,8 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 			if (!foundEquals)
 				continue;
 
-			if (strncmp(envp, mergeStrings[run], foundEquals - mergeStrings[run] + 1) == 0)
+			const intptr_t len = foundEquals - mergeStrings[run] + 1;
+			if (strncmp(envp, mergeStrings[run], WINPR_ASSERTING_INT_CAST(size_t, len)) == 0)
 			{
 				// found variable in merge list ... use this ....
 				if (*(foundEquals + 1) == '\0')
@@ -424,7 +496,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 						{
 							free((void*)lpszEnvironmentBlock);
 							free((void*)mergeStrings);
-							return NULL;
+							return nullptr;
 						}
 						lpszEnvironmentBlock = tmp;
 						p = &(lpszEnvironmentBlock[old_offset]);
@@ -432,7 +504,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 
 					foundMerge = 1;
 					CopyMemory(p, mergeStrings[run], mergeLength);
-					mergeStrings[run] = NULL;
+					mergeStrings[run] = nullptr;
 					p[mergeLength] = '\0';
 					offset += (mergeLength + 1);
 				}
@@ -466,7 +538,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 			{
 				free((void*)lpszEnvironmentBlock);
 				free((void*)mergeStrings);
-				return NULL;
+				return nullptr;
 			}
 
 			lpszEnvironmentBlock = tmp;
@@ -475,7 +547,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 		p = &(lpszEnvironmentBlock[offset]);
 
 		CopyMemory(p, mergeStrings[run], mergeLength);
-		mergeStrings[run] = NULL;
+		mergeStrings[run] = nullptr;
 		p[mergeLength] = '\0';
 		offset += (mergeLength + 1);
 	}
@@ -490,14 +562,14 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 DWORD GetEnvironmentVariableEBA(LPCSTR envBlock, LPCSTR lpName, LPSTR lpBuffer, DWORD nSize)
 {
 	size_t vLength = 0;
-	char* env = NULL;
-	char* foundEquals = NULL;
+	char* env = nullptr;
+	char* foundEquals = nullptr;
 	const char* penvb = envBlock;
 	size_t nLength = 0;
 	size_t fLength = 0;
 	size_t lpNameLength = 0;
 
-	if (!lpName || NULL == envBlock)
+	if (!lpName || nullptr == envBlock)
 		return 0;
 
 	lpNameLength = strlen(lpName);
@@ -516,7 +588,7 @@ DWORD GetEnvironmentVariableEBA(LPCSTR envBlock, LPCSTR lpName, LPSTR lpBuffer, 
 			return 0;
 		}
 
-		nLength = (foundEquals - penvb);
+		nLength = WINPR_ASSERTING_INT_CAST(size_t, (foundEquals - penvb));
 
 		if (nLength != lpNameLength)
 		{
@@ -551,8 +623,8 @@ DWORD GetEnvironmentVariableEBA(LPCSTR envBlock, LPCSTR lpName, LPSTR lpBuffer, 
 BOOL SetEnvironmentVariableEBA(LPSTR* envBlock, LPCSTR lpName, LPCSTR lpValue)
 {
 	size_t length = 0;
-	char* envstr = NULL;
-	char* newEB = NULL;
+	char* envstr = nullptr;
+	char* newEB = nullptr;
 
 	if (!lpName)
 		return FALSE;
@@ -592,15 +664,15 @@ BOOL SetEnvironmentVariableEBA(LPSTR* envBlock, LPCSTR lpName, LPCSTR lpValue)
 
 char** EnvironmentBlockToEnvpA(LPCH lpszEnvironmentBlock)
 {
-	char* p = NULL;
+	char* p = nullptr;
 	SSIZE_T index = 0;
 	size_t count = 0;
 	size_t length = 0;
-	char** envp = NULL;
+	char** envp = nullptr;
 
 	count = 0;
 	if (!lpszEnvironmentBlock)
-		return NULL;
+		return nullptr;
 
 	p = (char*)lpszEnvironmentBlock;
 
@@ -616,8 +688,8 @@ char** EnvironmentBlockToEnvpA(LPCH lpszEnvironmentBlock)
 
 	envp = (char**)calloc(count + 1, sizeof(char*));
 	if (!envp)
-		return NULL;
-	envp[count] = NULL;
+		return nullptr;
+	envp[count] = nullptr;
 
 	while (p[0] && p[1])
 	{
@@ -629,8 +701,8 @@ char** EnvironmentBlockToEnvpA(LPCH lpszEnvironmentBlock)
 			{
 				free(envp[index]);
 			}
-			free(envp);
-			return NULL;
+			free((void*)envp);
+			return nullptr;
 		}
 		p += (length + 1);
 		index++;
@@ -648,18 +720,18 @@ DWORD GetEnvironmentVariableX(const char* lpName, char* lpBuffer, DWORD nSize)
 {
 	DWORD result = 0;
 	DWORD nSizeW = 0;
-	LPWSTR lpNameW = NULL;
-	LPWSTR lpBufferW = NULL;
+	LPWSTR lpNameW = nullptr;
+	LPWSTR lpBufferW = nullptr;
 	LPSTR lpBufferA = lpBuffer;
 
-	lpNameW = ConvertUtf8ToWCharAlloc(lpName, NULL);
+	lpNameW = ConvertUtf8ToWCharAlloc(lpName, nullptr);
 	if (!lpNameW)
 		goto cleanup;
 
 	if (!lpBuffer)
 	{
-		char lpBufferMaxA[WINPR_MAX_ENVIRONMENT_LENGTH] = { 0 };
-		WCHAR lpBufferMaxW[WINPR_MAX_ENVIRONMENT_LENGTH] = { 0 };
+		char lpBufferMaxA[WINPR_MAX_ENVIRONMENT_LENGTH] = WINPR_C_ARRAY_INIT;
+		WCHAR lpBufferMaxW[WINPR_MAX_ENVIRONMENT_LENGTH] = WINPR_C_ARRAY_INIT;
 		LPSTR lpTmpBuffer = lpBufferMaxA;
 
 		nSizeW = ARRAYSIZE(lpBufferMaxW);

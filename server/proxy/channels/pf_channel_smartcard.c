@@ -35,6 +35,7 @@
 
 #include "pf_channel_smartcard.h"
 #include "pf_channel_rdpdr.h"
+#include "../pf_client.h"
 
 #define TAG PROXY_TAG("channel.scard")
 
@@ -44,8 +45,6 @@ typedef struct
 {
 	InterceptContextMapEntry base;
 	scard_call_context* callctx;
-	PTP_POOL ThreadPool;
-	TP_CALLBACK_ENVIRON ThreadPoolEnv;
 	wArrayList* workObjects;
 } pf_channel_client_context;
 
@@ -58,9 +57,10 @@ typedef struct
 	pf_scard_send_fkt_t send_fkt;
 } pf_channel_client_queue_element;
 
+WINPR_ATTR_NODISCARD
 static pf_channel_client_context* scard_get_client_context(pClientContext* pc)
 {
-	pf_channel_client_context* scard = NULL;
+	pf_channel_client_context* scard = nullptr;
 
 	WINPR_ASSERT(pc);
 	WINPR_ASSERT(pc->interceptContextMap);
@@ -71,8 +71,9 @@ static pf_channel_client_context* scard_get_client_context(pClientContext* pc)
 	return scard;
 }
 
+WINPR_ATTR_NODISCARD
 static BOOL pf_channel_client_write_iostatus(wStream* out, const SMARTCARD_OPERATION* op,
-                                             UINT32 ioStatus)
+                                             NTSTATUS ioStatus)
 {
 	UINT16 component = 0;
 	UINT16 packetid = 0;
@@ -84,7 +85,7 @@ static BOOL pf_channel_client_write_iostatus(wStream* out, const SMARTCARD_OPERA
 	WINPR_ASSERT(out);
 
 	pos = Stream_GetPosition(out);
-	Stream_SetPosition(out, 0);
+	Stream_ResetPosition(out);
 	if (!Stream_CheckAndLogRequiredLength(TAG, out, 16))
 		return FALSE;
 
@@ -99,9 +100,8 @@ static BOOL pf_channel_client_write_iostatus(wStream* out, const SMARTCARD_OPERA
 	WINPR_ASSERT(dID == op->deviceID);
 	WINPR_ASSERT(cID == op->completionID);
 
-	Stream_Write_UINT32(out, ioStatus);
-	Stream_SetPosition(out, pos);
-	return TRUE;
+	Stream_Write_INT32(out, ioStatus);
+	return Stream_SetPosition(out, pos);
 }
 
 struct thread_arg
@@ -111,14 +111,18 @@ struct thread_arg
 };
 
 static void queue_free(void* obj);
+
+WINPR_ATTR_MALLOC(queue_free, 1)
+WINPR_ATTR_NODISCARD
 static void* queue_copy(const void* obj);
 
-static VOID irp_thread(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WORK Work)
+static VOID irp_thread(WINPR_ATTR_UNUSED PTP_CALLBACK_INSTANCE Instance, PVOID Context,
+                       PTP_WORK Work)
 {
 	struct thread_arg* arg = Context;
 	pf_channel_client_context* scard = arg->scard;
 	{
-		UINT32 ioStatus = 0;
+		NTSTATUS ioStatus = 0;
 		LONG rc = smartcard_irp_device_control_call(arg->scard->callctx, arg->e->out, &ioStatus,
 		                                            &arg->e->op);
 		if (rc == CHANNEL_RC_OK)
@@ -132,10 +136,11 @@ static VOID irp_thread(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_WORK W
 	ArrayList_Remove(scard->workObjects, Work);
 }
 
+WINPR_ATTR_NODISCARD
 static BOOL start_irp_thread(pf_channel_client_context* scard,
                              const pf_channel_client_queue_element* e)
 {
-	PTP_WORK work = NULL;
+	PTP_WORK work = nullptr;
 	struct thread_arg* arg = calloc(1, sizeof(struct thread_arg));
 	if (!arg)
 		return FALSE;
@@ -144,15 +149,18 @@ static BOOL start_irp_thread(pf_channel_client_context* scard,
 	if (!arg->e)
 		goto fail;
 
-	work = CreateThreadpoolWork(irp_thread, arg, &scard->ThreadPoolEnv);
+	work = CreateThreadpoolWork(irp_thread, arg, nullptr);
 	if (!work)
 		goto fail;
-	ArrayList_Append(scard->workObjects, work);
+	if (!ArrayList_Append(scard->workObjects, work))
+		goto fail;
 	SubmitThreadpoolWork(work);
 
 	return TRUE;
 
 fail:
+	if (work)
+		CloseThreadpoolWork(work);
 	if (arg)
 		queue_free(arg->e);
 	free(arg);
@@ -166,8 +174,8 @@ BOOL pf_channel_smartcard_client_handle(wLog* log, pClientContext* pc, wStream* 
 	LONG status = 0;
 	UINT32 FileId = 0;
 	UINT32 CompletionId = 0;
-	UINT32 ioStatus = 0;
-	pf_channel_client_queue_element e = { 0 };
+	NTSTATUS ioStatus = 0;
+	pf_channel_client_queue_element e = WINPR_C_ARRAY_INIT;
 	pf_channel_client_context* scard = scard_get_client_context(pc);
 
 	WINPR_ASSERT(log);
@@ -187,20 +195,17 @@ BOOL pf_channel_smartcard_client_handle(wLog* log, pClientContext* pc, wStream* 
 		return FALSE;
 	else
 	{
-		UINT32 DeviceId = 0;
-		UINT32 MajorFunction = 0;
-		UINT32 MinorFunction = 0;
-
-		Stream_Read_UINT32(s, DeviceId);      /* DeviceId (4 bytes) */
-		Stream_Read_UINT32(s, FileId);        /* FileId (4 bytes) */
-		Stream_Read_UINT32(s, CompletionId);  /* CompletionId (4 bytes) */
-		Stream_Read_UINT32(s, MajorFunction); /* MajorFunction (4 bytes) */
-		Stream_Read_UINT32(s, MinorFunction); /* MinorFunction (4 bytes) */
+		const uint32_t DeviceId = Stream_Get_UINT32(s);      /* DeviceId (4 bytes) */
+		FileId = Stream_Get_UINT32(s);                       /* FileId (4 bytes) */
+		CompletionId = Stream_Get_UINT32(s);                 /* CompletionId (4 bytes) */
+		const uint32_t MajorFunction = Stream_Get_UINT32(s); /* MajorFunction (4 bytes) */
+		const uint32_t MinorFunction = Stream_Get_UINT32(s); /* MinorFunction (4 bytes) */
 
 		if (MajorFunction != IRP_MJ_DEVICE_CONTROL)
 		{
-			WLog_WARN(TAG, "[%s] Invalid IRP received, expected %s, got %2", SCARD_SVC_CHANNEL_NAME,
-			          rdpdr_irp_string(IRP_MJ_DEVICE_CONTROL), rdpdr_irp_string(MajorFunction));
+			WLog_WARN(TAG, "[%s] Invalid IRP received, expected %s, got %s [0x%08" PRIx32 "]",
+			          SCARD_SVC_CHANNEL_NAME, rdpdr_irp_string(IRP_MJ_DEVICE_CONTROL),
+			          rdpdr_irp_string(MajorFunction), MinorFunction);
 			return FALSE;
 		}
 		e.op.completionID = CompletionId;
@@ -210,7 +215,7 @@ BOOL pf_channel_smartcard_client_handle(wLog* log, pClientContext* pc, wStream* 
 			return FALSE;
 	}
 
-	status = smartcard_irp_device_control_decode(s, CompletionId, FileId, &e.op);
+	status = smartcard_irp_device_control_decode_request(s, CompletionId, FileId, &e.op);
 	if (status != 0)
 		goto fail;
 
@@ -259,7 +264,8 @@ fail:
 	return rc;
 }
 
-BOOL pf_channel_smartcard_server_handle(pServerContext* ps, wStream* s)
+BOOL pf_channel_smartcard_server_handle(WINPR_ATTR_UNUSED pServerContext* ps,
+                                        WINPR_ATTR_UNUSED wStream* s)
 {
 	WLog_ERR(TAG, "TODO: unimplemented");
 	return TRUE;
@@ -268,17 +274,22 @@ BOOL pf_channel_smartcard_server_handle(pServerContext* ps, wStream* s)
 static void channel_stop_and_wait(pf_channel_client_context* scard, BOOL reset)
 {
 	WINPR_ASSERT(scard);
-	smartcard_call_context_signal_stop(scard->callctx, FALSE);
+	if (scard->callctx)
+		smartcard_call_context_signal_stop(scard->callctx, FALSE);
 
-	while (ArrayList_Count(scard->workObjects) > 0)
+	if (scard->workObjects)
 	{
-		PTP_WORK work = ArrayList_GetItem(scard->workObjects, 0);
-		if (!work)
-			continue;
-		WaitForThreadpoolWorkCallbacks(work, TRUE);
+		while (ArrayList_Count(scard->workObjects) > 0)
+		{
+			PTP_WORK work = ArrayList_GetItem(scard->workObjects, 0);
+			if (!work)
+				continue;
+			WaitForThreadpoolWorkCallbacks(work, TRUE);
+		}
 	}
 
-	smartcard_call_context_signal_stop(scard->callctx, reset);
+	if (scard->callctx)
+		smartcard_call_context_signal_stop(scard->callctx, reset);
 }
 
 static void pf_channel_scard_client_context_free(InterceptContextMapEntry* base)
@@ -292,8 +303,6 @@ static void pf_channel_scard_client_context_free(InterceptContextMapEntry* base)
 	 * available polling slot */
 	channel_stop_and_wait(entry, FALSE);
 	ArrayList_Free(entry->workObjects);
-	CloseThreadpool(entry->ThreadPool);
-	DestroyThreadpoolEnvironment(&entry->ThreadPoolEnv);
 
 	smartcard_call_context_free(entry->callctx);
 	free(entry);
@@ -309,25 +318,27 @@ static void queue_free(void* obj)
 	free(element);
 }
 
+WINPR_ATTR_MALLOC(queue_free, 1)
+WINPR_ATTR_NODISCARD
 static void* queue_copy(const void* obj)
 {
 	const pf_channel_client_queue_element* other = obj;
-	pf_channel_client_queue_element* copy = NULL;
+	pf_channel_client_queue_element* copy = nullptr;
 	if (!other)
-		return NULL;
+		return nullptr;
 	copy = calloc(1, sizeof(pf_channel_client_queue_element));
 	if (!copy)
-		return NULL;
+		return nullptr;
 
 	*copy = *other;
-	copy->out = Stream_New(NULL, Stream_Capacity(other->out));
+	copy->out = Stream_New(nullptr, Stream_Capacity(other->out));
 	if (!copy->out)
 		goto fail;
 	Stream_Write(copy->out, Stream_Buffer(other->out), Stream_GetPosition(other->out));
 	return copy;
 fail:
 	queue_free(copy);
-	return NULL;
+	return nullptr;
 }
 
 static void work_object_free(void* arg)
@@ -338,34 +349,32 @@ static void work_object_free(void* arg)
 
 BOOL pf_channel_smartcard_client_new(pClientContext* pc)
 {
-	pf_channel_client_context* scard = NULL;
-	wObject* obj = NULL;
-
 	WINPR_ASSERT(pc);
 	WINPR_ASSERT(pc->interceptContextMap);
 
-	scard = calloc(1, sizeof(pf_channel_client_context));
+	pf_channel_client_context* scard = calloc(1, sizeof(pf_channel_client_context));
 	if (!scard)
 		return FALSE;
 	scard->base.free = pf_channel_scard_client_context_free;
-	scard->callctx = smartcard_call_context_new(pc->context.settings);
+	scard->callctx = smartcard_call_context_new_with_context(&pc->cctx.context);
 	if (!scard->callctx)
 		goto fail;
 
 	scard->workObjects = ArrayList_New(TRUE);
 	if (!scard->workObjects)
 		goto fail;
-	obj = ArrayList_Object(scard->workObjects);
-	WINPR_ASSERT(obj);
-	obj->fnObjectFree = work_object_free;
 
-	scard->ThreadPool = CreateThreadpool(NULL);
-	if (!scard->ThreadPool)
+	{
+		wObject* obj = ArrayList_Object(scard->workObjects);
+		WINPR_ASSERT(obj);
+		obj->fnObjectFree = work_object_free;
+	}
+
+	if (!HashTable_Insert(pc->interceptContextMap, SCARD_SVC_CHANNEL_NAME, scard))
 		goto fail;
-	InitializeThreadpoolEnvironment(&scard->ThreadPoolEnv);
-	SetThreadpoolCallbackPool(&scard->ThreadPoolEnv, scard->ThreadPool);
 
-	return HashTable_Insert(pc->interceptContextMap, SCARD_SVC_CHANNEL_NAME, scard);
+	// NOLINTNEXTLINE(clang-analyzer-unix.Malloc): HashTable_Insert takes ownership of rdpdr
+	return TRUE;
 fail:
 	pf_channel_scard_client_context_free(&scard->base);
 	return FALSE;

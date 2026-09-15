@@ -51,11 +51,11 @@ extern "C"
 		UINT32 MaxMonitorAreaFactorA;
 		UINT32 MaxMonitorAreaFactorB;
 
-		psDispOpen Open;
-		psDispClose Close;
+		WINPR_ATTR_NODISCARD psDispOpen Open;
+		WINPR_ATTR_NODISCARD psDispClose Close;
 
-		psDispMonitorLayout DispMonitorLayout;
-		psDispCaps DisplayControlCaps;
+		WINPR_ATTR_NODISCARD psDispMonitorLayout DispMonitorLayout;
+		WINPR_ATTR_NODISCARD psDispCaps DisplayControlCaps;
 
 		DispServerPrivate* priv;
 		rdpContext* rdpcontext;
@@ -63,12 +63,13 @@ extern "C"
 		/**
 		 * Callback, when the channel got its id assigned.
 		 */
-		psDispChannelIdAssigned ChannelIdAssigned;
+		WINPR_ATTR_NODISCARD psDispChannelIdAssigned ChannelIdAssigned;
 	};
 
 	FREERDP_API void disp_server_context_free(DispServerContext* context);
 
 	WINPR_ATTR_MALLOC(disp_server_context_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API DispServerContext* disp_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus

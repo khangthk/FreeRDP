@@ -36,14 +36,20 @@
 
 #include "ntlm_message.h"
 
+#include "../../utils.h"
+
 #include "../../log.h"
 #define TAG WINPR_TAG("sspi.NTLM")
 
-#define WINPR_KEY "Software\\" WINPR_VENDOR_STRING "\\" WINPR_PRODUCT_STRING "\\WinPR\\NTLM"
+#ifndef MIN
+#define MIN(a, b) ((a) < (b)) ? (a) : (b)
+#endif
 
-static char* NTLM_PACKAGE_NAME = "NTLM";
+#define WINPR_KEY "Software\\%s\\WinPR\\NTLM"
 
 #define check_context(ctx) check_context_((ctx), __FILE__, __func__, __LINE__)
+
+WINPR_ATTR_NODISCARD
 static BOOL check_context_(NTLM_CONTEXT* context, const char* file, const char* fkt, size_t line)
 {
 	BOOL rc = TRUE;
@@ -53,8 +59,7 @@ static BOOL check_context_(NTLM_CONTEXT* context, const char* file, const char* 
 	if (!context)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt, "invalid context");
 
 		return FALSE;
 	}
@@ -62,142 +67,150 @@ static BOOL check_context_(NTLM_CONTEXT* context, const char* file, const char* 
 	if (!context->RecvRc4Seal)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context->RecvRc4Seal");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt, "invalid context->RecvRc4Seal");
 		rc = FALSE;
 	}
 	if (!context->SendRc4Seal)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context->SendRc4Seal");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt, "invalid context->SendRc4Seal");
 		rc = FALSE;
 	}
 
 	if (!context->SendSigningKey)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context->SendSigningKey");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt,
+			                      "invalid context->SendSigningKey");
 		rc = FALSE;
 	}
 	if (!context->RecvSigningKey)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context->RecvSigningKey");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt,
+			                      "invalid context->RecvSigningKey");
 		rc = FALSE;
 	}
 	if (!context->SendSealingKey)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context->SendSealingKey");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt,
+			                      "invalid context->SendSealingKey");
 		rc = FALSE;
 	}
 	if (!context->RecvSealingKey)
 	{
 		if (WLog_IsLevelActive(log, log_level))
-			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, log_level, line, file, fkt,
-			                  "invalid context->RecvSealingKey");
+			WLog_PrintTextMessage(log, log_level, line, file, fkt,
+			                      "invalid context->RecvSealingKey");
 		rc = FALSE;
 	}
 	return rc;
 }
 
-static int ntlm_SetContextWorkstation(NTLM_CONTEXT* context, char* Workstation)
+WINPR_ATTR_MALLOC(free, 1)
+static char* get_computer_name(COMPUTER_NAME_FORMAT type, size_t* pSize)
 {
-	char* ws = Workstation;
 	DWORD nSize = 0;
-	CHAR* computerName = NULL;
 
+	if (pSize)
+		*pSize = 0;
+
+	if (GetComputerNameExA(type, nullptr, &nSize))
+		return nullptr;
+
+	if (GetLastError() != ERROR_MORE_DATA)
+		return nullptr;
+
+	char* computerName = calloc(1, nSize);
+
+	if (!computerName)
+		return nullptr;
+
+	if (!GetComputerNameExA(type, computerName, &nSize))
+	{
+		free(computerName);
+		return nullptr;
+	}
+
+	if (pSize)
+		*pSize = nSize;
+	return computerName;
+}
+
+WINPR_ATTR_NODISCARD
+SECURITY_STATUS ntlm_SetContextWorkstationX(NTLM_CONTEXT* context, BOOL unicode, const void* data,
+                                            size_t length)
+{
 	WINPR_ASSERT(context);
+	ntlm_free_unicode_string(&context->Workstation);
+
+	if (length == 0)
+		return SEC_E_OK;
+
+	WINPR_ASSERT(data);
+	if (unicode)
+		context->Workstation = ntlm_from_unicode_string_w(data, length / sizeof(WCHAR));
+	else
+		context->Workstation = ntlm_from_unicode_string_utf8(data, length);
+
+	if (ntlm_is_unicode_string_empty(&context->Workstation))
+		return SEC_E_INSUFFICIENT_MEMORY;
+
+	return SEC_E_OK;
+}
+
+WINPR_ATTR_NODISCARD
+static int ntlm_SetContextWorkstation(NTLM_CONTEXT* context, const char* Workstation)
+{
+	const char* ws = Workstation;
+	CHAR* computerName = nullptr;
 
 	if (!Workstation)
 	{
-		if (GetComputerNameExA(ComputerNameNetBIOS, NULL, &nSize) ||
-		    GetLastError() != ERROR_MORE_DATA)
-			return -1;
-
-		computerName = calloc(nSize, sizeof(CHAR));
-
+		computerName = get_computer_name(ComputerNameNetBIOS, nullptr);
 		if (!computerName)
 			return -1;
-
-		if (!GetComputerNameExA(ComputerNameNetBIOS, computerName, &nSize))
-		{
-			free(computerName);
-			return -1;
-		}
-
-		if (nSize > MAX_COMPUTERNAME_LENGTH)
-			computerName[MAX_COMPUTERNAME_LENGTH] = '\0';
-
 		ws = computerName;
-
-		if (!ws)
-			return -1;
 	}
 
-	size_t len = 0;
-	context->Workstation.Buffer = ConvertUtf8ToWCharAlloc(ws, &len);
+	const size_t len = strlen(ws);
+	const SECURITY_STATUS status = ntlm_SetContextWorkstationX(context, FALSE, ws, len);
+	free(computerName);
 
-	if (!Workstation)
-		free(ws);
-
-	if (!context->Workstation.Buffer || (len > UINT16_MAX / sizeof(WCHAR)))
-		return -1;
-
-	context->Workstation.Length = (USHORT)(len * sizeof(WCHAR));
-	return 1;
+	return (status == SEC_E_OK) ? 1 : -1;
 }
 
+WINPR_ATTR_NODISCARD
 static int ntlm_SetContextServicePrincipalNameW(NTLM_CONTEXT* context, LPWSTR ServicePrincipalName)
 {
 	WINPR_ASSERT(context);
 
+	ntlm_free_unicode_string(&context->ServicePrincipalName);
 	if (!ServicePrincipalName)
-	{
-		context->ServicePrincipalName.Buffer = NULL;
-		context->ServicePrincipalName.Length = 0;
 		return 1;
-	}
 
-	context->ServicePrincipalName.Length = (USHORT)(_wcslen(ServicePrincipalName) * 2);
-	context->ServicePrincipalName.Buffer = (PWSTR)malloc(context->ServicePrincipalName.Length + 2);
-
-	if (!context->ServicePrincipalName.Buffer)
+	const size_t len = _wcslen(ServicePrincipalName);
+	context->ServicePrincipalName = ntlm_from_unicode_string_w(ServicePrincipalName, len);
+	if (ntlm_is_unicode_string_empty(&context->ServicePrincipalName))
 		return -1;
 
-	memcpy(context->ServicePrincipalName.Buffer, ServicePrincipalName,
-	       context->ServicePrincipalName.Length + 2);
 	return 1;
 }
 
+WINPR_ATTR_NODISCARD
 static int ntlm_SetContextTargetName(NTLM_CONTEXT* context, char* TargetName)
 {
 	char* name = TargetName;
-	DWORD nSize = 0;
-	CHAR* computerName = NULL;
-
 	WINPR_ASSERT(context);
 
 	if (!name)
 	{
-		if (GetComputerNameExA(ComputerNameNetBIOS, NULL, &nSize) ||
-		    GetLastError() != ERROR_MORE_DATA)
-			return -1;
-
-		computerName = calloc(nSize, sizeof(CHAR));
+		size_t nSize = 0;
+		char* computerName = get_computer_name(ComputerNameNetBIOS, &nSize);
 
 		if (!computerName)
 			return -1;
-
-		if (!GetComputerNameExA(ComputerNameNetBIOS, computerName, &nSize))
-		{
-			free(computerName);
-			return -1;
-		}
 
 		if (nSize > MAX_COMPUTERNAME_LENGTH)
 			computerName[MAX_COMPUTERNAME_LENGTH] = '\0';
@@ -211,12 +224,13 @@ static int ntlm_SetContextTargetName(NTLM_CONTEXT* context, char* TargetName)
 	}
 
 	size_t len = 0;
+	sspi_SecBufferFree(&context->TargetName);
 	context->TargetName.pvBuffer = ConvertUtf8ToWCharAlloc(name, &len);
 
 	if (!context->TargetName.pvBuffer || (len > UINT16_MAX / sizeof(WCHAR)))
 	{
 		free(context->TargetName.pvBuffer);
-		context->TargetName.pvBuffer = NULL;
+		context->TargetName.pvBuffer = nullptr;
 
 		if (!TargetName)
 			free(name);
@@ -232,107 +246,6 @@ static int ntlm_SetContextTargetName(NTLM_CONTEXT* context, char* TargetName)
 	return 1;
 }
 
-static NTLM_CONTEXT* ntlm_ContextNew(void)
-{
-	HKEY hKey = 0;
-	LONG status = 0;
-	DWORD dwType = 0;
-	DWORD dwSize = 0;
-	DWORD dwValue = 0;
-	NTLM_CONTEXT* context = (NTLM_CONTEXT*)calloc(1, sizeof(NTLM_CONTEXT));
-
-	if (!context)
-		return NULL;
-
-	context->NTLMv2 = TRUE;
-	context->UseMIC = FALSE;
-	context->SendVersionInfo = TRUE;
-	context->SendSingleHostData = FALSE;
-	context->SendWorkstationName = TRUE;
-	context->NegotiateKeyExchange = TRUE;
-	context->UseSamFileDatabase = TRUE;
-	status = RegOpenKeyExA(HKEY_LOCAL_MACHINE, WINPR_KEY, 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
-
-	if (status == ERROR_SUCCESS)
-	{
-		if (RegQueryValueEx(hKey, _T("NTLMv2"), NULL, &dwType, (BYTE*)&dwValue, &dwSize) ==
-		    ERROR_SUCCESS)
-			context->NTLMv2 = dwValue ? 1 : 0;
-
-		if (RegQueryValueEx(hKey, _T("UseMIC"), NULL, &dwType, (BYTE*)&dwValue, &dwSize) ==
-		    ERROR_SUCCESS)
-			context->UseMIC = dwValue ? 1 : 0;
-
-		if (RegQueryValueEx(hKey, _T("SendVersionInfo"), NULL, &dwType, (BYTE*)&dwValue, &dwSize) ==
-		    ERROR_SUCCESS)
-			context->SendVersionInfo = dwValue ? 1 : 0;
-
-		if (RegQueryValueEx(hKey, _T("SendSingleHostData"), NULL, &dwType, (BYTE*)&dwValue,
-		                    &dwSize) == ERROR_SUCCESS)
-			context->SendSingleHostData = dwValue ? 1 : 0;
-
-		if (RegQueryValueEx(hKey, _T("SendWorkstationName"), NULL, &dwType, (BYTE*)&dwValue,
-		                    &dwSize) == ERROR_SUCCESS)
-			context->SendWorkstationName = dwValue ? 1 : 0;
-
-		if (RegQueryValueEx(hKey, _T("WorkstationName"), NULL, &dwType, NULL, &dwSize) ==
-		    ERROR_SUCCESS)
-		{
-			char* workstation = (char*)malloc(dwSize + 1);
-
-			if (!workstation)
-			{
-				free(context);
-				return NULL;
-			}
-
-			status = RegQueryValueExA(hKey, "WorkstationName", NULL, &dwType, (BYTE*)workstation,
-			                          &dwSize);
-			if (status != ERROR_SUCCESS)
-				WLog_WARN(TAG, "Key ''WorkstationName' not found");
-			workstation[dwSize] = '\0';
-
-			if (ntlm_SetContextWorkstation(context, workstation) < 0)
-			{
-				free(workstation);
-				free(context);
-				return NULL;
-			}
-
-			free(workstation);
-		}
-
-		RegCloseKey(hKey);
-	}
-
-	/*
-	 * Extended Protection is enabled by default in Windows 7,
-	 * but enabling it in WinPR breaks TS Gateway at this point
-	 */
-	context->SuppressExtendedProtection = FALSE;
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Control\\LSA"), 0,
-	                      KEY_READ | KEY_WOW64_64KEY, &hKey);
-
-	if (status == ERROR_SUCCESS)
-	{
-		if (RegQueryValueEx(hKey, _T("SuppressExtendedProtection"), NULL, &dwType, (BYTE*)&dwValue,
-		                    &dwSize) == ERROR_SUCCESS)
-			context->SuppressExtendedProtection = dwValue ? 1 : 0;
-
-		RegCloseKey(hKey);
-	}
-
-	context->NegotiateFlags = 0;
-	context->LmCompatibilityLevel = 3;
-	ntlm_change_state(context, NTLM_STATE_INITIAL);
-	FillMemory(context->MachineID, sizeof(context->MachineID), 0xAA);
-
-	if (context->NTLMv2)
-		context->UseMIC = TRUE;
-
-	return context;
-}
-
 static void ntlm_ContextFree(NTLM_CONTEXT* context)
 {
 	if (!context)
@@ -344,21 +257,233 @@ static void ntlm_ContextFree(NTLM_CONTEXT* context)
 	sspi_SecBufferFree(&context->ChallengeMessage);
 	sspi_SecBufferFree(&context->AuthenticateMessage);
 	sspi_SecBufferFree(&context->ChallengeTargetInfo);
+	sspi_SecBufferFree(&context->AuthenticateTargetInfo);
 	sspi_SecBufferFree(&context->TargetName);
 	sspi_SecBufferFree(&context->NtChallengeResponse);
 	sspi_SecBufferFree(&context->LmChallengeResponse);
-	free(context->ServicePrincipalName.Buffer);
-	free(context->Workstation.Buffer);
+	ntlm_free_unicode_string(&context->ServicePrincipalName);
+	ntlm_free_unicode_string(&context->Workstation);
+	ntlm_free_unicode_string(&context->NbComputerName);
+	ntlm_free_unicode_string(&context->NbDomainName);
+	ntlm_free_unicode_string(&context->DnsComputerName);
+	ntlm_free_unicode_string(&context->DnsDomainName);
+
+	ntlm_free_messages(context);
+
+	/* Zero sensitive key material before freeing the context */
+	memset(context->NtlmHash, 0, sizeof(context->NtlmHash));
+	memset(context->NtlmV2Hash, 0, sizeof(context->NtlmV2Hash));
+	memset(context->SessionBaseKey, 0, sizeof(context->SessionBaseKey));
+	memset(context->KeyExchangeKey, 0, sizeof(context->KeyExchangeKey));
+	memset(context->RandomSessionKey, 0, sizeof(context->RandomSessionKey));
+	memset(context->ExportedSessionKey, 0, sizeof(context->ExportedSessionKey));
+	memset(context->EncryptedRandomSessionKey, 0, sizeof(context->EncryptedRandomSessionKey));
+	memset(context->NtProofString, 0, sizeof(context->NtProofString));
 	free(context);
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_AcquireCredentialsHandleW(
-    SEC_WCHAR* pszPrincipal, SEC_WCHAR* pszPackage, ULONG fCredentialUse, void* pvLogonID,
-    void* pAuthData, SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
-    PTimeStamp ptsExpiry)
+WINPR_ATTR_NODISCARD
+static int ntlm_get_target_computer_name(PUNICODE_STRING pName,
+                                         WINPR_ATTR_UNUSED COMPUTER_NAME_FORMAT type)
 {
-	SEC_WINPR_NTLM_SETTINGS* settings = NULL;
+	WINPR_ASSERT(pName);
+	ntlm_free_unicode_string(pName);
 
+	size_t len = 0;
+	char* name = get_computer_name(ComputerNameNetBIOS, &len);
+	if (!name)
+		return -1;
+
+	CharUpperA(name);
+
+	*pName = ntlm_from_unicode_string_utf8(name, len);
+	free(name);
+
+	return !ntlm_is_unicode_string_empty(pName);
+}
+
+WINPR_ATTR_NODISCARD
+static BOOL ntlm_ContextFillDefaultNames(NTLM_CONTEXT* context)
+{
+	WINPR_ASSERT(context);
+
+	if (ntlm_SetContextWorkstation(context, nullptr) < 0)
+		return FALSE;
+
+	if (ntlm_get_target_computer_name(&context->NbDomainName, ComputerNameNetBIOS) < 0)
+		return FALSE;
+
+	if (ntlm_get_target_computer_name(&context->NbComputerName, ComputerNameNetBIOS) < 0)
+		return FALSE;
+
+	if (ntlm_get_target_computer_name(&context->DnsDomainName, ComputerNameDnsDomain) < 0)
+		return FALSE;
+
+	if (ntlm_get_target_computer_name(&context->DnsComputerName, ComputerNameDnsHostname) < 0)
+		return FALSE;
+	return TRUE;
+}
+
+static BOOL ntlm_try_set_from_registry(HKEY hKey, const char* key, UNICODE_STRING* ustr)
+{
+	WINPR_ASSERT(hKey);
+	WINPR_ASSERT(key);
+
+	UNICODE_STRING str = WINPR_C_ARRAY_INIT;
+
+	WCHAR wkey[64] = WINPR_C_ARRAY_INIT;
+	const SSIZE_T res = ConvertUtf8ToWChar(key, wkey, ARRAYSIZE(wkey));
+	if (res < 0)
+		goto fail;
+	WINPR_ASSERT((size_t)res < ARRAYSIZE(wkey));
+
+	DWORD dwSize = 0;
+	DWORD dwType = 0;
+	if (RegQueryValueExW(hKey, wkey, nullptr, &dwType, nullptr, &dwSize) != ERROR_SUCCESS)
+		goto fail;
+
+	if ((dwSize > UINT16_MAX) || ((dwSize % 2) != 0))
+		goto fail;
+
+	str.Buffer = calloc(dwSize / sizeof(WCHAR) + 1, sizeof(WCHAR));
+	if (!str.Buffer)
+		goto fail;
+	str.Length = WINPR_ASSERTING_INT_CAST(UINT16, dwSize);
+	str.MaximumLength = WINPR_ASSERTING_INT_CAST(UINT16, dwSize);
+
+	const LONG rc = RegQueryValueExW(hKey, wkey, nullptr, &dwType, (BYTE*)str.Buffer, &dwSize);
+	if (rc != ERROR_SUCCESS)
+		goto fail;
+	ntlm_free_unicode_string(ustr);
+	*ustr = str;
+	return TRUE;
+
+fail:
+	ntlm_free_unicode_string(&str);
+	return FALSE;
+}
+
+WINPR_ATTR_NODISCARD
+static BOOL ntlm_ContextFromConfig(NTLM_CONTEXT* context)
+{
+	{
+		WINPR_ASSERT(context);
+
+		char* key = winpr_getApplicatonDetailsRegKey(WINPR_KEY);
+		if (key)
+		{
+			HKEY hKey = nullptr;
+
+			const LONG status =
+			    RegOpenKeyExA(HKEY_LOCAL_MACHINE, key, 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+			free(key);
+
+			if (status == ERROR_SUCCESS)
+			{
+				DWORD dwValue = 0;
+				DWORD dwSize = 0;
+				DWORD dwType = 0;
+
+				if (RegQueryValueEx(hKey, _T("NTLMv2"), nullptr, &dwType, (BYTE*)&dwValue,
+				                    &dwSize) == ERROR_SUCCESS)
+					context->NTLMv2 = dwValue ? 1 : 0;
+
+				if (RegQueryValueEx(hKey, _T("UseMIC"), nullptr, &dwType, (BYTE*)&dwValue,
+				                    &dwSize) == ERROR_SUCCESS)
+					context->UseMIC = dwValue ? 1 : 0;
+
+				if (RegQueryValueEx(hKey, _T("SendVersionInfo"), nullptr, &dwType, (BYTE*)&dwValue,
+				                    &dwSize) == ERROR_SUCCESS)
+					context->SendVersionInfo = dwValue ? 1 : 0;
+
+				if (RegQueryValueEx(hKey, _T("SendSingleHostData"), nullptr, &dwType,
+				                    (BYTE*)&dwValue, &dwSize) == ERROR_SUCCESS)
+					context->SendSingleHostData = dwValue ? 1 : 0;
+
+				if (RegQueryValueEx(hKey, _T("SendWorkstationName"), nullptr, &dwType,
+				                    (BYTE*)&dwValue, &dwSize) == ERROR_SUCCESS)
+					context->SendWorkstationName = dwValue ? 1 : 0;
+
+				(void)ntlm_try_set_from_registry(hKey, "WorkstationName", &context->Workstation);
+				(void)ntlm_try_set_from_registry(hKey, "NbDomainName", &context->NbDomainName);
+				(void)ntlm_try_set_from_registry(hKey, "NbComputerName", &context->NbComputerName);
+				(void)ntlm_try_set_from_registry(hKey, "DnsDomainName", &context->DnsDomainName);
+				(void)ntlm_try_set_from_registry(hKey, "DnsComputerName",
+				                                 &context->DnsComputerName);
+
+				RegCloseKey(hKey);
+			}
+		}
+	}
+
+	HKEY hKey = nullptr;
+	const LONG status =
+	    RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Control\\LSA"), 0,
+	                 KEY_READ | KEY_WOW64_64KEY, &hKey);
+
+	if (status == ERROR_SUCCESS)
+	{
+		DWORD dwType = 0;
+		DWORD dwSize = 0;
+		DWORD dwValue = 0;
+		if (RegQueryValueEx(hKey, _T("SuppressExtendedProtection"), nullptr, &dwType,
+		                    (BYTE*)&dwValue, &dwSize) == ERROR_SUCCESS)
+			context->SuppressExtendedProtection = dwValue ? 1 : 0;
+
+		RegCloseKey(hKey);
+	}
+
+	/*
+	 * Extended Protection is enabled by default in Windows 7,
+	 * but enabling it in WinPR breaks TS Gateway at this point
+	 */
+	context->SuppressExtendedProtection = FALSE;
+	return TRUE;
+}
+
+WINPR_ATTR_MALLOC(ntlm_ContextFree, 1)
+static NTLM_CONTEXT* ntlm_ContextNew(void)
+{
+	NTLM_CONTEXT* context = (NTLM_CONTEXT*)calloc(1, sizeof(NTLM_CONTEXT));
+
+	if (!context)
+		return nullptr;
+
+	context->NTLMv2 = TRUE;
+	context->UseMIC = FALSE;
+	context->SendVersionInfo = TRUE;
+	context->SendSingleHostData = FALSE;
+	context->SendWorkstationName = TRUE;
+	context->NegotiateKeyExchange = TRUE;
+	context->UseSamFileDatabase = TRUE;
+
+	context->NegotiateFlags = 0;
+	context->LmCompatibilityLevel = 3;
+	ntlm_change_state(context, NTLM_STATE_INITIAL);
+	FillMemory(context->MachineID, sizeof(context->MachineID), 0xAA);
+
+	if (context->NTLMv2)
+		context->UseMIC = TRUE;
+
+	if (!ntlm_ContextFillDefaultNames(context))
+		goto fail;
+	if (!ntlm_ContextFromConfig(context))
+		goto fail;
+
+	return context;
+
+fail:
+	ntlm_ContextFree(context);
+	return nullptr;
+}
+
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_AcquireCredentialsHandleW(
+    WINPR_ATTR_UNUSED SEC_WCHAR* pszPrincipal, WINPR_ATTR_UNUSED SEC_WCHAR* pszPackage,
+    ULONG fCredentialUse, WINPR_ATTR_UNUSED void* pvLogonID, void* pAuthData,
+    SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
+    WINPR_ATTR_UNUSED PTimeStamp ptsExpiry)
+{
 	if ((fCredentialUse != SECPKG_CRED_OUTBOUND) && (fCredentialUse != SECPKG_CRED_INBOUND) &&
 	    (fCredentialUse != SECPKG_CRED_BOTH))
 	{
@@ -374,55 +499,89 @@ static SECURITY_STATUS SEC_ENTRY ntlm_AcquireCredentialsHandleW(
 	credentials->pGetKeyFn = pGetKeyFn;
 	credentials->pvGetKeyArgument = pvGetKeyArgument;
 
+#if !defined(WITHOUT_WINPR_3x_DEPRECATED)
+	SEC_WINPR_NTLM_SETTINGS* settingsV1 = nullptr;
+#endif
+	SEC_WINPR_NTLM_SETTINGS_V2* settingsV2 = nullptr;
 	if (pAuthData)
 	{
 		UINT32 identityFlags = sspi_GetAuthIdentityFlags(pAuthData);
 
-		sspi_CopyAuthIdentity(&(credentials->identity),
-		                      (const SEC_WINNT_AUTH_IDENTITY_INFO*)pAuthData);
+		if (sspi_CopyAuthIdentity(&(credentials->identity),
+		                          (const SEC_WINNT_AUTH_IDENTITY_INFO*)pAuthData) < 0)
+		{
+			sspi_CredentialsFree(credentials);
+			return SEC_E_INVALID_PARAMETER;
+		}
 
+#if !defined(WITHOUT_WINPR_3x_DEPRECATED)
 		if (identityFlags & SEC_WINNT_AUTH_IDENTITY_EXTENDED)
-			settings = (((SEC_WINNT_AUTH_IDENTITY_WINPR*)pAuthData)->ntlmSettings);
+			settingsV1 = (((SEC_WINNT_AUTH_IDENTITY_WINPR*)pAuthData)->ntlmSettings);
+#endif
+
+		if (identityFlags & SEC_WINNT_AUTH_IDENTITY_EXTENDED_v2)
+		{
+			const SEC_WINNT_AUTH_IDENTITY_WINPR_V2* auth =
+			    (const SEC_WINNT_AUTH_IDENTITY_WINPR_V2*)pAuthData;
+			WINPR_ASSERT(auth);
+			if (auth->version < SEC_WINNT_AUTH_IDENTITY_WINPR_V2_REVISION_1)
+				return SEC_E_INVALID_PARAMETER;
+			settingsV2 = auth->ntlmSettingsV2;
+		}
 	}
 
-	if (settings)
+#if !defined(WITHOUT_WINPR_3x_DEPRECATED)
+	if (settingsV1)
 	{
-		if (settings->samFile)
+		if (settingsV1->samFile)
 		{
-			credentials->ntlmSettings.samFile = _strdup(settings->samFile);
-			if (!credentials->ntlmSettings.samFile)
+			if (!sspi_CloneSecSettingsString(&credentials->ntlmSettingsV2->samFile,
+			                                 settingsV1->samFile))
 			{
 				sspi_CredentialsFree(credentials);
 				return SEC_E_INSUFFICIENT_MEMORY;
 			}
 		}
-		credentials->ntlmSettings.hashCallback = settings->hashCallback;
-		credentials->ntlmSettings.hashCallbackArg = settings->hashCallbackArg;
+		credentials->ntlmSettingsV2->hashCallback = settingsV1->hashCallback;
+		credentials->ntlmSettingsV2->hashCallbackArg = settingsV1->hashCallbackArg;
+	}
+#endif
+
+	if (settingsV2)
+	{
+		sspi_FreeSecNtlmSettings(credentials->ntlmSettingsV2);
+		credentials->ntlmSettingsV2 = sspi_CloneSecNtlmSettings(settingsV2);
+		if (!credentials->ntlmSettingsV2)
+		{
+			sspi_CredentialsFree(credentials);
+			return SEC_E_INVALID_PARAMETER;
+		}
 	}
 
 	sspi_SecureHandleSetLowerPointer(phCredential, (void*)credentials);
-	sspi_SecureHandleSetUpperPointer(phCredential, (void*)NTLM_PACKAGE_NAME);
+	sspi_SecureHandleSetPackageId(phCredential, SSPI_PACKAGE_NTLM);
 	return SEC_E_OK;
 }
 
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_AcquireCredentialsHandleA(
     SEC_CHAR* pszPrincipal, SEC_CHAR* pszPackage, ULONG fCredentialUse, void* pvLogonID,
     void* pAuthData, SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
     PTimeStamp ptsExpiry)
 {
 	SECURITY_STATUS status = SEC_E_INSUFFICIENT_MEMORY;
-	SEC_WCHAR* principal = NULL;
-	SEC_WCHAR* package = NULL;
+	SEC_WCHAR* principal = nullptr;
+	SEC_WCHAR* package = nullptr;
 
 	if (pszPrincipal)
 	{
-		principal = ConvertUtf8ToWCharAlloc(pszPrincipal, NULL);
+		principal = ConvertUtf8ToWCharAlloc(pszPrincipal, nullptr);
 		if (!principal)
 			goto fail;
 	}
 	if (pszPackage)
 	{
-		package = ConvertUtf8ToWCharAlloc(pszPackage, NULL);
+		package = ConvertUtf8ToWCharAlloc(pszPackage, nullptr);
 		if (!package)
 			goto fail;
 	}
@@ -438,6 +597,7 @@ fail:
 	return status;
 }
 
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_FreeCredentialsHandle(PCredHandle phCredential)
 {
 	if (!phCredential)
@@ -445,7 +605,7 @@ static SECURITY_STATUS SEC_ENTRY ntlm_FreeCredentialsHandle(PCredHandle phCreden
 
 	SSPI_CREDENTIALS* credentials =
 	    (SSPI_CREDENTIALS*)sspi_SecureHandleGetLowerPointer(phCredential);
-
+	sspi_SecureHandleInvalidate(phCredential);
 	if (!credentials)
 		return SEC_E_INVALID_HANDLE;
 
@@ -453,8 +613,10 @@ static SECURITY_STATUS SEC_ENTRY ntlm_FreeCredentialsHandle(PCredHandle phCreden
 	return SEC_E_OK;
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_QueryCredentialsAttributesW(PCredHandle phCredential,
-                                                                  ULONG ulAttribute, void* pBuffer)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_QueryCredentialsAttributesW(
+    WINPR_ATTR_UNUSED PCredHandle phCredential, WINPR_ATTR_UNUSED ULONG ulAttribute,
+    WINPR_ATTR_UNUSED void* pBuffer)
 {
 	if (ulAttribute == SECPKG_CRED_ATTR_NAMES)
 	{
@@ -465,24 +627,29 @@ static SECURITY_STATUS SEC_ENTRY ntlm_QueryCredentialsAttributesW(PCredHandle ph
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_QueryCredentialsAttributesA(PCredHandle phCredential,
                                                                   ULONG ulAttribute, void* pBuffer)
 {
 	return ntlm_QueryCredentialsAttributesW(phCredential, ulAttribute, pBuffer);
 }
 
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS ntml_setUnicodeStringA(UNICODE_STRING* str, const char* val, size_t charlen);
+
 /**
  * @see http://msdn.microsoft.com/en-us/library/windows/desktop/aa374707
  */
-static SECURITY_STATUS SEC_ENTRY
-ntlm_AcceptSecurityContext(PCredHandle phCredential, PCtxtHandle phContext, PSecBufferDesc pInput,
-                           ULONG fContextReq, ULONG TargetDataRep, PCtxtHandle phNewContext,
-                           PSecBufferDesc pOutput, PULONG pfContextAttr, PTimeStamp ptsTimeStamp)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_AcceptSecurityContext(
+    PCredHandle phCredential, PCtxtHandle phContext, PSecBufferDesc pInput, ULONG fContextReq,
+    WINPR_ATTR_UNUSED ULONG TargetDataRep, PCtxtHandle phNewContext, PSecBufferDesc pOutput,
+    WINPR_ATTR_UNUSED PULONG pfContextAttr, WINPR_ATTR_UNUSED PTimeStamp ptsTimeStamp)
 {
 	SECURITY_STATUS status = 0;
-	SSPI_CREDENTIALS* credentials = NULL;
-	PSecBuffer input_buffer = NULL;
-	PSecBuffer output_buffer = NULL;
+	SSPI_CREDENTIALS* credentials = nullptr;
+	PSecBuffer input_buffer = nullptr;
+	PSecBuffer output_buffer = nullptr;
 
 	/* behave like windows SSPIs that don't want empty context */
 	if (phContext && !phContext->dwLower && !phContext->dwUpper)
@@ -504,13 +671,50 @@ ntlm_AcceptSecurityContext(PCredHandle phCredential, PCtxtHandle phContext, PSec
 
 		credentials = (SSPI_CREDENTIALS*)sspi_SecureHandleGetLowerPointer(phCredential);
 		context->credentials = credentials;
-		context->SamFile = credentials->ntlmSettings.samFile;
-		context->HashCallback = credentials->ntlmSettings.hashCallback;
-		context->HashCallbackArg = credentials->ntlmSettings.hashCallbackArg;
+		context->SamFile = credentials->ntlmSettingsV2->samFile;
+		context->HashCallback = credentials->ntlmSettingsV2->hashCallback;
+		context->HashCallbackArg = credentials->ntlmSettingsV2->hashCallbackArg;
 
-		ntlm_SetContextTargetName(context, NULL);
+		if (credentials->ntlmSettingsV2->dnsComputerName)
+		{
+			const SECURITY_STATUS rc = ntml_setUnicodeStringA(
+			    &context->DnsComputerName, credentials->ntlmSettingsV2->dnsComputerName,
+			    strlen(credentials->ntlmSettingsV2->dnsComputerName));
+			if (SEC_E_OK != rc)
+				return rc;
+		}
+
+		if (credentials->ntlmSettingsV2->dnsDomainName)
+		{
+			const SECURITY_STATUS rc = ntml_setUnicodeStringA(
+			    &context->DnsDomainName, credentials->ntlmSettingsV2->dnsDomainName,
+			    strlen(credentials->ntlmSettingsV2->dnsDomainName));
+			if (SEC_E_OK != rc)
+				return rc;
+		}
+
+		if (credentials->ntlmSettingsV2->netBiosComputerName)
+		{
+			const SECURITY_STATUS rc = ntml_setUnicodeStringA(
+			    &context->NbComputerName, credentials->ntlmSettingsV2->netBiosComputerName,
+			    strlen(credentials->ntlmSettingsV2->netBiosComputerName));
+			if (SEC_E_OK != rc)
+				return rc;
+		}
+
+		if (credentials->ntlmSettingsV2->netBiosDomainName)
+		{
+			const SECURITY_STATUS rc = ntml_setUnicodeStringA(
+			    &context->NbDomainName, credentials->ntlmSettingsV2->netBiosDomainName,
+			    strlen(credentials->ntlmSettingsV2->netBiosDomainName));
+			if (SEC_E_OK != rc)
+				return rc;
+		}
+
+		if (!ntlm_SetContextTargetName(context, credentials->ntlmSettingsV2->targetName))
+			return SEC_E_INVALID_HANDLE;
 		sspi_SecureHandleSetLowerPointer(phNewContext, context);
-		sspi_SecureHandleSetUpperPointer(phNewContext, (void*)NTLM_PACKAGE_NAME);
+		sspi_SecureHandleSetPackageId(phNewContext, SSPI_PACKAGE_NTLM);
 	}
 
 	switch (ntlm_get_state(context))
@@ -594,20 +798,24 @@ ntlm_AcceptSecurityContext(PCredHandle phCredential, PCtxtHandle phContext, PSec
 	}
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_ImpersonateSecurityContext(PCtxtHandle phContext)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY
+ntlm_ImpersonateSecurityContext(WINPR_ATTR_UNUSED PCtxtHandle phContext)
 {
 	return SEC_E_OK;
 }
 
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
     PCredHandle phCredential, PCtxtHandle phContext, SEC_WCHAR* pszTargetName, ULONG fContextReq,
-    ULONG Reserved1, ULONG TargetDataRep, PSecBufferDesc pInput, ULONG Reserved2,
-    PCtxtHandle phNewContext, PSecBufferDesc pOutput, PULONG pfContextAttr, PTimeStamp ptsExpiry)
+    WINPR_ATTR_UNUSED ULONG Reserved1, WINPR_ATTR_UNUSED ULONG TargetDataRep, PSecBufferDesc pInput,
+    WINPR_ATTR_UNUSED ULONG Reserved2, PCtxtHandle phNewContext, PSecBufferDesc pOutput,
+    WINPR_ATTR_UNUSED PULONG pfContextAttr, WINPR_ATTR_UNUSED PTimeStamp ptsExpiry)
 {
 	SECURITY_STATUS status = 0;
-	SSPI_CREDENTIALS* credentials = NULL;
-	PSecBuffer input_buffer = NULL;
-	PSecBuffer output_buffer = NULL;
+	SSPI_CREDENTIALS* credentials = nullptr;
+	PSecBuffer input_buffer = nullptr;
+	PSecBuffer output_buffer = nullptr;
 
 	/* behave like windows SSPIs that don't want empty context */
 	if (phContext && !phContext->dwLower && !phContext->dwUpper)
@@ -633,15 +841,6 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
 		credentials = (SSPI_CREDENTIALS*)sspi_SecureHandleGetLowerPointer(phCredential);
 		context->credentials = credentials;
 
-		if (context->Workstation.Length < 1)
-		{
-			if (ntlm_SetContextWorkstation(context, NULL) < 0)
-			{
-				ntlm_ContextFree(context);
-				return SEC_E_INTERNAL_ERROR;
-			}
-		}
-
 		if (ntlm_SetContextServicePrincipalNameW(context, pszTargetName) < 0)
 		{
 			ntlm_ContextFree(context);
@@ -649,7 +848,7 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
 		}
 
 		sspi_SecureHandleSetLowerPointer(phNewContext, context);
-		sspi_SecureHandleSetUpperPointer(phNewContext, NTLM_SSP_NAME);
+		sspi_SecureHandleSetPackageId(phNewContext, SSPI_PACKAGE_NTLM);
 	}
 
 	if ((!input_buffer) || (ntlm_get_state(context) == NTLM_STATE_AUTHENTICATE))
@@ -726,17 +925,18 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
 /**
  * @see http://msdn.microsoft.com/en-us/library/windows/desktop/aa375512%28v=vs.85%29.aspx
  */
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextA(
     PCredHandle phCredential, PCtxtHandle phContext, SEC_CHAR* pszTargetName, ULONG fContextReq,
     ULONG Reserved1, ULONG TargetDataRep, PSecBufferDesc pInput, ULONG Reserved2,
     PCtxtHandle phNewContext, PSecBufferDesc pOutput, PULONG pfContextAttr, PTimeStamp ptsExpiry)
 {
 	SECURITY_STATUS status = 0;
-	SEC_WCHAR* pszTargetNameW = NULL;
+	SEC_WCHAR* pszTargetNameW = nullptr;
 
 	if (pszTargetName)
 	{
-		pszTargetNameW = ConvertUtf8ToWCharAlloc(pszTargetName, NULL);
+		pszTargetNameW = ConvertUtf8ToWCharAlloc(pszTargetName, nullptr);
 		if (!pszTargetNameW)
 			return SEC_E_INTERNAL_ERROR;
 	}
@@ -749,18 +949,19 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextA(
 }
 
 /* http://msdn.microsoft.com/en-us/library/windows/desktop/aa375354 */
-
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_DeleteSecurityContext(PCtxtHandle phContext)
 {
 	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
+	sspi_SecureHandleInvalidate(phContext);
 	ntlm_ContextFree(context);
 	return SEC_E_OK;
 }
 
 SECURITY_STATUS ntlm_computeProofValue(NTLM_CONTEXT* ntlm, SecBuffer* ntproof)
 {
-	BYTE* blob = NULL;
-	SecBuffer* target = NULL;
+	BYTE* blob = nullptr;
+	SecBuffer* target = nullptr;
 
 	WINPR_ASSERT(ntlm);
 	WINPR_ASSERT(ntproof);
@@ -785,7 +986,7 @@ SECURITY_STATUS ntlm_computeProofValue(NTLM_CONTEXT* ntlm, SecBuffer* ntproof)
 
 SECURITY_STATUS ntlm_computeMicValue(NTLM_CONTEXT* ntlm, SecBuffer* micvalue)
 {
-	BYTE* blob = NULL;
+	BYTE* blob = nullptr;
 	ULONG msgSize = 0;
 
 	WINPR_ASSERT(ntlm);
@@ -808,8 +1009,129 @@ SECURITY_STATUS ntlm_computeMicValue(NTLM_CONTEXT* ntlm, SecBuffer* micvalue)
 	return SEC_E_OK;
 }
 
-/* http://msdn.microsoft.com/en-us/library/windows/desktop/aa379337/ */
+WINPR_ATTR_NODISCARD
+static bool identityToAuthIdentity(const SEC_WINNT_AUTH_IDENTITY* identity,
+                                   SecPkgContext_AuthIdentity* pAuthIdentity)
+{
+	WINPR_ASSERT(identity);
 
+	if (!pAuthIdentity)
+		return false;
+
+	const SecPkgContext_AuthIdentity empty = WINPR_C_ARRAY_INIT;
+	*pAuthIdentity = empty;
+
+	if ((identity->Flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0)
+	{
+		if (identity->UserLength > 0)
+		{
+			if (ConvertWCharNToUtf8(identity->User, identity->UserLength, pAuthIdentity->User,
+			                        ARRAYSIZE(pAuthIdentity->User)) <= 0)
+				return false;
+		}
+
+		if (identity->DomainLength > 0)
+		{
+			if (ConvertWCharNToUtf8(identity->Domain, identity->DomainLength, pAuthIdentity->Domain,
+			                        ARRAYSIZE(pAuthIdentity->Domain)) <= 0)
+				return false;
+		}
+	}
+	else if ((identity->Flags & SEC_WINNT_AUTH_IDENTITY_ANSI) != 0)
+	{
+		if (identity->UserLength > 0)
+		{
+			const size_t len = MIN(ARRAYSIZE(pAuthIdentity->User) - 1, identity->UserLength);
+			strncpy(pAuthIdentity->User, (char*)identity->User, len);
+			pAuthIdentity->User[len] = '\0';
+		}
+
+		if (identity->DomainLength > 0)
+		{
+			const size_t len = MIN(ARRAYSIZE(pAuthIdentity->Domain) - 1, identity->DomainLength);
+			strncpy(pAuthIdentity->Domain, (char*)identity->Domain, len);
+			pAuthIdentity->Domain[len] = '\0';
+		}
+	}
+	else
+		return false;
+	return true;
+}
+
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_QueryContextAttributesCommon(PCtxtHandle phContext,
+                                                                   ULONG ulAttribute, void* pBuffer)
+{
+	if (!phContext)
+		return SEC_E_INVALID_HANDLE;
+
+	if (!pBuffer)
+		return SEC_E_INSUFFICIENT_MEMORY;
+
+	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
+	if (!check_context(context))
+		return SEC_E_INVALID_HANDLE;
+
+	switch (ulAttribute)
+	{
+		case SECPKG_ATTR_AUTH_IDENTITY:
+		{
+			SecPkgContext_AuthIdentity* AuthIdentity = (SecPkgContext_AuthIdentity*)pBuffer;
+			SSPI_CREDENTIALS* credentials = context->credentials;
+			if (!credentials)
+				return SEC_E_INTERNAL_ERROR;
+			if (!identityToAuthIdentity(&credentials->identity, AuthIdentity))
+				return SEC_E_INTERNAL_ERROR;
+			context->UseSamFileDatabase = FALSE;
+			return SEC_E_OK;
+		}
+		case SECPKG_ATTR_SIZES:
+		{
+			SecPkgContext_Sizes* ContextSizes = (SecPkgContext_Sizes*)pBuffer;
+			ContextSizes->cbMaxToken = 2010;
+			ContextSizes->cbMaxSignature = 16;    /* the size of expected signature is 16 bytes */
+			ContextSizes->cbBlockSize = 0;        /* no padding */
+			ContextSizes->cbSecurityTrailer = 16; /* no security trailer appended in NTLM
+			                            contrary to Kerberos */
+			return SEC_E_OK;
+		}
+		case SECPKG_ATTR_AUTH_NTLM_NTPROOF_VALUE:
+			return ntlm_computeProofValue(context, (SecBuffer*)pBuffer);
+
+		case SECPKG_ATTR_AUTH_NTLM_RANDKEY:
+		{
+			SecBuffer* randkey = (SecBuffer*)pBuffer;
+
+			if (!sspi_SecBufferAlloc(randkey, 16))
+				return (SEC_E_INSUFFICIENT_MEMORY);
+
+			CopyMemory(randkey->pvBuffer, context->EncryptedRandomSessionKey, 16);
+			return (SEC_E_OK);
+		}
+
+		case SECPKG_ATTR_AUTH_NTLM_MIC:
+		{
+			SecBuffer* mic = (SecBuffer*)pBuffer;
+			NTLM_AUTHENTICATE_MESSAGE* message = &context->AUTHENTICATE_MESSAGE;
+
+			if (!sspi_SecBufferAlloc(mic, 16))
+				return (SEC_E_INSUFFICIENT_MEMORY);
+
+			CopyMemory(mic->pvBuffer, message->MessageIntegrityCheck, 16);
+			return (SEC_E_OK);
+		}
+
+		case SECPKG_ATTR_AUTH_NTLM_MIC_VALUE:
+			return ntlm_computeMicValue(context, (SecBuffer*)pBuffer);
+
+		default:
+			WLog_ERR(TAG, "TODO: Implement ulAttribute=0x%08" PRIx32, ulAttribute);
+			return SEC_E_UNSUPPORTED_FUNCTION;
+	}
+}
+
+/* http://msdn.microsoft.com/en-us/library/windows/desktop/aa379337/ */
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_QueryContextAttributesW(PCtxtHandle phContext,
                                                               ULONG ulAttribute, void* pBuffer)
 {
@@ -823,89 +1145,165 @@ static SECURITY_STATUS SEC_ENTRY ntlm_QueryContextAttributesW(PCtxtHandle phCont
 	if (!check_context(context))
 		return SEC_E_INVALID_HANDLE;
 
-	if (ulAttribute == SECPKG_ATTR_SIZES)
+	switch (ulAttribute)
 	{
-		SecPkgContext_Sizes* ContextSizes = (SecPkgContext_Sizes*)pBuffer;
-		ContextSizes->cbMaxToken = 2010;
-		ContextSizes->cbMaxSignature = 16;    /* the size of expected signature is 16 bytes */
-		ContextSizes->cbBlockSize = 0;        /* no padding */
-		ContextSizes->cbSecurityTrailer = 16; /* no security trailer appended in NTLM
-		                            contrary to Kerberos */
-		return SEC_E_OK;
-	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_IDENTITY)
-	{
-		SSPI_CREDENTIALS* credentials = NULL;
-		const SecPkgContext_AuthIdentity empty = { 0 };
-		SecPkgContext_AuthIdentity* AuthIdentity = (SecPkgContext_AuthIdentity*)pBuffer;
-
-		WINPR_ASSERT(AuthIdentity);
-		*AuthIdentity = empty;
-
-		context->UseSamFileDatabase = FALSE;
-		credentials = context->credentials;
-
-		if (credentials->identity.UserLength > 0)
+		case SECPKG_ATTR_AUTH_NTLM_HOSTNAME:
 		{
-			if (ConvertWCharNToUtf8(credentials->identity.User, credentials->identity.UserLength,
-			                        AuthIdentity->User, ARRAYSIZE(AuthIdentity->User)) <= 0)
-				return SEC_E_INTERNAL_ERROR;
+			memcpy(pBuffer, context->Workstation.Buffer, context->Workstation.Length);
+			return SEC_E_OK;
+		}
+		case SECPKG_ATTR_AUTH_NTLM_NB_DOMAIN_NAME:
+		{
+			memcpy(pBuffer, context->NbDomainName.Buffer, context->NbDomainName.Length);
+			return SEC_E_OK;
+		}
+		case SECPKG_ATTR_AUTH_NTLM_NB_COMPUTER_NAME:
+		{
+			memcpy(pBuffer, context->NbComputerName.Buffer, context->NbComputerName.Length);
+			return SEC_E_OK;
+		}
+		case SECPKG_ATTR_AUTH_NTLM_DNS_DOMAIN_NAME:
+		{
+			memcpy(pBuffer, context->DnsDomainName.Buffer, context->DnsDomainName.Length);
+			return SEC_E_OK;
+		}
+		case SECPKG_ATTR_AUTH_NTLM_DNS_COMPUTER_NAME:
+		{
+			memcpy(pBuffer, context->DnsComputerName.Buffer, context->DnsComputerName.Length);
+			return SEC_E_OK;
 		}
 
-		if (credentials->identity.DomainLength > 0)
+		case SECPKG_ATTR_PACKAGE_INFO:
 		{
-			if (ConvertWCharNToUtf8(credentials->identity.Domain,
-			                        credentials->identity.DomainLength, AuthIdentity->Domain,
-			                        ARRAYSIZE(AuthIdentity->Domain)) <= 0)
-				return SEC_E_INTERNAL_ERROR;
+			SecPkgContext_PackageInfoW* PackageInfo = (SecPkgContext_PackageInfoW*)pBuffer;
+			size_t size = sizeof(SecPkgInfoW);
+			SecPkgInfoW* pPackageInfo =
+			    (SecPkgInfoW*)sspi_ContextBufferAlloc(QuerySecurityPackageInfoIndex, size);
+
+			if (!pPackageInfo)
+				return SEC_E_INSUFFICIENT_MEMORY;
+
+			pPackageInfo->fCapabilities = NTLM_SecPkgInfoW.fCapabilities;
+			pPackageInfo->wVersion = NTLM_SecPkgInfoW.wVersion;
+			pPackageInfo->wRPCID = NTLM_SecPkgInfoW.wRPCID;
+			pPackageInfo->cbMaxToken = NTLM_SecPkgInfoW.cbMaxToken;
+			pPackageInfo->Name = _wcsdup(NTLM_SecPkgInfoW.Name);
+			pPackageInfo->Comment = _wcsdup(NTLM_SecPkgInfoW.Comment);
+
+			if (!pPackageInfo->Name || !pPackageInfo->Comment)
+			{
+				sspi_ContextBufferFree(pPackageInfo);
+				return SEC_E_INSUFFICIENT_MEMORY;
+			}
+			PackageInfo->PackageInfo = pPackageInfo;
+			return SEC_E_OK;
 		}
-
-		return SEC_E_OK;
+		default:
+			return ntlm_QueryContextAttributesCommon(phContext, ulAttribute, pBuffer);
 	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_NTPROOF_VALUE)
-	{
-		return ntlm_computeProofValue(context, (SecBuffer*)pBuffer);
-	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_RANDKEY)
-	{
-		SecBuffer* randkey = NULL;
-		randkey = (SecBuffer*)pBuffer;
-
-		if (!sspi_SecBufferAlloc(randkey, 16))
-			return (SEC_E_INSUFFICIENT_MEMORY);
-
-		CopyMemory(randkey->pvBuffer, context->EncryptedRandomSessionKey, 16);
-		return (SEC_E_OK);
-	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_MIC)
-	{
-		SecBuffer* mic = (SecBuffer*)pBuffer;
-		NTLM_AUTHENTICATE_MESSAGE* message = &context->AUTHENTICATE_MESSAGE;
-
-		if (!sspi_SecBufferAlloc(mic, 16))
-			return (SEC_E_INSUFFICIENT_MEMORY);
-
-		CopyMemory(mic->pvBuffer, message->MessageIntegrityCheck, 16);
-		return (SEC_E_OK);
-	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_MIC_VALUE)
-	{
-		return ntlm_computeMicValue(context, (SecBuffer*)pBuffer);
-	}
-
-	WLog_ERR(TAG, "TODO: Implement ulAttribute=0x%08" PRIx32, ulAttribute);
-	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS utf8len(const UNICODE_STRING* str, void* pBuffer)
+{
+	WINPR_ASSERT(str);
+	WINPR_ASSERT(pBuffer);
+	ULONG* val = (ULONG*)pBuffer;
+	const size_t wlen = str->Length / sizeof(WCHAR);
+	const SSIZE_T rc = ConvertWCharNToUtf8(str->Buffer, wlen, nullptr, 0);
+	if (rc < 0)
+		return SEC_E_INVALID_PARAMETER;
+	*val = WINPR_ASSERTING_INT_CAST(ULONG, rc);
+	return SEC_E_OK;
+}
+
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS utf8str(const UNICODE_STRING* str, void* pBuffer)
+{
+	WINPR_ASSERT(str);
+	WINPR_ASSERT(pBuffer);
+	ULONG len = 0;
+
+	const SECURITY_STATUS status = utf8len(str, &len);
+	if (status != SEC_E_OK)
+		return status;
+	if (len == 0)
+		return SEC_E_OK;
+
+	const size_t wlen = str->Length / sizeof(WCHAR);
+	const SSIZE_T rc = ConvertWCharNToUtf8(str->Buffer, wlen, pBuffer, (size_t)len);
+	return rc < 0 ? SEC_E_INVALID_PARAMETER : SEC_E_OK;
+}
+
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_QueryContextAttributesA(PCtxtHandle phContext,
                                                               ULONG ulAttribute, void* pBuffer)
 {
-	return ntlm_QueryContextAttributesW(phContext, ulAttribute, pBuffer);
+	if (!phContext)
+		return SEC_E_INVALID_HANDLE;
+
+	if (!pBuffer)
+		return SEC_E_INSUFFICIENT_MEMORY;
+
+	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
+
+	switch (ulAttribute)
+	{
+		case SECPKG_ATTR_AUTH_NTLM_HOSTNAME_LEN:
+			return utf8len(&context->Workstation, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_DOMAIN_NAME_LEN:
+			return utf8len(&context->NbDomainName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_COMPUTER_NAME_LEN:
+			return utf8len(&context->NbComputerName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_DOMAIN_NAME_LEN:
+			return utf8len(&context->DnsDomainName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_COMPUTER_NAME_LEN:
+			return utf8len(&context->DnsComputerName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_HOSTNAME:
+			return utf8str(&context->Workstation, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_DOMAIN_NAME:
+			return utf8str(&context->NbDomainName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_COMPUTER_NAME:
+			return utf8str(&context->NbComputerName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_DOMAIN_NAME:
+			return utf8str(&context->DnsDomainName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_COMPUTER_NAME:
+			return utf8str(&context->DnsComputerName, pBuffer);
+		case SECPKG_ATTR_PACKAGE_INFO:
+		{
+			SecPkgContext_PackageInfoA* PackageInfo = (SecPkgContext_PackageInfoA*)pBuffer;
+			size_t size = sizeof(SecPkgInfoA);
+			SecPkgInfoA* pPackageInfo =
+			    (SecPkgInfoA*)sspi_ContextBufferAlloc(QuerySecurityPackageInfoIndex, size);
+
+			if (!pPackageInfo)
+				return SEC_E_INSUFFICIENT_MEMORY;
+
+			pPackageInfo->fCapabilities = NTLM_SecPkgInfoA.fCapabilities;
+			pPackageInfo->wVersion = NTLM_SecPkgInfoA.wVersion;
+			pPackageInfo->wRPCID = NTLM_SecPkgInfoA.wRPCID;
+			pPackageInfo->cbMaxToken = NTLM_SecPkgInfoA.cbMaxToken;
+			pPackageInfo->Name = _strdup(NTLM_SecPkgInfoA.Name);
+			pPackageInfo->Comment = _strdup(NTLM_SecPkgInfoA.Comment);
+
+			if (!pPackageInfo->Name || !pPackageInfo->Comment)
+			{
+				sspi_ContextBufferFree(pPackageInfo);
+				return SEC_E_INSUFFICIENT_MEMORY;
+			}
+			PackageInfo->PackageInfo = pPackageInfo;
+			return SEC_E_OK;
+		}
+
+		default:
+			return ntlm_QueryContextAttributesCommon(phContext, ulAttribute, pBuffer);
+	}
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesW(PCtxtHandle phContext,
-                                                            ULONG ulAttribute, void* pBuffer,
-                                                            ULONG cbBuffer)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesCommon(PCtxtHandle phContext,
+                                                                 ULONG ulAttribute, void* pBuffer,
+                                                                 ULONG cbBuffer)
 {
 	if (!phContext)
 		return SEC_E_INVALID_HANDLE;
@@ -917,61 +1315,60 @@ static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesW(PCtxtHandle phContex
 	if (!context)
 		return SEC_E_INVALID_HANDLE;
 
-	if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_HASH)
+	switch (ulAttribute)
 	{
-		SecPkgContext_AuthNtlmHash* AuthNtlmHash = (SecPkgContext_AuthNtlmHash*)pBuffer;
+		case SECPKG_ATTR_AUTH_NTLM_HASH:
+		{
+			SecPkgContext_AuthNtlmHash* AuthNtlmHash = (SecPkgContext_AuthNtlmHash*)pBuffer;
 
-		if (cbBuffer < sizeof(SecPkgContext_AuthNtlmHash))
-			return SEC_E_INVALID_PARAMETER;
+			if (cbBuffer < sizeof(SecPkgContext_AuthNtlmHash))
+				return SEC_E_INVALID_PARAMETER;
 
-		if (AuthNtlmHash->Version == 1)
-			CopyMemory(context->NtlmHash, AuthNtlmHash->NtlmHash, 16);
-		else if (AuthNtlmHash->Version == 2)
-			CopyMemory(context->NtlmV2Hash, AuthNtlmHash->NtlmHash, 16);
+			if (AuthNtlmHash->Version == 1)
+				CopyMemory(context->NtlmHash, AuthNtlmHash->NtlmHash, 16);
+			else if (AuthNtlmHash->Version == 2)
+				CopyMemory(context->NtlmV2Hash, AuthNtlmHash->NtlmHash, 16);
 
-		return SEC_E_OK;
+			return SEC_E_OK;
+		}
+
+		case SECPKG_ATTR_AUTH_NTLM_MESSAGE:
+		{
+			SecPkgContext_AuthNtlmMessage* AuthNtlmMessage =
+			    (SecPkgContext_AuthNtlmMessage*)pBuffer;
+
+			if (cbBuffer < sizeof(SecPkgContext_AuthNtlmMessage))
+				return SEC_E_INVALID_PARAMETER;
+
+			if (AuthNtlmMessage->type == 1)
+			{
+				if (!ntlm_SecBufferRealloc(&context->NegotiateMessage, AuthNtlmMessage->length))
+					return SEC_E_INSUFFICIENT_MEMORY;
+
+				CopyMemory(context->NegotiateMessage.pvBuffer, AuthNtlmMessage->buffer,
+				           AuthNtlmMessage->length);
+			}
+			else if (AuthNtlmMessage->type == 2)
+			{
+				if (!ntlm_SecBufferRealloc(&context->ChallengeMessage, AuthNtlmMessage->length))
+					return SEC_E_INSUFFICIENT_MEMORY;
+
+				CopyMemory(context->ChallengeMessage.pvBuffer, AuthNtlmMessage->buffer,
+				           AuthNtlmMessage->length);
+			}
+			else if (AuthNtlmMessage->type == 3)
+			{
+				if (!ntlm_SecBufferRealloc(&context->AuthenticateMessage, AuthNtlmMessage->length))
+					return SEC_E_INSUFFICIENT_MEMORY;
+
+				CopyMemory(context->AuthenticateMessage.pvBuffer, AuthNtlmMessage->buffer,
+				           AuthNtlmMessage->length);
+			}
+
+			return SEC_E_OK;
 	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_MESSAGE)
-	{
-		SecPkgContext_AuthNtlmMessage* AuthNtlmMessage = (SecPkgContext_AuthNtlmMessage*)pBuffer;
 
-		if (cbBuffer < sizeof(SecPkgContext_AuthNtlmMessage))
-			return SEC_E_INVALID_PARAMETER;
-
-		if (AuthNtlmMessage->type == 1)
-		{
-			sspi_SecBufferFree(&context->NegotiateMessage);
-
-			if (!sspi_SecBufferAlloc(&context->NegotiateMessage, AuthNtlmMessage->length))
-				return SEC_E_INSUFFICIENT_MEMORY;
-
-			CopyMemory(context->NegotiateMessage.pvBuffer, AuthNtlmMessage->buffer,
-			           AuthNtlmMessage->length);
-		}
-		else if (AuthNtlmMessage->type == 2)
-		{
-			sspi_SecBufferFree(&context->ChallengeMessage);
-
-			if (!sspi_SecBufferAlloc(&context->ChallengeMessage, AuthNtlmMessage->length))
-				return SEC_E_INSUFFICIENT_MEMORY;
-
-			CopyMemory(context->ChallengeMessage.pvBuffer, AuthNtlmMessage->buffer,
-			           AuthNtlmMessage->length);
-		}
-		else if (AuthNtlmMessage->type == 3)
-		{
-			sspi_SecBufferFree(&context->AuthenticateMessage);
-
-			if (!sspi_SecBufferAlloc(&context->AuthenticateMessage, AuthNtlmMessage->length))
-				return SEC_E_INSUFFICIENT_MEMORY;
-
-			CopyMemory(context->AuthenticateMessage.pvBuffer, AuthNtlmMessage->buffer,
-			           AuthNtlmMessage->length);
-		}
-
-		return SEC_E_OK;
-	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_TIMESTAMP)
+	case SECPKG_ATTR_AUTH_NTLM_TIMESTAMP:
 	{
 		SecPkgContext_AuthNtlmTimestamp* AuthNtlmTimestamp =
 		    (SecPkgContext_AuthNtlmTimestamp*)pBuffer;
@@ -986,10 +1383,11 @@ static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesW(PCtxtHandle phContex
 
 		return SEC_E_OK;
 	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_CLIENT_CHALLENGE)
+
+	case SECPKG_ATTR_AUTH_NTLM_CLIENT_CHALLENGE:
 	{
 		SecPkgContext_AuthNtlmClientChallenge* AuthNtlmClientChallenge =
-		    (SecPkgContext_AuthNtlmClientChallenge*)pBuffer;
+			(SecPkgContext_AuthNtlmClientChallenge*)pBuffer;
 
 		if (cbBuffer < sizeof(SecPkgContext_AuthNtlmClientChallenge))
 			return SEC_E_INVALID_PARAMETER;
@@ -997,10 +1395,11 @@ static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesW(PCtxtHandle phContex
 		CopyMemory(context->ClientChallenge, AuthNtlmClientChallenge->ClientChallenge, 8);
 		return SEC_E_OK;
 	}
-	else if (ulAttribute == SECPKG_ATTR_AUTH_NTLM_SERVER_CHALLENGE)
+
+	case SECPKG_ATTR_AUTH_NTLM_SERVER_CHALLENGE:
 	{
 		SecPkgContext_AuthNtlmServerChallenge* AuthNtlmServerChallenge =
-		    (SecPkgContext_AuthNtlmServerChallenge*)pBuffer;
+			(SecPkgContext_AuthNtlmServerChallenge*)pBuffer;
 
 		if (cbBuffer < sizeof(SecPkgContext_AuthNtlmServerChallenge))
 			return SEC_E_INVALID_PARAMETER;
@@ -1009,46 +1408,152 @@ static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesW(PCtxtHandle phContex
 		return SEC_E_OK;
 	}
 
-	WLog_ERR(TAG, "TODO: Implement ulAttribute=%08" PRIx32, ulAttribute);
-	return SEC_E_UNSUPPORTED_FUNCTION;
+	default:
+		WLog_ERR(TAG, "TODO: Implement ulAttribute=%08" PRIx32, ulAttribute);
+		return SEC_E_UNSUPPORTED_FUNCTION;
+	}
 }
 
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS ntml_setUnicodeStringW(UNICODE_STRING* str, const WCHAR* val, size_t bytelen)
+{
+	WINPR_ASSERT(str);
+	ntlm_free_unicode_string(str);
+	*str = ntlm_from_unicode_string_w(val, bytelen / sizeof(WCHAR));
+	if (ntlm_is_unicode_string_empty(str))
+		return SEC_E_INVALID_PARAMETER;
+	return SEC_E_OK;
+}
+
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS utf16len(const UNICODE_STRING* str, void* pBuffer)
+{
+	WINPR_ASSERT(str);
+	WINPR_ASSERT(pBuffer);
+	ULONG* val = (ULONG*)pBuffer;
+	*val = str->Length;
+	return SEC_E_OK;
+}
+
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesW(PCtxtHandle phContext,
+                                                            ULONG ulAttribute, void* pBuffer,
+                                                            ULONG cbBuffer)
+{
+	if (!phContext)
+		return SEC_E_INVALID_HANDLE;
+
+	if (!pBuffer)
+		return SEC_E_INVALID_PARAMETER;
+
+	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
+	if (!context)
+		return SEC_E_INVALID_HANDLE;
+
+	switch (ulAttribute)
+	{
+		case SECPKG_ATTR_AUTH_NTLM_HOSTNAME_LEN:
+			return utf16len(&context->Workstation, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_DOMAIN_NAME_LEN:
+			return utf16len(&context->NbDomainName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_COMPUTER_NAME_LEN:
+			return utf16len(&context->NbComputerName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_DOMAIN_NAME_LEN:
+			return utf16len(&context->DnsDomainName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_COMPUTER_NAME_LEN:
+			return utf16len(&context->DnsComputerName, pBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_HOSTNAME:
+			return ntml_setUnicodeStringW(&context->Workstation, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_DOMAIN_NAME:
+			return ntml_setUnicodeStringW(&context->NbDomainName, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_COMPUTER_NAME:
+			return ntml_setUnicodeStringW(&context->NbComputerName, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_DOMAIN_NAME:
+			return ntml_setUnicodeStringW(&context->DnsDomainName, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_COMPUTER_NAME:
+			return ntml_setUnicodeStringW(&context->DnsComputerName, pBuffer, cbBuffer);
+
+		default:
+			return ntlm_SetContextAttributesCommon(phContext, ulAttribute, pBuffer, cbBuffer);
+	}
+}
+
+SECURITY_STATUS ntml_setUnicodeStringA(UNICODE_STRING* str, const char* val, size_t charlen)
+{
+	WINPR_ASSERT(str);
+	ntlm_free_unicode_string(str);
+	*str = ntlm_from_unicode_string_utf8(val, charlen);
+	if (ntlm_is_unicode_string_empty(str))
+		return SEC_E_INVALID_PARAMETER;
+	return SEC_E_OK;
+}
+
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesA(PCtxtHandle phContext,
                                                             ULONG ulAttribute, void* pBuffer,
                                                             ULONG cbBuffer)
 {
-	return ntlm_SetContextAttributesW(phContext, ulAttribute, pBuffer, cbBuffer);
+	if (!phContext)
+		return SEC_E_INVALID_HANDLE;
+
+	if (!pBuffer)
+		return SEC_E_INVALID_PARAMETER;
+
+	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
+	if (!context)
+		return SEC_E_INVALID_HANDLE;
+
+	switch (ulAttribute)
+	{
+		case SECPKG_ATTR_AUTH_NTLM_HOSTNAME:
+			return ntml_setUnicodeStringA(&context->Workstation, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_DOMAIN_NAME:
+			return ntml_setUnicodeStringA(&context->NbDomainName, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_NB_COMPUTER_NAME:
+			return ntml_setUnicodeStringA(&context->NbComputerName, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_DOMAIN_NAME:
+			return ntml_setUnicodeStringA(&context->DnsDomainName, pBuffer, cbBuffer);
+		case SECPKG_ATTR_AUTH_NTLM_DNS_COMPUTER_NAME:
+			return ntml_setUnicodeStringA(&context->DnsComputerName, pBuffer, cbBuffer);
+		default:
+			return ntlm_SetContextAttributesCommon(phContext, ulAttribute, pBuffer, cbBuffer);
+	}
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_SetCredentialsAttributesW(PCredHandle phCredential,
-                                                                ULONG ulAttribute, void* pBuffer,
-                                                                ULONG cbBuffer)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_SetCredentialsAttributesW(
+    WINPR_ATTR_UNUSED PCredHandle phCredential, WINPR_ATTR_UNUSED ULONG ulAttribute,
+    WINPR_ATTR_UNUSED void* pBuffer, WINPR_ATTR_UNUSED ULONG cbBuffer)
 {
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_SetCredentialsAttributesA(PCredHandle phCredential,
-                                                                ULONG ulAttribute, void* pBuffer,
-                                                                ULONG cbBuffer)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_SetCredentialsAttributesA(
+    WINPR_ATTR_UNUSED PCredHandle phCredential, WINPR_ATTR_UNUSED ULONG ulAttribute,
+    WINPR_ATTR_UNUSED void* pBuffer, WINPR_ATTR_UNUSED ULONG cbBuffer)
 {
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_RevertSecurityContext(PCtxtHandle phContext)
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_RevertSecurityContext(WINPR_ATTR_UNUSED PCtxtHandle phContext)
 {
 	return SEC_E_OK;
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULONG fQOP,
+WINPR_ATTR_NODISCARD
+static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext,
+                                                     WINPR_ATTR_UNUSED ULONG fQOP,
                                                      PSecBufferDesc pMessage, ULONG MessageSeqNo)
 {
 	const UINT32 SeqNo = MessageSeqNo;
 	UINT32 value = 0;
-	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = { 0 };
-	BYTE checksum[8] = { 0 };
+	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = WINPR_C_ARRAY_INIT;
+	BYTE checksum[8] = WINPR_C_ARRAY_INIT;
 	ULONG version = 1;
-	PSecBuffer data_buffer = NULL;
-	PSecBuffer signature_buffer = NULL;
+	PSecBuffer data_buffer = nullptr;
+	PSecBuffer signature_buffer = nullptr;
 	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
 	if (!check_context(context))
 		return SEC_E_INVALID_HANDLE;
@@ -1069,6 +1574,9 @@ static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULON
 	if (!signature_buffer)
 		return SEC_E_INVALID_TOKEN;
 
+	if (signature_buffer->cbBuffer < 16)
+		return SEC_E_INSUFFICIENT_MEMORY;
+
 	/* Copy original data buffer */
 	ULONG length = data_buffer->cbBuffer;
 	void* data = malloc(length);
@@ -1080,18 +1588,29 @@ static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULON
 	/* Compute the HMAC-MD5 hash of ConcatenationOf(seq_num,data) using the client signing key */
 	WINPR_HMAC_CTX* hmac = winpr_HMAC_New();
 
-	if (hmac &&
-	    winpr_HMAC_Init(hmac, WINPR_MD_MD5, context->SendSigningKey, WINPR_MD5_DIGEST_LENGTH))
+	BOOL success = FALSE;
 	{
-		Data_Write_UINT32(&value, SeqNo);
-		winpr_HMAC_Update(hmac, (void*)&value, 4);
-		winpr_HMAC_Update(hmac, data, length);
-		winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH);
-		winpr_HMAC_Free(hmac);
+		if (!hmac)
+			goto hmac_fail;
+		if (!winpr_HMAC_Init(hmac, WINPR_MD_MD5, context->SendSigningKey, WINPR_MD5_DIGEST_LENGTH))
+			goto hmac_fail;
+
+		winpr_Data_Write_UINT32(&value, SeqNo);
+
+		if (!winpr_HMAC_Update(hmac, (void*)&value, 4))
+			goto hmac_fail;
+		if (!winpr_HMAC_Update(hmac, data, length))
+			goto hmac_fail;
+		if (!winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH))
+			goto hmac_fail;
 	}
-	else
+
+	success = TRUE;
+
+hmac_fail:
+	winpr_HMAC_Free(hmac);
+	if (!success)
 	{
-		winpr_HMAC_Free(hmac);
 		free(data);
 		return SEC_E_INSUFFICIENT_MEMORY;
 	}
@@ -1100,28 +1619,35 @@ static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULON
 	if ((data_buffer->BufferType & SECBUFFER_READONLY) == 0)
 	{
 		if (context->confidentiality)
-			winpr_RC4_Update(context->SendRc4Seal, length, (BYTE*)data,
-			                 (BYTE*)data_buffer->pvBuffer);
+		{
+			if (!winpr_RC4_Update(context->SendRc4Seal, length, (BYTE*)data,
+			                      (BYTE*)data_buffer->pvBuffer))
+			{
+				free(data);
+				return SEC_E_INSUFFICIENT_MEMORY;
+			}
+		}
 		else
 			CopyMemory(data_buffer->pvBuffer, data, length);
 	}
 
 #ifdef WITH_DEBUG_NTLM
-	WLog_DBG(TAG, "Data Buffer (length = %" PRIuz ")", length);
+	WLog_DBG(TAG, "Data Buffer (length = %" PRIu32 ")", length);
 	winpr_HexDump(TAG, WLOG_DEBUG, data, length);
 	WLog_DBG(TAG, "Encrypted Data Buffer (length = %" PRIu32 ")", data_buffer->cbBuffer);
 	winpr_HexDump(TAG, WLOG_DEBUG, data_buffer->pvBuffer, data_buffer->cbBuffer);
 #endif
 	free(data);
 	/* RC4-encrypt first 8 bytes of digest */
-	winpr_RC4_Update(context->SendRc4Seal, 8, digest, checksum);
+	if (!winpr_RC4_Update(context->SendRc4Seal, 8, digest, checksum))
+		return SEC_E_INSUFFICIENT_MEMORY;
 	if ((signature_buffer->BufferType & SECBUFFER_READONLY) == 0)
 	{
 		BYTE* signature = signature_buffer->pvBuffer;
 		/* Concatenate version, ciphertext and sequence number to build signature */
-		Data_Write_UINT32(signature, version);
+		winpr_Data_Write_UINT32(signature, version);
 		CopyMemory(&signature[4], (void*)checksum, 8);
-		Data_Write_UINT32(&signature[12], SeqNo);
+		winpr_Data_Write_UINT32(&signature[12], SeqNo);
 	}
 	context->SendSeqNum++;
 #ifdef WITH_DEBUG_NTLM
@@ -1132,16 +1658,17 @@ static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULON
 }
 
 static SECURITY_STATUS SEC_ENTRY ntlm_DecryptMessage(PCtxtHandle phContext, PSecBufferDesc pMessage,
-                                                     ULONG MessageSeqNo, PULONG pfQOP)
+                                                     ULONG MessageSeqNo,
+                                                     WINPR_ATTR_UNUSED PULONG pfQOP)
 {
 	const UINT32 SeqNo = (UINT32)MessageSeqNo;
 	UINT32 value = 0;
-	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = { 0 };
-	BYTE checksum[8] = { 0 };
+	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = WINPR_C_ARRAY_INIT;
+	BYTE checksum[8] = WINPR_C_ARRAY_INIT;
 	UINT32 version = 1;
-	BYTE expected_signature[WINPR_MD5_DIGEST_LENGTH] = { 0 };
-	PSecBuffer data_buffer = NULL;
-	PSecBuffer signature_buffer = NULL;
+	BYTE expected_signature[WINPR_MD5_DIGEST_LENGTH] = WINPR_C_ARRAY_INIT;
+	PSecBuffer data_buffer = nullptr;
+	PSecBuffer signature_buffer = nullptr;
 	NTLM_CONTEXT* context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
 	if (!check_context(context))
 		return SEC_E_INVALID_HANDLE;
@@ -1160,6 +1687,9 @@ static SECURITY_STATUS SEC_ENTRY ntlm_DecryptMessage(PCtxtHandle phContext, PSec
 	if (!signature_buffer)
 		return SEC_E_INVALID_TOKEN;
 
+	if (signature_buffer->cbBuffer < 16)
+		return SEC_E_INVALID_TOKEN;
+
 	/* Copy original data buffer */
 	const ULONG length = data_buffer->cbBuffer;
 	void* data = malloc(length);
@@ -1172,42 +1702,62 @@ static SECURITY_STATUS SEC_ENTRY ntlm_DecryptMessage(PCtxtHandle phContext, PSec
 	/* Decrypt message using with RC4, result overwrites original buffer */
 
 	if (context->confidentiality)
-		winpr_RC4_Update(context->RecvRc4Seal, length, (BYTE*)data, (BYTE*)data_buffer->pvBuffer);
+	{
+		if (!winpr_RC4_Update(context->RecvRc4Seal, length, (BYTE*)data,
+		                      (BYTE*)data_buffer->pvBuffer))
+		{
+			free(data);
+			return SEC_E_INSUFFICIENT_MEMORY;
+		}
+	}
 	else
 		CopyMemory(data_buffer->pvBuffer, data, length);
 
 	/* Compute the HMAC-MD5 hash of ConcatenationOf(seq_num,data) using the client signing key */
 	WINPR_HMAC_CTX* hmac = winpr_HMAC_New();
 
-	if (hmac &&
-	    winpr_HMAC_Init(hmac, WINPR_MD_MD5, context->RecvSigningKey, WINPR_MD5_DIGEST_LENGTH))
+	BOOL success = FALSE;
 	{
-		Data_Write_UINT32(&value, SeqNo);
-		winpr_HMAC_Update(hmac, (void*)&value, 4);
-		winpr_HMAC_Update(hmac, data_buffer->pvBuffer, data_buffer->cbBuffer);
-		winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH);
-		winpr_HMAC_Free(hmac);
+		if (!hmac)
+			goto hmac_fail;
+
+		if (!winpr_HMAC_Init(hmac, WINPR_MD_MD5, context->RecvSigningKey, WINPR_MD5_DIGEST_LENGTH))
+			goto hmac_fail;
+
+		winpr_Data_Write_UINT32(&value, SeqNo);
+
+		if (!winpr_HMAC_Update(hmac, (void*)&value, 4))
+			goto hmac_fail;
+		if (!winpr_HMAC_Update(hmac, data_buffer->pvBuffer, data_buffer->cbBuffer))
+			goto hmac_fail;
+		if (!winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH))
+			goto hmac_fail;
+
+		success = TRUE;
 	}
-	else
+hmac_fail:
+	winpr_HMAC_Free(hmac);
+	if (!success)
 	{
-		winpr_HMAC_Free(hmac);
 		free(data);
 		return SEC_E_INSUFFICIENT_MEMORY;
 	}
 
 #ifdef WITH_DEBUG_NTLM
-	WLog_DBG(TAG, "Encrypted Data Buffer (length = %" PRIuz ")", length);
+	WLog_DBG(TAG, "Encrypted Data Buffer (length = %" PRIu32 ")", length);
 	winpr_HexDump(TAG, WLOG_DEBUG, data, length);
 	WLog_DBG(TAG, "Data Buffer (length = %" PRIu32 ")", data_buffer->cbBuffer);
 	winpr_HexDump(TAG, WLOG_DEBUG, data_buffer->pvBuffer, data_buffer->cbBuffer);
 #endif
 	free(data);
 	/* RC4-encrypt first 8 bytes of digest */
-	winpr_RC4_Update(context->RecvRc4Seal, 8, digest, checksum);
+	if (!winpr_RC4_Update(context->RecvRc4Seal, 8, digest, checksum))
+		return SEC_E_MESSAGE_ALTERED;
+
 	/* Concatenate version, ciphertext and sequence number to build signature */
-	Data_Write_UINT32(expected_signature, version);
+	winpr_Data_Write_UINT32(expected_signature, version);
 	CopyMemory(&expected_signature[4], (void*)checksum, 8);
-	Data_Write_UINT32(&expected_signature[12], SeqNo);
+	winpr_Data_Write_UINT32(&expected_signature[12], SeqNo);
 	context->RecvSeqNum++;
 
 	if (memcmp(signature_buffer->pvBuffer, expected_signature, 16) != 0)
@@ -1226,14 +1776,16 @@ static SECURITY_STATUS SEC_ENTRY ntlm_DecryptMessage(PCtxtHandle phContext, PSec
 	return SEC_E_OK;
 }
 
-static SECURITY_STATUS SEC_ENTRY ntlm_MakeSignature(PCtxtHandle phContext, ULONG fQOP,
+static SECURITY_STATUS SEC_ENTRY ntlm_MakeSignature(PCtxtHandle phContext,
+                                                    WINPR_ATTR_UNUSED ULONG fQOP,
                                                     PSecBufferDesc pMessage, ULONG MessageSeqNo)
 {
-	PSecBuffer data_buffer = NULL;
-	PSecBuffer sig_buffer = NULL;
+	SECURITY_STATUS status = SEC_E_INTERNAL_ERROR;
+	PSecBuffer data_buffer = nullptr;
+	PSecBuffer sig_buffer = nullptr;
 	UINT32 seq_no = 0;
-	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = { 0 };
-	BYTE checksum[8] = { 0 };
+	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = WINPR_C_ARRAY_INIT;
+	BYTE checksum[8] = WINPR_C_ARRAY_INIT;
 
 	NTLM_CONTEXT* context = sspi_SecureHandleGetLowerPointer(phContext);
 	if (!check_context(context))
@@ -1250,41 +1802,50 @@ static SECURITY_STATUS SEC_ENTRY ntlm_MakeSignature(PCtxtHandle phContext, ULONG
 	if (!data_buffer || !sig_buffer)
 		return SEC_E_INVALID_TOKEN;
 
+	if (sig_buffer->cbBuffer < 16)
+		return SEC_E_INSUFFICIENT_MEMORY;
+
 	WINPR_HMAC_CTX* hmac = winpr_HMAC_New();
 
 	if (!winpr_HMAC_Init(hmac, WINPR_MD_MD5, context->SendSigningKey, WINPR_MD5_DIGEST_LENGTH))
-	{
-		winpr_HMAC_Free(hmac);
-		return SEC_E_INTERNAL_ERROR;
-	}
+		goto fail;
 
-	Data_Write_UINT32(&seq_no, MessageSeqNo);
-	winpr_HMAC_Update(hmac, (BYTE*)&seq_no, 4);
-	winpr_HMAC_Update(hmac, data_buffer->pvBuffer, data_buffer->cbBuffer);
-	winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH);
-	winpr_HMAC_Free(hmac);
+	winpr_Data_Write_UINT32(&seq_no, MessageSeqNo);
+	if (!winpr_HMAC_Update(hmac, (BYTE*)&seq_no, 4))
+		goto fail;
+	if (!winpr_HMAC_Update(hmac, data_buffer->pvBuffer, data_buffer->cbBuffer))
+		goto fail;
+	if (!winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH))
+		goto fail;
 
-	winpr_RC4_Update(context->SendRc4Seal, 8, digest, checksum);
+	if (!winpr_RC4_Update(context->SendRc4Seal, 8, digest, checksum))
+		goto fail;
 
 	BYTE* signature = sig_buffer->pvBuffer;
-	Data_Write_UINT32(signature, 1L);
+	winpr_Data_Write_UINT32(signature, 1L);
 	CopyMemory(&signature[4], checksum, 8);
-	Data_Write_UINT32(&signature[12], seq_no);
+	winpr_Data_Write_UINT32(&signature[12], seq_no);
 	sig_buffer->cbBuffer = 16;
 
-	return SEC_E_OK;
+	status = SEC_E_OK;
+
+fail:
+	winpr_HMAC_Free(hmac);
+	return status;
 }
 
+WINPR_ATTR_NODISCARD
 static SECURITY_STATUS SEC_ENTRY ntlm_VerifySignature(PCtxtHandle phContext,
                                                       PSecBufferDesc pMessage, ULONG MessageSeqNo,
-                                                      PULONG pfQOP)
+                                                      WINPR_ATTR_UNUSED PULONG pfQOP)
 {
-	PSecBuffer data_buffer = NULL;
-	PSecBuffer sig_buffer = NULL;
+	SECURITY_STATUS status = SEC_E_INTERNAL_ERROR;
+	PSecBuffer data_buffer = nullptr;
+	PSecBuffer sig_buffer = nullptr;
 	UINT32 seq_no = 0;
-	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = { 0 };
-	BYTE checksum[8] = { 0 };
-	BYTE signature[16] = { 0 };
+	BYTE digest[WINPR_MD5_DIGEST_LENGTH] = WINPR_C_ARRAY_INIT;
+	BYTE checksum[8] = WINPR_C_ARRAY_INIT;
+	BYTE signature[16] = WINPR_C_ARRAY_INIT;
 
 	NTLM_CONTEXT* context = sspi_SecureHandleGetLowerPointer(phContext);
 	if (!check_context(context))
@@ -1298,61 +1859,64 @@ static SECURITY_STATUS SEC_ENTRY ntlm_VerifySignature(PCtxtHandle phContext,
 			sig_buffer = &pMessage->pBuffers[i];
 	}
 
-	if (!data_buffer || !sig_buffer)
+	if (!data_buffer || !sig_buffer || (sig_buffer->cbBuffer < 16))
 		return SEC_E_INVALID_TOKEN;
 
 	WINPR_HMAC_CTX* hmac = winpr_HMAC_New();
 
 	if (!winpr_HMAC_Init(hmac, WINPR_MD_MD5, context->RecvSigningKey, WINPR_MD5_DIGEST_LENGTH))
-	{
-		winpr_HMAC_Free(hmac);
-		return SEC_E_INTERNAL_ERROR;
-	}
+		goto fail;
 
-	Data_Write_UINT32(&seq_no, MessageSeqNo);
-	winpr_HMAC_Update(hmac, (BYTE*)&seq_no, 4);
-	winpr_HMAC_Update(hmac, data_buffer->pvBuffer, data_buffer->cbBuffer);
-	winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH);
-	winpr_HMAC_Free(hmac);
+	winpr_Data_Write_UINT32(&seq_no, MessageSeqNo);
+	if (!winpr_HMAC_Update(hmac, (BYTE*)&seq_no, 4))
+		goto fail;
+	if (!winpr_HMAC_Update(hmac, data_buffer->pvBuffer, data_buffer->cbBuffer))
+		goto fail;
+	if (!winpr_HMAC_Final(hmac, digest, WINPR_MD5_DIGEST_LENGTH))
+		goto fail;
 
-	winpr_RC4_Update(context->RecvRc4Seal, 8, digest, checksum);
+	if (!winpr_RC4_Update(context->RecvRc4Seal, 8, digest, checksum))
+		goto fail;
 
-	Data_Write_UINT32(signature, 1L);
+	winpr_Data_Write_UINT32(signature, 1L);
 	CopyMemory(&signature[4], checksum, 8);
-	Data_Write_UINT32(&signature[12], seq_no);
+	winpr_Data_Write_UINT32(&signature[12], seq_no);
 
+	status = SEC_E_OK;
 	if (memcmp(sig_buffer->pvBuffer, signature, 16) != 0)
-		return SEC_E_MESSAGE_ALTERED;
+		status = SEC_E_MESSAGE_ALTERED;
 
-	return SEC_E_OK;
+fail:
+	winpr_HMAC_Free(hmac);
+	return status;
 }
 
 const SecurityFunctionTableA NTLM_SecurityFunctionTableA = {
 	3,                                /* dwVersion */
-	NULL,                             /* EnumerateSecurityPackages */
+	nullptr,                          /* EnumerateSecurityPackages */
 	ntlm_QueryCredentialsAttributesA, /* QueryCredentialsAttributes */
 	ntlm_AcquireCredentialsHandleA,   /* AcquireCredentialsHandle */
 	ntlm_FreeCredentialsHandle,       /* FreeCredentialsHandle */
-	NULL,                             /* Reserved2 */
+	nullptr,                          /* Reserved2 */
 	ntlm_InitializeSecurityContextA,  /* InitializeSecurityContext */
 	ntlm_AcceptSecurityContext,       /* AcceptSecurityContext */
-	NULL,                             /* CompleteAuthToken */
+	nullptr,                          /* CompleteAuthToken */
 	ntlm_DeleteSecurityContext,       /* DeleteSecurityContext */
-	NULL,                             /* ApplyControlToken */
+	nullptr,                          /* ApplyControlToken */
 	ntlm_QueryContextAttributesA,     /* QueryContextAttributes */
 	ntlm_ImpersonateSecurityContext,  /* ImpersonateSecurityContext */
 	ntlm_RevertSecurityContext,       /* RevertSecurityContext */
 	ntlm_MakeSignature,               /* MakeSignature */
 	ntlm_VerifySignature,             /* VerifySignature */
-	NULL,                             /* FreeContextBuffer */
-	NULL,                             /* QuerySecurityPackageInfo */
-	NULL,                             /* Reserved3 */
-	NULL,                             /* Reserved4 */
-	NULL,                             /* ExportSecurityContext */
-	NULL,                             /* ImportSecurityContext */
-	NULL,                             /* AddCredentials */
-	NULL,                             /* Reserved8 */
-	NULL,                             /* QuerySecurityContextToken */
+	nullptr,                          /* FreeContextBuffer */
+	nullptr,                          /* QuerySecurityPackageInfo */
+	nullptr,                          /* Reserved3 */
+	nullptr,                          /* Reserved4 */
+	nullptr,                          /* ExportSecurityContext */
+	nullptr,                          /* ImportSecurityContext */
+	nullptr,                          /* AddCredentials */
+	nullptr,                          /* Reserved8 */
+	nullptr,                          /* QuerySecurityContextToken */
 	ntlm_EncryptMessage,              /* EncryptMessage */
 	ntlm_DecryptMessage,              /* DecryptMessage */
 	ntlm_SetContextAttributesA,       /* SetContextAttributes */
@@ -1361,30 +1925,30 @@ const SecurityFunctionTableA NTLM_SecurityFunctionTableA = {
 
 const SecurityFunctionTableW NTLM_SecurityFunctionTableW = {
 	3,                                /* dwVersion */
-	NULL,                             /* EnumerateSecurityPackages */
+	nullptr,                          /* EnumerateSecurityPackages */
 	ntlm_QueryCredentialsAttributesW, /* QueryCredentialsAttributes */
 	ntlm_AcquireCredentialsHandleW,   /* AcquireCredentialsHandle */
 	ntlm_FreeCredentialsHandle,       /* FreeCredentialsHandle */
-	NULL,                             /* Reserved2 */
+	nullptr,                          /* Reserved2 */
 	ntlm_InitializeSecurityContextW,  /* InitializeSecurityContext */
 	ntlm_AcceptSecurityContext,       /* AcceptSecurityContext */
-	NULL,                             /* CompleteAuthToken */
+	nullptr,                          /* CompleteAuthToken */
 	ntlm_DeleteSecurityContext,       /* DeleteSecurityContext */
-	NULL,                             /* ApplyControlToken */
+	nullptr,                          /* ApplyControlToken */
 	ntlm_QueryContextAttributesW,     /* QueryContextAttributes */
 	ntlm_ImpersonateSecurityContext,  /* ImpersonateSecurityContext */
 	ntlm_RevertSecurityContext,       /* RevertSecurityContext */
 	ntlm_MakeSignature,               /* MakeSignature */
 	ntlm_VerifySignature,             /* VerifySignature */
-	NULL,                             /* FreeContextBuffer */
-	NULL,                             /* QuerySecurityPackageInfo */
-	NULL,                             /* Reserved3 */
-	NULL,                             /* Reserved4 */
-	NULL,                             /* ExportSecurityContext */
-	NULL,                             /* ImportSecurityContext */
-	NULL,                             /* AddCredentials */
-	NULL,                             /* Reserved8 */
-	NULL,                             /* QuerySecurityContextToken */
+	nullptr,                          /* FreeContextBuffer */
+	nullptr,                          /* QuerySecurityPackageInfo */
+	nullptr,                          /* Reserved3 */
+	nullptr,                          /* Reserved4 */
+	nullptr,                          /* ExportSecurityContext */
+	nullptr,                          /* ImportSecurityContext */
+	nullptr,                          /* AddCredentials */
+	nullptr,                          /* Reserved8 */
+	nullptr,                          /* QuerySecurityContextToken */
 	ntlm_EncryptMessage,              /* EncryptMessage */
 	ntlm_DecryptMessage,              /* DecryptMessage */
 	ntlm_SetContextAttributesW,       /* SetContextAttributes */
@@ -1400,8 +1964,8 @@ const SecPkgInfoA NTLM_SecPkgInfoA = {
 	"NTLM Security Package" /* Comment */
 };
 
-static WCHAR NTLM_SecPkgInfoW_NameBuffer[32] = { 0 };
-static WCHAR NTLM_SecPkgInfoW_CommentBuffer[32] = { 0 };
+static WCHAR NTLM_SecPkgInfoW_NameBuffer[32] = WINPR_C_ARRAY_INIT;
+static WCHAR NTLM_SecPkgInfoW_CommentBuffer[32] = WINPR_C_ARRAY_INIT;
 
 const SecPkgInfoW NTLM_SecPkgInfoW = {
 	0x00082B37,                    /* fCapabilities */
@@ -1421,7 +1985,7 @@ char* ntlm_negotiate_flags_string(char* buffer, size_t size, UINT32 flags)
 
 	for (int x = 0; x < 31; x++)
 	{
-		const UINT32 mask = 1 << x;
+		const UINT32 mask = 1u << x;
 		size_t len = strnlen(buffer, size);
 		if (flags & mask)
 		{
@@ -1432,13 +1996,13 @@ char* ntlm_negotiate_flags_string(char* buffer, size_t size, UINT32 flags)
 			{
 				if (size - len < 1)
 					break;
-				winpr_str_append("|", buffer, size, NULL);
+				winpr_str_append("|", buffer, size, nullptr);
 				len++;
 			}
 
 			if (size - len < flen)
 				break;
-			winpr_str_append(str, buffer, size, NULL);
+			winpr_str_append(str, buffer, size, nullptr);
 		}
 	}
 
@@ -1498,7 +2062,9 @@ BOOL ntlm_reset_cipher_state(PSecHandle phContext)
 
 	if (context)
 	{
-		check_context(context);
+		if (!check_context(context))
+			return FALSE;
+
 		winpr_RC4_Free(context->SendRc4Seal);
 		winpr_RC4_Free(context->RecvRc4Seal);
 		context->SendRc4Seal = winpr_RC4_New(context->RecvSealingKey, 16);
@@ -1527,4 +2093,10 @@ BOOL NTLM_init(void)
 	                             ARRAYSIZE(NTLM_SecPkgInfoW_CommentBuffer));
 
 	return TRUE;
+}
+
+BOOL ntlm_SecBufferRealloc(SecBuffer* buffer, ULONG len)
+{
+	sspi_SecBufferFree(buffer);
+	return sspi_SecBufferAlloc(buffer, len) != nullptr;
 }

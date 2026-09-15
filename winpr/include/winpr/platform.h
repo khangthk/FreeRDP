@@ -21,78 +21,213 @@
 #define WINPR_PLATFORM_H
 
 #include <stdlib.h>
+#include <winpr/config.h>
+
+/* MSVC only defines _Pragma if you compile with /std:c11 with no extensions
+ * see
+ * https://learn.microsoft.com/en-us/cpp/preprocessor/pragma-directives-and-the-pragma-keyword?view=msvc-170#the-pragma-preprocessing-operator
+ */
+#if !defined(_MSC_VER)
+#define WINPR_DO_PRAGMA(x) _Pragma(#x)
+#else
+#define WINPR_DO_PRAGMA(x) __pragma(#x)
+#endif
+
+/* COVERITY_BUILD must be defined by build system */
+#if !defined(COVERITY_BUILD)
+#define WINPR_DO_COVERITY_PRAGMA(x)
+#else
+#define WINPR_DO_COVERITY_PRAGMA(x) WINPR_DO_PRAGMA(x)
+#endif
+
+#if defined(__GNUC__)
+#define WINPR_PRAGMA_WARNING(msg) WINPR_DO_PRAGMA(GCC warning #msg)
+#elif defined(__clang__)
+#define WINPR_PRAGMA_WARNING(msg) WINPR_DO_PRAGMA(GCC warning #msg)
+#elif defined(_MSC_VER) && (_MSC_VER >= 1920)
+#define WINPR_PRAGMA_WARNING(msg) WINPR_DO_PRAGMA(message \x28 #msg \x29)
+#else
+#define WINPR_PRAGMA_WARNING(msg)
+#endif
+
+// C99 related macros
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
+#define WINPR_RESTRICT restrict
+#elif defined(_MSC_VER) && _MSC_VER >= 1900
+#define WINPR_RESTRICT __restrict
+#else
+#define WINPR_RESTRICT
+#endif
+
+// C23 related macros
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_FALLTHROUGH \
+	(void)0;              \
+	[[fallthrough]];
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_FALLTHROUGH \
+	(void)0;              \
+	[[fallthrough]];
+#elif defined(__clang__)
+#define WINPR_FALLTHROUGH \
+	(void)0;              \
+	__attribute__((fallthrough));
+#elif defined(__GNUC__) && (__GNUC__ >= 7)
+#define WINPR_FALLTHROUGH \
+	(void)0;              \
+	__attribute__((fallthrough));
+#else
+#define WINPR_FALLTHROUGH (void)0;
+#endif
+
+#if (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202003L)) || defined(__cplusplus)
+#define WINPR_C_ARRAY_INIT \
+	{                      \
+	} /** @since version 3.24.0 */
+#else
+#define WINPR_C_ARRAY_INIT { 0 } /** @since version 3.24.0 */
+#define nullptr NULL             /** @since version 3.24.0 */
+#endif
+
+#if defined(WINPR_DEFINE_ATTR_NODISCARD)
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#if defined(__GNUC__) && !defined(__clang__)
+#define WINPR_ATTR_NODISCARD [[gnu::warn_unused_result]]
+#else
+#define WINPR_ATTR_NODISCARD [[nodiscard]]
+#endif
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#if defined(__GNUC__) && !defined(__clang__)
+#define WINPR_ATTR_NODISCARD [[gnu::warn_unused_result]]
+#else
+#define WINPR_ATTR_NODISCARD [[nodiscard]]
+#endif
+#elif defined(__clang__)
+#define WINPR_ATTR_NODISCARD __attribute__((warn_unused_result))
+#elif defined(__GNUC__) && (__GNUC__ >= 7)
+#define WINPR_ATTR_NODISCARD __attribute__((warn_unused_result))
+#else
+#define WINPR_ATTR_NODISCARD
+#endif
+#else
+#define WINPR_ATTR_NODISCARD
+#endif
 
 #if defined(__clang__)
-#define WINPR_PRAGMA_DIAG_PUSH _Pragma("clang diagnostic push")
-#define WINPR_PRAGMA_DIAG_IGNORED_OVERLENGTH_STRINGS \
-	_Pragma("clang diagnostic ignored \"-Woverlength-strings\"") /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_QUALIFIERS \
-	_Pragma("clang diagnostic ignored \"-Wdiscarded-qualifiers\"") /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_PEDANTIC _Pragma("clang diagnostic ignored \"-Wpedantic\"")
+#define WINPR_PRAGMA_DIAG_PUSH WINPR_DO_PRAGMA(clang diagnostic push)
+#define WINPR_PRAGMA_DIAG_IGNORED_OVERLENGTH_STRINGS                                          \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Woverlength-strings") /** @since version 3.9.0 \
+	                                                                  */
+#define WINPR_PRAGMA_DIAG_IGNORED_QUALIFIERS
+/* unsupported by clang WINPR_DO_PRAGMA(clang diagnostic ignored "-Wdiscarded-qualifiers") */ /** @since version 3.9.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_PEDANTIC WINPR_DO_PRAGMA(clang diagnostic ignored "-Wpedantic")
 #define WINPR_PRAGMA_DIAG_IGNORED_MISSING_PROTOTYPES \
-	_Pragma("clang diagnostic ignored \"-Wmissing-prototypes\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wmissing-prototypes")
 #define WINPR_PRAGMA_DIAG_IGNORED_STRICT_PROTOTYPES \
-	_Pragma("clang diagnostic ignored \"-Wstrict-prototypes\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wstrict-prototypes")
 #define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO \
-	_Pragma("clang diagnostic ignored \"-Wreserved-id-macro\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wreserved-id-macro")
 #define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_MACRO \
-	_Pragma("clang diagnostic ignored \"-Wunused-macros\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wunused-macros")
+#define WINPR_PRAGMA_DIAG_IGNORED_UNKNOWN_PRAGMAS \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wunknown-pragmas") /** @since version 3.10.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_DEPRECATED_DECL \
+	WINPR_DO_PRAGMA(clang diagnostic ignored      \
+	                "-Wdeprecated-declarations") /** @since version 3.17.2 */
+#define WINPR_PRAGMA_DIAG_IGNORED_CAST_ALIGN \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wcast-align") /** @since 3.32.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_CAST_FUNCTION_TYPE \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wcast-function-type") /** @since 3.32.0 */
+
+#if __clang_major__ >= 13
 #define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER \
-	_Pragma("clang diagnostic ignored \"-Wreserved-identifier\"")
-#define WINPR_PRAGMA_DIAG_IGNORED_ATOMIC_SEQ_CST \
-	_Pragma("clang diagnostic ignored \"-Watomic-implicit-seq-cst\"")
-#define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_CONST_VAR \
-	_Pragma("clang diagnostic ignored \"-Wunused-const-variable\"")
-#define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_SECURITY \
-	_Pragma("clang diagnostic ignored \"-Wformat-security\"")
-#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE                                \
-	_Pragma("clang diagnostic ignored \"-Wtautological-constant-out-of-range-compare\"") /** @since \
-	                                                                                        version \
-	                                                                                        3.9.0   \
-	                                                                                      */
-#define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_NONLITERAL \
-	_Pragma("clang diagnostic ignored \"-Wformat-nonliteral\"") /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC /** @since version 3.3.0 */ /* not supported \
-    _Pragma("clang diagnostic ignored \"-Wmismatched-dealloc\"") */
-#define WINPR_PRAGMA_DIAG_POP _Pragma("clang diagnostic pop")
-#define WINPR_PRAGMA_UNROLL_LOOP \
-	_Pragma("clang loop vectorize_width(8) interleave_count(8)") /** @since version 3.6.0 */
-#elif defined(__GNUC__)
-#define WINPR_PRAGMA_DIAG_PUSH _Pragma("GCC diagnostic push")
-#define WINPR_PRAGMA_DIAG_IGNORED_OVERLENGTH_STRINGS \
-	_Pragma("GCC diagnostic ignored \"-Woverlength-strings\"") /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_QUALIFIERS \
-	_Pragma("GCC diagnostic ignored \"-Wdiscarded-qualifiers\"") /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_PEDANTIC _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
-#define WINPR_PRAGMA_DIAG_IGNORED_MISSING_PROTOTYPES \
-	_Pragma("GCC diagnostic ignored \"-Wmissing-prototypes\"")
-#define WINPR_PRAGMA_DIAG_IGNORED_STRICT_PROTOTYPES \
-	_Pragma("GCC diagnostic ignored \"-Wstrict-prototypes\"")
-#define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO /* not supported _Pragma("GCC diagnostic \
-                                                       ignored \"-Wreserved-id-macro\"") */
-#define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_MACRO _Pragma("GCC diagnostic ignored \"-Wunused-macros\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wreserved-identifier")
+#else
 #define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
-/* not supported	_Pragma("GCC diagnostic ignored \"-Wreserved-identifier\"") */
-#define WINPR_PRAGMA_DIAG_IGNORED_ATOMIC_SEQ_CST    /* not supported	_Pragma("GCC diagnostic \
-                                                       ignored                               \
-                                                       \"-Watomic-implicit-seq-cst\"") */
+#endif
+
+#define WINPR_PRAGMA_DIAG_IGNORED_ATOMIC_SEQ_CST \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Watomic-implicit-seq-cst")
 #define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_CONST_VAR \
-	_Pragma("GCC diagnostic ignored \"-Wunused-const-variable\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wunused-const-variable")
 #define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_SECURITY \
-	_Pragma("GCC diagnostic ignored \"-Wformat-security\"")
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wformat-security")
+#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE           \
+	WINPR_DO_PRAGMA(clang diagnostic ignored                                   \
+	                "-Wtautological-constant-out-of-range-compare") /** @since \
+	                                                               version     \
+	                                                               3.9.0       \
+	                                                             */
+#if __clang_major__ >= 12
+#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_VALUE_RANGE_COMPARE           \
+	WINPR_DO_PRAGMA(clang diagnostic ignored                         \
+	                "-Wtautological-value-range-compare") /** @since \
+	                                                             version 3.10.0 */
+#else
+#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_VALUE_RANGE_COMPARE
+#endif
+
+#define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_NONLITERAL                                          \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wformat-nonliteral") /** @since version 3.9.0 \
+	                                                                 */
+#define WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC /** @since version 3.3.0 */ /* not \
+        supported WINPR_DO_PRAGMA(clang diagnostic ignored "-Wmismatched-dealloc") */
+#define WINPR_PRAGMA_DIAG_POP WINPR_DO_PRAGMA(clang diagnostic pop)
+#define WINPR_PRAGMA_UNROLL_LOOP                                                          \
+	_Pragma("clang loop vectorize_width(8) interleave_count(8)") /** @since version 3.6.0 \
+	                                                              */
+#elif defined(__GNUC__)
+#define WINPR_PRAGMA_DIAG_PUSH WINPR_DO_PRAGMA(GCC diagnostic push)
+#define WINPR_PRAGMA_DIAG_IGNORED_OVERLENGTH_STRINGS \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Woverlength-strings") /** @since version 3.9.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_QUALIFIERS                                                  \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wdiscarded-qualifiers") /** @since version 3.9.0 \
+	                                                                  */
+#define WINPR_PRAGMA_DIAG_IGNORED_PEDANTIC WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wpedantic")
+#define WINPR_PRAGMA_DIAG_IGNORED_MISSING_PROTOTYPES \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wmissing-prototypes")
+#define WINPR_PRAGMA_DIAG_IGNORED_STRICT_PROTOTYPES \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wstrict-prototypes")
+#define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO /* not supported WINPR_DO_PRAGMA(GCC \
+                                                           diagnostic ignored            \
+                                                           "-Wreserved-id-macro")        \
+                                                         */
+#define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_MACRO \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wunused-macros")
+#define WINPR_PRAGMA_DIAG_IGNORED_UNKNOWN_PRAGMAS \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wunknown-pragmas") /** @since version 3.10.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_DEPRECATED_DECL                                                 \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wdeprecated-declarations") /** @since version 3.17.2 \
+	                                                                     */
+
+#define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
+/* not supported	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wreserved-identifier") */
+#define WINPR_PRAGMA_DIAG_IGNORED_ATOMIC_SEQ_CST /* not supported	WINPR_DO_PRAGMA(GCC \
+                                                        diagnostic ignored            \
+                                                        "-Watomic-implicit-seq-cst") */
+#define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_CONST_VAR \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wunused-const-variable")
+#define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_SECURITY \
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wformat-security")
 #define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE /* not supported
-	_Pragma("GCC diagnostic ignored \"-Wtautological-constant-out-of-range-compare\"") */ /** @since version 3.9.0 */
+    WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare") */ /** @since version 3.9.0 */
+#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_VALUE_RANGE_COMPARE /* not supported
+    WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wtautological-value-range-compare") */ /** @since version 3.10.0 */
 #define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_NONLITERAL \
-	_Pragma("GCC diagnostic ignored \"-Wformat-nonliteral\"") /** @since version 3.9.0 */
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wformat-nonliteral") /** @since version 3.9.0 */
 #if __GNUC__ >= 11
 #define WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC \
-	_Pragma("GCC diagnostic ignored \"-Wmismatched-dealloc\"") /** @since version 3.3.0 */
+	WINPR_DO_PRAGMA(GCC diagnostic ignored "-Wmismatched-dealloc") /** @since version 3.3.0 */
 #else
 #define WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 #endif
-#define WINPR_PRAGMA_DIAG_POP _Pragma("GCC diagnostic pop")
+#define WINPR_PRAGMA_DIAG_POP WINPR_DO_PRAGMA(GCC diagnostic pop)
 #define WINPR_PRAGMA_UNROLL_LOOP \
-	_Pragma("GCC unroll 8") _Pragma("GCC ivdep") /** @since version 3.6.0 */
+	WINPR_DO_PRAGMA(GCC unroll 8) WINPR_DO_PRAGMA(GCC ivdep) /** @since version 3.6.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_CAST_ALIGN \
+	WINPR_DO_PRAGMA(gcc diagnostic ignored "-Wcast-align") /** @since 3.32.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_CAST_FUNCTION_TYPE \
+	WINPR_DO_PRAGMA(clang diagnostic ignored "-Wcast-function-type") /** @since 3.32.0 */
 #else
 #define WINPR_PRAGMA_DIAG_PUSH
 #define WINPR_PRAGMA_DIAG_IGNORED_PEDANTIC
@@ -102,20 +237,26 @@
 #define WINPR_PRAGMA_DIAG_IGNORED_STRICT_PROTOTYPES
 #define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_MACRO
+#define WINPR_PRAGMA_DIAG_IGNORED_UNKNOWN_PRAGMAS /** @since version 3.10.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_DEPRECATED_DECL /** @since version 3.17.2 */
 #define WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
 #define WINPR_PRAGMA_DIAG_IGNORED_ATOMIC_SEQ_CST
 #define WINPR_PRAGMA_DIAG_IGNORED_UNUSED_CONST_VAR
 #define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_SECURITY
-#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_NONLITERAL  /** @since version 3.9.0 */
-#define WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC /** @since version 3.3.0 */
+#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE /** @since version 3.9.0 \
+                                                                      */
+#define WINPR_PRAGMA_DIAG_TAUTOLOGICAL_VALUE_RANGE_COMPARE           /** @since version 3.10.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_FORMAT_NONLITERAL                  /** @since version 3.9.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC                 /** @since version 3.3.0 */
 #define WINPR_PRAGMA_DIAG_POP
 #define WINPR_PRAGMA_UNROLL_LOOP /** @since version 3.6.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_CAST_ALIGN /** @since 3.32.0 */
+#define WINPR_PRAGMA_DIAG_IGNORED_CAST_FUNCTION_TYPE /** @since 3.32.0 */
 #endif
 
 #if defined(MSVC)
 #undef WINPR_PRAGMA_UNROLL_LOOP
-#define WINPR_PRAGMA_UNROLL_LOOP _Pragma("loop ( ivdep )") /** @since version 3.6.0 */
+#define WINPR_PRAGMA_UNROLL_LOOP WINPR_DO_PRAGMA(loop(ivdep)) /** @since version 3.6.0 */
 #endif
 
 WINPR_PRAGMA_DIAG_PUSH
@@ -146,6 +287,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #if defined(__amd64) || defined(__amd64__) || defined(__x86_64) || defined(__x86_64__) || \
     defined(_M_X64)
 #ifndef _M_AMD64
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_AMD64 1
 #endif
 #endif
@@ -153,6 +295,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 /* Intel ia64 */
 #if defined(__ia64) || defined(__ia64__) || defined(_M_IA64)
 #ifndef _M_IA64
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_IA64 1
 #endif
 #endif
@@ -161,6 +304,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(_M_IX86) || defined(_M_AMD64)
 #ifndef _M_IX86_AMD64
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_IX86_AMD64 1
 #endif
 #endif
@@ -170,6 +314,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #if defined(__arm__) || defined(__thumb__) || defined(__TARGET_ARCH_ARM) || \
     defined(__TARGET_ARCH_THUMB)
 #ifndef _M_ARM
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_ARM 1
 #endif
 #endif
@@ -186,6 +331,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(mips) || defined(__mips) || defined(__mips__) || defined(__MIPS__)
 #ifndef _M_MIPS
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_MIPS 1
 #endif
 #endif
@@ -194,6 +340,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(mips64) || defined(__mips64) || defined(__mips64__) || defined(__MIPS64__)
 #ifndef _M_MIPS64
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_MIPS64 1
 #endif
 #endif
@@ -203,6 +350,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #if defined(__ppc__) || defined(__powerpc) || defined(__powerpc__) || defined(__POWERPC__) || \
     defined(_ARCH_PPC)
 #ifndef _M_PPC
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_PPC 1
 #endif
 #endif
@@ -211,6 +359,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(__ia64) || defined(__ia64__) || defined(_IA64) || defined(__IA64__)
 #ifndef _M_IA64
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_IA64 1
 #endif
 #endif
@@ -219,6 +368,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(__alpha) || defined(__alpha__)
 #ifndef _M_ALPHA
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_ALPHA 1
 #endif
 #endif
@@ -227,7 +377,17 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(__sparc) || defined(__sparc__)
 #ifndef _M_SPARC
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_SPARC 1
+#endif
+#endif
+
+/* s390x (_M_S390X) */
+
+#if defined(__s390x__)
+#ifndef _M_S390X
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#define _M_S390X 1
 #endif
 #endif
 
@@ -235,7 +395,28 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(__e2k__)
 #ifndef _M_E2K
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _M_E2K 1
+#endif
+#endif
+
+/* RISCV64 (_M_RISCV64) */
+
+#if defined(__riscv)
+#if defined(__riscv_xlen)
+#if __riscv_xlen == 64
+#ifndef _M_RISCV64
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#define _M_RISCV64 1
+#endif
+#elif __riscv_xlen == 32
+#ifndef _M_RISCV32
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#define _M_RISCV32 1
+#endif
+#else
+#error "Unknown/unsupported RISCV xlen value"
+#endif
 #endif
 #endif
 
@@ -251,6 +432,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #if defined(WINAPI_FAMILY)
 #if (WINAPI_FAMILY == WINAPI_FAMILY_APP)
 #ifndef _WINRT
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _WINRT 1
 #endif
 #endif
@@ -258,6 +440,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(__cplusplus_winrt)
 #ifndef _WINRT
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _WINRT 1
 #endif
 #endif
@@ -283,6 +466,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 /* iOS (__IOS__) */
 
 #ifndef __IOS__
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __IOS__ 1
 #endif
 
@@ -291,6 +475,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 /* Mac OS X (__MACOSX__) */
 
 #ifndef __MACOSX__
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __MACOSX__ 1
 #endif
 
@@ -313,6 +498,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(sun)
 #ifndef __sun
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __sun 1
 #endif
 #endif
@@ -321,6 +507,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(sgi)
 #ifndef __sgi
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __sgi 1
 #endif
 #endif
@@ -329,6 +516,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(__TOS_AIX__)
 #ifndef _AIX
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define _AIX 1
 #endif
 #endif
@@ -337,6 +525,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if defined(hpux) || defined(_hpux)
 #ifndef __hpux
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __hpux 1
 #endif
 #endif
@@ -365,6 +554,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if (__BYTE_ORDER == __BIG_ENDIAN)
 #ifndef __BIG_ENDIAN__
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __BIG_ENDIAN__ 1
 #endif
 #endif
@@ -374,6 +564,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #if defined(__ARMEB__) || defined(__THUMBEB__) || defined(__AARCH64EB__) || defined(_MIPSEB) || \
     defined(__MIPSEB) || defined(__MIPSEB__)
 #ifndef __BIG_ENDIAN__
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __BIG_ENDIAN__ 1
 #endif
 #endif
@@ -386,6 +577,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #if (__BYTE_ORDER == __LITTLE_ENDIAN)
 #ifndef __LITTLE_ENDIAN__
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __LITTLE_ENDIAN__ 1
 #endif
 #endif
@@ -395,6 +587,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #if defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || defined(_MIPSEL) || \
     defined(__MIPSEL) || defined(__MIPSEL__) || defined(__e2k__)
 #ifndef __LITTLE_ENDIAN__
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #define __LITTLE_ENDIAN__ 1
 #endif
 #endif
@@ -402,5 +595,166 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #endif /* __BYTE_ORDER */
 
 WINPR_PRAGMA_DIAG_POP
+
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_DEPRECATED(obj) [[deprecated]] obj
+#define WINPR_DEPRECATED_VAR(text, obj) [[deprecated("[deprecated] " text)]] obj
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_DEPRECATED(obj) [[deprecated]] obj
+#define WINPR_DEPRECATED_VAR(text, obj) [[deprecated("[deprecated] " text)]] obj
+#elif defined(__GNUC__)
+#define WINPR_DEPRECATED(obj) obj __attribute__((deprecated))
+#define WINPR_DEPRECATED_VAR(text, obj) obj __attribute__((deprecated("[deprecated] " text)))
+#else
+#define WINPR_DEPRECATED(obj) obj
+#define WINPR_DEPRECATED_VAR(text, obj) obj
+#endif
+
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_DECLSPEC_NORETURN [[noreturn]]
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_DECLSPEC_NORETURN [[noreturn]]
+#elif defined(WIN32) && !defined(__CYGWIN__)
+#define WINPR_DECLSPEC_NORETURN __declspec(noreturn)
+#elif defined(__GNUC__)
+#define WINPR_DECLSPEC_NORETURN __attribute__((__noreturn__))
+#else
+#define WINPR_DECLSPEC_NORETURN
+#endif
+
+#define WINPR_NORETURN(obj) WINPR_DECLSPEC_NORETURN obj
+
+#define INLINE inline
+
+#ifdef WINPR_DLL
+#if defined _WIN32 || defined __CYGWIN__
+#ifdef WINPR_EXPORTS
+#ifdef __GNUC__
+#define WINPR_API __attribute__((dllexport))
+#else
+#define WINPR_API __declspec(dllexport)
+#endif
+#else
+#ifdef __GNUC__
+#define WINPR_API __attribute__((dllimport))
+#else
+#define WINPR_API __declspec(dllimport)
+#endif
+#endif
+#else
+#if defined(__GNUC__) && (__GNUC__ >= 4)
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_API [[gnu::visibility("default")]]
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_API [[gnu::visibility("default")]]
+#else
+#define WINPR_API __attribute__((visibility("default")))
+#endif
+#else
+#define WINPR_API
+#endif
+#endif
+#else /* WINPR_DLL */
+#define WINPR_API
+#endif
+
+#if defined(__clang__)
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	[[gnu::malloc, nodiscard]] /** @since version 3.3.0 */
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	[[gnu::malloc, nodiscard]] /** @since version 3.3.0 */
+#else
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	__attribute__((malloc, warn_unused_result)) /** @since version 3.3.0 */
+#endif
+#elif defined(__GNUC__)
+#if (__GNUC__ <= 10)
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	__attribute__((malloc, warn_unused_result)) /** @since version 3.3.0 */
+#else
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	[[gnu::malloc(deallocator, ptrindex), nodiscard]] /** @since version 3.3.0 */
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	[[gnu::malloc(deallocator, ptrindex), nodiscard]] /** @since version 3.3.0 */
+#else
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) \
+	__attribute__((malloc(deallocator, ptrindex), warn_unused_result)) /** @since version 3.3.0 */
+#endif
+#endif
+#elif defined(_MSC_VER)
+#define WINPR_ATTR_MALLOC(deallocator, ptrindex) __declspec(restrict) /** @since version 3.3.0 */
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_ATTR_FORMAT_ARG(pos, args) [[gnu::format(printf, pos, args)]]
+#define WINPR_FORMAT_ARG /**/
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_ATTR_FORMAT_ARG(pos, args) [[gnu::format(printf, pos, args)]]
+#define WINPR_FORMAT_ARG /**/
+#else
+#define WINPR_ATTR_FORMAT_ARG(pos, args) __attribute__((__format__(__printf__, pos, args)))
+#define WINPR_FORMAT_ARG /**/
+#endif
+#elif defined(_MSC_VER)
+#define WINPR_ATTR_FORMAT_ARG(pos, args)
+#define WINPR_FORMAT_ARG _Printf_format_string_
+#endif
+
+#if defined(EXPORT_ALL_SYMBOLS)
+#define WINPR_LOCAL WINPR_API
+#elif defined _WIN32 || defined __CYGWIN__
+#define WINPR_LOCAL
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_LOCAL [[gnu::visibility("hidden")]]
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_LOCAL [[gnu::visibility("hidden")]]
+#else
+#define WINPR_LOCAL __attribute__((visibility("hidden")))
+#endif
+#else
+#define WINPR_LOCAL
+#endif
+
+// WARNING: *do not* use thread-local storage for new code because it is not portable
+// It is only used for VirtualChannelInit, and all FreeRDP channels use VirtualChannelInitEx
+// The old virtual channel API is only realistically used on Windows where TLS is available
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L) && \
+    !defined(__STDC_NO_THREADS__) // C11
+#include <threads.h>
+
+#define WINPR_TLS thread_local
+#elif defined _WIN32 || defined __CYGWIN__
+#ifdef __GNUC__
+#define WINPR_TLS __thread
+#else
+#define WINPR_TLS __declspec(thread)
+#endif
+#elif !defined(__IOS__)
+#define WINPR_TLS __thread
+#else
+// thread-local storage is not supported on iOS
+// don't warn because it isn't actually used on iOS
+#define WINPR_TLS
+#endif
+
+#define WINPR_ALIGN64 DECLSPEC_ALIGN(8)
+
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#define WINPR_ATTR_UNUSED [[maybe_unused]] /** @since version 3.12.0 */
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define WINPR_ATTR_UNUSED [[maybe_unused]] /** @since version 3.12.0 */
+#elif defined(__GNUC__) || defined(__clang__)
+#define WINPR_ATTR_UNUSED __attribute__((unused)) /** @since version 3.12.0 */
+#else
+#define WINPR_ATTR_UNUSED /** @since version 3.12.0 */
+#endif
+
+#define WINPR_UNUSED(x) (void)(x)
 
 #endif /* WINPR_PLATFORM_H */

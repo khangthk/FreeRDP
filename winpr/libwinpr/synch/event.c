@@ -50,40 +50,32 @@
 #define TAG WINPR_TAG("synch.event")
 
 #if defined(WITH_DEBUG_EVENTS)
-static wArrayList* global_event_list = NULL;
+static wArrayList* global_event_list = nullptr;
 
 static void dump_event(WINPR_EVENT* event, size_t index)
 {
-	char** msg = NULL;
+	char** msg = nullptr;
 	size_t used = 0;
-#if 0
-	void* stack = winpr_backtrace(20);
-	WLog_DBG(TAG, "Called from:");
-	msg = winpr_backtrace_symbols(stack, &used);
 
-	for (size_t i = 0; i < used; i++)
-		WLog_DBG(TAG, "[%" PRIdz "]: %s", i, msg[i]);
-
-	free(msg);
-	winpr_backtrace_free(stack);
-#endif
-	WLog_DBG(TAG, "Event handle created still not closed! [%" PRIuz ", %p]", index, event);
+	WLog_DBG(TAG, "Event handle created still not closed! [%" PRIuz ", %p]", index, (void*)event);
 	msg = winpr_backtrace_symbols(event->create_stack, &used);
 
 	for (size_t i = 2; i < used; i++)
-		WLog_DBG(TAG, "[%" PRIdz "]: %s", i, msg[i]);
+		WLog_DBG(TAG, "[%" PRIuz "]: %s", i, msg[i]);
 
-	free(msg);
+	free((void*)msg);
 }
 #endif /* WITH_DEBUG_EVENTS */
 
 #ifdef WINPR_HAVE_SYS_EVENTFD_H
 #if !defined(WITH_EVENTFD_READ_WRITE)
+WINPR_ATTR_NODISCARD
 static int eventfd_read(int fd, eventfd_t* value)
 {
 	return (read(fd, value, sizeof(*value)) == sizeof(*value)) ? 0 : -1;
 }
 
+WINPR_ATTR_NODISCARD
 static int eventfd_write(int fd, eventfd_t value)
 {
 	return (write(fd, &value, sizeof(value)) == sizeof(value)) ? 0 : -1;
@@ -91,28 +83,49 @@ static int eventfd_write(int fd, eventfd_t value)
 #endif
 #endif
 
-#ifndef WINPR_HAVE_SYS_EVENTFD_H
+WINPR_ATTR_NODISCARD
 static BOOL set_non_blocking_fd(int fd)
 {
-	int flags;
-	flags = fcntl(fd, F_GETFL);
+	int flags = fcntl(fd, F_GETFL);
 	if (flags < 0)
 		return FALSE;
 
 	return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
 }
-#endif /* !WINPR_HAVE_SYS_EVENTFD_H */
 
 BOOL winpr_event_init(WINPR_EVENT_IMPL* event)
 {
 #ifdef WINPR_HAVE_SYS_EVENTFD_H
 	event->fds[1] = -1;
-	event->fds[0] = eventfd(0, EFD_NONBLOCK);
+	event->fds[0] = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
+	if ((event->fds[0] < 0) && (errno == EINVAL))
+	{
+		/* kernels older than 2.6.27 only support the flag-less eventfd() call; fall back to
+		 * that and apply non-blocking/close-on-exec separately afterward */
+		event->fds[0] = eventfd(0, 0);
+		if (event->fds[0] >= 0)
+		{
+			if (!set_non_blocking_fd(event->fds[0]) || !winpr_set_cloexec(event->fds[0], TRUE))
+			{
+				close(event->fds[0]);
+				event->fds[0] = -1;
+			}
+		}
+	}
 
 	return event->fds[0] >= 0;
 #else
+#ifdef WINPR_HAVE_PIPE2
+	if (pipe2(event->fds, O_CLOEXEC) < 0)
+		return FALSE;
+#else
 	if (pipe(event->fds) < 0)
 		return FALSE;
+
+	if (!winpr_set_cloexec(event->fds[0], TRUE) || !winpr_set_cloexec(event->fds[1], TRUE))
+		goto out_error;
+#endif
 
 	if (!set_non_blocking_fd(event->fds[0]) || !set_non_blocking_fd(event->fds[1]))
 		goto out_error;
@@ -135,7 +148,7 @@ void winpr_event_init_from_fd(WINPR_EVENT_IMPL* event, int fd)
 
 BOOL winpr_event_set(WINPR_EVENT_IMPL* event)
 {
-	int ret = 0;
+	SSIZE_T ret = 0;
 	do
 	{
 #ifdef WINPR_HAVE_SYS_EVENTFD_H
@@ -151,7 +164,7 @@ BOOL winpr_event_set(WINPR_EVENT_IMPL* event)
 
 BOOL winpr_event_reset(WINPR_EVENT_IMPL* event)
 {
-	int ret = 0;
+	SSIZE_T ret = 0;
 	do
 	{
 		do
@@ -171,13 +184,13 @@ BOOL winpr_event_reset(WINPR_EVENT_IMPL* event)
 
 void winpr_event_uninit(WINPR_EVENT_IMPL* event)
 {
-	if (event->fds[0] != -1)
+	if (event->fds[0] >= 0)
 	{
 		close(event->fds[0]);
 		event->fds[0] = -1;
 	}
 
-	if (event->fds[1] != -1)
+	if (event->fds[1] >= 0)
 	{
 		close(event->fds[1]);
 		event->fds[1] = -1;
@@ -186,11 +199,13 @@ void winpr_event_uninit(WINPR_EVENT_IMPL* event)
 
 static BOOL EventCloseHandle(HANDLE handle);
 
+WINPR_ATTR_NODISCARD
 static BOOL EventIsHandled(HANDLE handle)
 {
 	return WINPR_HANDLE_IS_HANDLED(handle, HANDLE_TYPE_EVENT, FALSE);
 }
 
+WINPR_ATTR_NODISCARD
 static int EventGetFd(HANDLE handle)
 {
 	WINPR_EVENT* event = (WINPR_EVENT*)handle;
@@ -221,14 +236,14 @@ static BOOL EventCloseHandle_(WINPR_EVENT* event)
 		if (ArrayList_Count(global_event_list) < 1)
 		{
 			ArrayList_Free(global_event_list);
-			global_event_list = NULL;
+			global_event_list = nullptr;
 		}
 	}
 
 	winpr_backtrace_free(event->create_stack);
 #endif
 	free(event->name);
-	free(event);
+	event->name = nullptr;
 	return TRUE;
 }
 
@@ -242,39 +257,22 @@ static BOOL EventCloseHandle(HANDLE handle)
 	return EventCloseHandle_(event);
 }
 
-static HANDLE_OPS ops = { EventIsHandled,
-	                      EventCloseHandle,
-	                      EventGetFd,
-	                      NULL, /* CleanupHandle */
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL };
+static HANDLE_OPS ops = { EventIsHandled, EventCloseHandle, EventGetFd, nullptr, /* CleanupHandle */
+	                      nullptr,        nullptr,          nullptr,    nullptr, nullptr, nullptr,
+	                      nullptr,        nullptr,          nullptr,    nullptr, nullptr, nullptr,
+	                      nullptr,        nullptr,          nullptr,    nullptr, nullptr };
 
 HANDLE CreateEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState,
                     LPCWSTR lpName)
 {
-	HANDLE handle = NULL;
-	char* name = NULL;
+	HANDLE handle = nullptr;
+	char* name = nullptr;
 
 	if (lpName)
 	{
-		name = ConvertWCharToUtf8Alloc(lpName, NULL);
+		name = ConvertWCharToUtf8Alloc(lpName, nullptr);
 		if (!name)
-			return NULL;
+			return nullptr;
 	}
 
 	handle = CreateEventA(lpEventAttributes, bManualReset, bInitialState, name);
@@ -291,7 +289,7 @@ HANDLE CreateEventA(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, 
 		WLog_WARN(TAG, "[%s] does not support lpEventAttributes", lpName);
 
 	if (!event)
-		return NULL;
+		return nullptr;
 
 	if (lpName)
 		event->name = strdup(lpName);
@@ -326,7 +324,8 @@ HANDLE CreateEventA(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, 
 	return (HANDLE)event;
 fail:
 	EventCloseHandle_(event);
-	return NULL;
+	free(event);
+	return nullptr;
 }
 
 HANDLE CreateEventExW(LPSECURITY_ATTRIBUTES lpEventAttributes, LPCWSTR lpName, DWORD dwFlags,
@@ -342,8 +341,11 @@ HANDLE CreateEventExW(LPSECURITY_ATTRIBUTES lpEventAttributes, LPCWSTR lpName, D
 		manual = TRUE;
 
 	if (dwDesiredAccess != 0)
-		WLog_WARN(TAG, "[%s] does not support dwDesiredAccess 0x%08" PRIx32, lpName,
-		          dwDesiredAccess);
+	{
+		char name[MAX_PATH] = WINPR_C_ARRAY_INIT;
+		ConvertWCharToUtf8(lpName, name, sizeof(name) - 1);
+		WLog_WARN(TAG, "[%s] does not support dwDesiredAccess 0x%08" PRIx32, name, dwDesiredAccess);
+	}
 
 	return CreateEventW(lpEventAttributes, manual, initial, lpName);
 }
@@ -374,7 +376,7 @@ HANDLE OpenEventW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName)
 	WINPR_UNUSED(bInheritHandle);
 	WINPR_UNUSED(lpName);
 	WLog_ERR(TAG, "not implemented");
-	return NULL;
+	return nullptr;
 }
 
 HANDLE OpenEventA(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCSTR lpName)
@@ -384,14 +386,14 @@ HANDLE OpenEventA(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCSTR lpName)
 	WINPR_UNUSED(bInheritHandle);
 	WINPR_UNUSED(lpName);
 	WLog_ERR(TAG, "not implemented");
-	return NULL;
+	return nullptr;
 }
 
 BOOL SetEvent(HANDLE hEvent)
 {
 	ULONG Type = 0;
-	WINPR_HANDLE* Object = NULL;
-	WINPR_EVENT* event = NULL;
+	WINPR_HANDLE* Object = nullptr;
+	WINPR_EVENT* event = nullptr;
 
 	if (!winpr_Handle_GetInfo(hEvent, &Type, &Object) || Type != HANDLE_TYPE_EVENT)
 	{
@@ -407,8 +409,8 @@ BOOL SetEvent(HANDLE hEvent)
 BOOL ResetEvent(HANDLE hEvent)
 {
 	ULONG Type = 0;
-	WINPR_HANDLE* Object = NULL;
-	WINPR_EVENT* event = NULL;
+	WINPR_HANDLE* Object = nullptr;
+	WINPR_EVENT* event = nullptr;
 
 	if (!winpr_Handle_GetInfo(hEvent, &Type, &Object) || Type != HANDLE_TYPE_EVENT)
 	{
@@ -423,12 +425,13 @@ BOOL ResetEvent(HANDLE hEvent)
 
 #endif
 
-HANDLE CreateFileDescriptorEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset,
-                                  BOOL bInitialState, int FileDescriptor, ULONG mode)
+HANDLE CreateFileDescriptorEventW(WINPR_ATTR_UNUSED LPSECURITY_ATTRIBUTES lpEventAttributes,
+                                  BOOL bManualReset, WINPR_ATTR_UNUSED BOOL bInitialState,
+                                  int FileDescriptor, ULONG mode)
 {
 #ifndef _WIN32
-	WINPR_EVENT* event = NULL;
-	HANDLE handle = NULL;
+	WINPR_EVENT* event = nullptr;
+	HANDLE handle = nullptr;
 	event = (WINPR_EVENT*)calloc(1, sizeof(WINPR_EVENT));
 
 	if (event)
@@ -445,7 +448,7 @@ HANDLE CreateFileDescriptorEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL 
 
 	return handle;
 #else
-	return NULL;
+	return nullptr;
 #endif
 }
 
@@ -466,7 +469,7 @@ HANDLE CreateWaitObjectEvent(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManu
 	return CreateFileDescriptorEventW(lpEventAttributes, bManualReset, bInitialState,
 	                                  (int)(ULONG_PTR)pObject, WINPR_FD_READ);
 #else
-	HANDLE hEvent = NULL;
+	HANDLE hEvent = nullptr;
 	DuplicateHandle(GetCurrentProcess(), pObject, GetCurrentProcess(), &hEvent, 0, FALSE,
 	                DUPLICATE_SAME_ACCESS);
 	return hEvent;
@@ -496,8 +499,8 @@ int SetEventFileDescriptor(HANDLE hEvent, int FileDescriptor, ULONG mode)
 {
 #ifndef _WIN32
 	ULONG Type = 0;
-	WINPR_HANDLE* Object = NULL;
-	WINPR_EVENT* event = NULL;
+	WINPR_HANDLE* Object = nullptr;
+	WINPR_EVENT* event = nullptr;
 
 	if (!winpr_Handle_GetInfo(hEvent, &Type, &Object) || Type != HANDLE_TYPE_EVENT)
 	{
@@ -534,7 +537,7 @@ void* GetEventWaitObject(HANDLE hEvent)
 {
 #ifndef _WIN32
 	int fd = 0;
-	void* obj = NULL;
+	void* obj = nullptr;
 	fd = GetEventFileDescriptor(hEvent);
 	obj = ((void*)(long)fd);
 	return obj;
@@ -548,7 +551,7 @@ void* GetEventWaitObject(HANDLE hEvent)
 #include <sys/time.h>
 #include <sys/resource.h>
 
-static BOOL dump_handle_list(void* data, size_t index, va_list ap)
+static BOOL dump_handle_list(void* data, size_t index, WINPR_ATTR_UNUSED va_list ap)
 {
 	WINPR_EVENT* event = data;
 	dump_event(event, index);
@@ -557,24 +560,26 @@ static BOOL dump_handle_list(void* data, size_t index, va_list ap)
 
 void DumpEventHandles_(const char* fkt, const char* file, size_t line)
 {
-	struct rlimit r = { 0 };
+	struct rlimit r = WINPR_C_ARRAY_INIT;
 	int rc = getrlimit(RLIMIT_NOFILE, &r);
 	if (rc >= 0)
 	{
 		size_t count = 0;
 		for (rlim_t x = 0; x < r.rlim_cur; x++)
 		{
-			int flags = fcntl(x, F_GETFD);
+			const int fd = WINPR_ASSERTING_INT_CAST(int, x);
+			int flags = fcntl(fd, F_GETFD);
 			if (flags >= 0)
 				count++;
 		}
-		WLog_INFO(TAG, "------- limits [%d/%d] open files %" PRIuz, r.rlim_cur, r.rlim_max, count);
+		WLog_INFO(TAG, "------- limits [%lu/%lu] open files %" PRIuz, (unsigned long)r.rlim_cur,
+		          (unsigned long)r.rlim_max, count);
 	}
 	WLog_DBG(TAG, "--------- Start dump [%s %s:%" PRIuz "]", fkt, file, line);
 	if (global_event_list)
 	{
 		ArrayList_Lock(global_event_list);
-		ArrayList_ForEach(global_event_list, dump_handle_list);
+		(void)ArrayList_ForEach(global_event_list, dump_handle_list);
 		ArrayList_Unlock(global_event_list);
 	}
 	WLog_DBG(TAG, "--------- End dump   [%s %s:%" PRIuz "]", fkt, file, line);

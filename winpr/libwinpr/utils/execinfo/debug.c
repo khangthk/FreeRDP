@@ -18,6 +18,7 @@
  * limitations under the License.
  */
 
+#include <assert.h>
 #include <stdlib.h>
 #include <fcntl.h>
 
@@ -38,7 +39,7 @@ void winpr_execinfo_backtrace_free(void* buffer)
 	if (!data)
 		return;
 
-	free(data->buffer);
+	free((void*)data->buffer);
 	free(data);
 }
 
@@ -47,21 +48,22 @@ void* winpr_execinfo_backtrace(DWORD size)
 	t_execinfo* data = calloc(1, sizeof(t_execinfo));
 
 	if (!data)
-		return NULL;
+		return nullptr;
 
-	data->buffer = calloc(size, sizeof(void*));
+	data->buffer = (void**)calloc(size, sizeof(void*));
 
 	if (!data->buffer)
 	{
 		free(data);
-		return NULL;
+		return nullptr;
 	}
 
-	const int rc = backtrace(data->buffer, size);
+	assert(size <= INT32_MAX);
+	const int rc = backtrace(data->buffer, (int)size);
 	if (rc < 0)
 	{
 		free(data);
-		return NULL;
+		return nullptr;
 	}
 	data->max = size;
 	data->used = (size_t)rc;
@@ -75,12 +77,13 @@ char** winpr_execinfo_backtrace_symbols(void* buffer, size_t* used)
 		*used = 0;
 
 	if (!data)
-		return NULL;
+		return nullptr;
 
 	if (used)
 		*used = data->used;
 
-	return backtrace_symbols(data->buffer, data->used);
+	assert(data->used < INT32_MAX);
+	return backtrace_symbols(data->buffer, (int)data->used);
 }
 
 void winpr_execinfo_backtrace_symbols_fd(void* buffer, int fd)
@@ -90,5 +93,6 @@ void winpr_execinfo_backtrace_symbols_fd(void* buffer, int fd)
 	if (!data)
 		return;
 
-	backtrace_symbols_fd(data->buffer, data->used, fd);
+	assert(data->used <= INT32_MAX);
+	backtrace_symbols_fd(data->buffer, (int)data->used, fd);
 }

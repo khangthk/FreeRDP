@@ -36,6 +36,7 @@
 #include <freerdp/addin.h>
 
 #include <freerdp/channels/rdpdr.h>
+#include <freerdp/client/rdpdr.h>
 #include <freerdp/channels/log.h>
 
 #ifdef __MACOSX__
@@ -103,9 +104,6 @@ typedef struct
 #ifdef _WIN32
 	HWND hotplug_wnd;
 #endif
-#ifdef __MACOSX__
-	CFRunLoopRef runLoop;
-#endif
 #ifndef _WIN32
 	HANDLE stopEvent;
 #endif
@@ -113,9 +111,18 @@ typedef struct
 	wStreamPool* pool;
 	wLog* log;
 	BOOL async;
+	BOOL capabilities[6];
+	BOOL haveClientId;
+	BOOL haveServerCaps;
+
+	RdpdrClientContext context;
+	BOOL clearing;
 } rdpdrPlugin;
 
-BOOL rdpdr_state_advance(rdpdrPlugin* rdpdr, enum RDPDR_CHANNEL_STATE next);
-UINT rdpdr_send(rdpdrPlugin* rdpdr, wStream* s);
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL BOOL rdpdr_state_advance(rdpdrPlugin* rdpdr, enum RDPDR_CHANNEL_STATE next);
+
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL UINT rdpdr_send(rdpdrPlugin* rdpdr, wStream* s);
 
 #endif /* FREERDP_CHANNEL_RDPDR_CLIENT_MAIN_H */

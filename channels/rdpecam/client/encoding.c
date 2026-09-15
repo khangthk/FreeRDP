@@ -18,6 +18,7 @@
  */
 
 #include <winpr/assert.h>
+#include <winpr/winpr.h>
 
 #include "camera.h"
 
@@ -28,7 +29,7 @@
  *
  * @return bitrate in bps
  */
-static UINT32 ecam_encoder_h264_get_max_bitrate(CameraDeviceStream* stream)
+UINT32 h264_get_max_bitrate(UINT32 height)
 {
 	static struct Bitrates
 	{
@@ -44,8 +45,6 @@ static UINT32 ecam_encoder_h264_get_max_bitrate(CameraDeviceStream* stream)
 		{ 240, 170 },   { 180, 140 },  { 0, 100 },
 	};
 	const size_t nBitrates = ARRAYSIZE(bitrates);
-
-	UINT32 height = stream->currMediaType.Height;
 
 	for (size_t i = 0; i < nBitrates; i++)
 	{
@@ -64,162 +63,54 @@ static UINT32 ecam_encoder_h264_get_max_bitrate(CameraDeviceStream* stream)
 /**
  * Function description
  *
- * @return enum AVPixelFormat value
+ * @return FREERDP_VIDEO_FORMAT value
  */
-static enum AVPixelFormat ecamToAVPixFormat(CAM_MEDIA_FORMAT ecamFormat)
+FREERDP_VIDEO_FORMAT ecamToVideoFormat(CAM_MEDIA_FORMAT ecamFormat)
 {
 	switch (ecamFormat)
 	{
 		case CAM_MEDIA_FORMAT_YUY2:
-			return AV_PIX_FMT_YUYV422;
+			return FREERDP_VIDEO_FORMAT_YUYV422;
 		case CAM_MEDIA_FORMAT_NV12:
-			return AV_PIX_FMT_NV12;
+			return FREERDP_VIDEO_FORMAT_NV12;
 		case CAM_MEDIA_FORMAT_I420:
-			return AV_PIX_FMT_YUV420P;
+			return FREERDP_VIDEO_FORMAT_YUV420P;
 		case CAM_MEDIA_FORMAT_RGB24:
-			return AV_PIX_FMT_RGB24;
+			return FREERDP_VIDEO_FORMAT_RGB24;
 		case CAM_MEDIA_FORMAT_RGB32:
-			return AV_PIX_FMT_RGB32;
+			return FREERDP_VIDEO_FORMAT_RGB32;
+		case CAM_MEDIA_FORMAT_H264:
+			return FREERDP_VIDEO_FORMAT_H264;
+		case CAM_MEDIA_FORMAT_MJPG:
+			return FREERDP_VIDEO_FORMAT_MJPEG;
 		default:
-			WLog_ERR(TAG, "Unsupported ecamFormat %d", ecamFormat);
-			return AV_PIX_FMT_NONE;
+			WLog_ERR(TAG, "Unsupported ecamFormat %u", ecamFormat);
+			return FREERDP_VIDEO_FORMAT_NONE;
 	}
 }
 
 /**
  * Function description
+ * initialize video context
  *
  * @return success/failure
  */
-static BOOL ecam_encoder_compress_h264(CameraDeviceStream* stream, const BYTE* srcData,
-                                       size_t srcSize, BYTE** ppDstData, size_t* pDstSize)
-{
-	UINT32 dstSize = 0;
-	BYTE* srcSlice[4] = { 0 };
-	BYTE* yuv420pData[3] = { 0 };
-	UINT32 yuv420pStride[3] = { 0 };
-	prim_size_t size = { 0 };
-	size.width = stream->currMediaType.Width;
-	size.height = stream->currMediaType.Height;
-	CAM_MEDIA_FORMAT inputFormat = streamInputFormat(stream);
-	enum AVPixelFormat pixFormat = ecamToAVPixFormat(inputFormat);
-
-	/* get buffers for YUV420P */
-	if (h264_get_yuv_buffer(stream->h264, stream->srcLineSizes[0], size.width, size.height,
-	                        yuv420pData, yuv420pStride) < 0)
-		return FALSE;
-
-	/* convert from source format to YUV420P */
-	BYTE* ptr = WINPR_CAST_CONST_PTR_AWAY(srcData, BYTE*);
-	if (av_image_fill_pointers(srcSlice, pixFormat, (int)size.height, ptr, stream->srcLineSizes) <
-	    0)
-		return FALSE;
-
-	const BYTE* cSrcSlice[4] = { srcSlice[0], srcSlice[1], srcSlice[2], srcSlice[3] };
-	if (sws_scale(stream->sws, cSrcSlice, stream->srcLineSizes, 0, (int)size.height, yuv420pData,
-	              (int*)yuv420pStride) <= 0)
-		return FALSE;
-
-	/* encode from YUV420P to H264 */
-	if (h264_compress(stream->h264, ppDstData, &dstSize) < 0)
-		return FALSE;
-
-	*pDstSize = dstSize;
-
-	return TRUE;
-}
-
-/**
- * Function description
- *
- */
-static void ecam_encoder_context_free_h264(CameraDeviceStream* stream)
+static BOOL ecam_init_video_context(CameraDeviceStream* stream)
 {
 	WINPR_ASSERT(stream);
-	if (stream->sws)
-	{
-		sws_freeContext(stream->sws);
-		stream->sws = NULL;
-	}
 
-	if (stream->h264)
-	{
-		h264_context_free(stream->h264);
-		stream->h264 = NULL;
-	}
-}
+	if (stream->video)
+		return TRUE;
 
-/**
- * Function description
- *
- * @return success/failure
- */
-static BOOL ecam_encoder_context_init_h264(CameraDeviceStream* stream)
-{
-	WINPR_ASSERT(stream);
-	if (!stream->h264)
-		stream->h264 = h264_context_new(TRUE);
-
-	if (!stream->h264)
+	stream->video =
+	    freerdp_video_context_new(stream->currMediaType.Width, stream->currMediaType.Height);
+	if (!stream->video)
 	{
-		WLog_ERR(TAG, "h264_context_new failed");
+		WLog_ERR(TAG, "freerdp_video_context_new failed");
 		return FALSE;
-	}
-
-	if (!h264_context_reset(stream->h264, stream->currMediaType.Width,
-	                        stream->currMediaType.Height))
-		goto fail;
-
-	if (!h264_context_set_option(stream->h264, H264_CONTEXT_OPTION_USAGETYPE,
-	                             H264_CAMERA_VIDEO_REAL_TIME))
-		goto fail;
-
-	if (!h264_context_set_option(stream->h264, H264_CONTEXT_OPTION_FRAMERATE,
-	                             stream->currMediaType.FrameRateNumerator /
-	                                 stream->currMediaType.FrameRateDenominator))
-		goto fail;
-
-	if (!h264_context_set_option(stream->h264, H264_CONTEXT_OPTION_BITRATE,
-	                             ecam_encoder_h264_get_max_bitrate(stream)))
-		goto fail;
-
-	if (!h264_context_set_option(stream->h264, H264_CONTEXT_OPTION_RATECONTROL,
-	                             H264_RATECONTROL_VBR))
-		goto fail;
-
-	if (!h264_context_set_option(stream->h264, H264_CONTEXT_OPTION_QP, 0))
-		goto fail;
-
-	/* initialize libswscale */
-	{
-		const int width = (int)stream->currMediaType.Width;
-		const int height = (int)stream->currMediaType.Height;
-		CAM_MEDIA_FORMAT inputFormat = streamInputFormat(stream);
-		enum AVPixelFormat pixFormat = ecamToAVPixFormat(inputFormat);
-
-		if (av_image_fill_linesizes(stream->srcLineSizes, pixFormat, width) < 0)
-		{
-			WLog_ERR(TAG, "av_image_fill_linesizes failed");
-			goto fail;
-		}
-
-		if (!stream->sws)
-		{
-			stream->sws = sws_getContext(width, height, pixFormat, width, height,
-			                             AV_PIX_FMT_YUV420P, 0, NULL, NULL, NULL);
-		}
-		if (!stream->sws)
-		{
-			WLog_ERR(TAG, "sws_getContext failed");
-			goto fail;
-		}
 	}
 
 	return TRUE;
-
-fail:
-	ecam_encoder_context_free_h264(stream);
-	return FALSE;
 }
 
 /**
@@ -229,17 +120,21 @@ fail:
  */
 BOOL ecam_encoder_context_init(CameraDeviceStream* stream)
 {
-	CAM_MEDIA_FORMAT format = streamOutputFormat(stream);
+	if (!ecam_init_video_context(stream))
+		return FALSE;
 
-	switch (format)
+	const UINT32 framerate =
+	    stream->currMediaType.FrameRateNumerator / stream->currMediaType.FrameRateDenominator;
+
+	if (!freerdp_video_context_reconfigure(stream->video, stream->currMediaType.Width,
+	                                       stream->currMediaType.Height, framerate, 0,
+	                                       H264_CAMERA_VIDEO_REAL_TIME))
 	{
-		case CAM_MEDIA_FORMAT_H264:
-			return ecam_encoder_context_init_h264(stream);
-
-		default:
-			WLog_ERR(TAG, "Unsupported output format %d", format);
-			return FALSE;
+		WLog_ERR(TAG, "Failed to configure H.264 encoder");
+		return FALSE;
 	}
+
+	return TRUE;
 }
 
 /**
@@ -249,16 +144,15 @@ BOOL ecam_encoder_context_init(CameraDeviceStream* stream)
  */
 BOOL ecam_encoder_context_free(CameraDeviceStream* stream)
 {
-	CAM_MEDIA_FORMAT format = streamOutputFormat(stream);
-	switch (format)
-	{
-		case CAM_MEDIA_FORMAT_H264:
-			ecam_encoder_context_free_h264(stream);
-			break;
+	if (!stream)
+		return FALSE;
 
-		default:
-			return FALSE;
+	if (stream->video)
+	{
+		freerdp_video_context_free(stream->video);
+		stream->video = nullptr;
 	}
+
 	return TRUE;
 }
 
@@ -268,15 +162,14 @@ BOOL ecam_encoder_context_free(CameraDeviceStream* stream)
  * @return success/failure
  */
 BOOL ecam_encoder_compress(CameraDeviceStream* stream, const BYTE* srcData, size_t srcSize,
-                           BYTE** ppDstData, size_t* pDstSize)
+                           wStream* output)
 {
-	CAM_MEDIA_FORMAT format = streamOutputFormat(stream);
-	switch (format)
-	{
-		case CAM_MEDIA_FORMAT_H264:
-			return ecam_encoder_compress_h264(stream, srcData, srcSize, ppDstData, pDstSize);
-		default:
-			WLog_ERR(TAG, "Unsupported output format %d", format);
-			return FALSE;
-	}
+	const FREERDP_VIDEO_FORMAT inputFormat = ecamToVideoFormat(streamInputFormat(stream));
+	const FREERDP_VIDEO_FORMAT outputFormat = ecamToVideoFormat(streamOutputFormat(stream));
+
+	if (!ecam_encoder_context_init(stream))
+		return FALSE;
+
+	return freerdp_video_sample_convert(stream->video, inputFormat, srcData, srcSize, outputFormat,
+	                                    output);
 }

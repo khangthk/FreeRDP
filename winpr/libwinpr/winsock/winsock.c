@@ -19,6 +19,7 @@
 
 #include <winpr/config.h>
 
+#include <winpr/assert.h>
 #include <winpr/crt.h>
 #include <winpr/synch.h>
 
@@ -236,26 +237,26 @@ PCSTR winpr_inet_ntop(INT Family, PVOID pAddr, PSTR pStringBuf, size_t StringBuf
 {
 	if (Family == AF_INET)
 	{
-		struct sockaddr_in in = { 0 };
+		struct sockaddr_in in = WINPR_C_ARRAY_INIT;
 
 		in.sin_family = AF_INET;
 		memcpy(&in.sin_addr, pAddr, sizeof(struct in_addr));
 		getnameinfo((struct sockaddr*)&in, sizeof(struct sockaddr_in), pStringBuf, StringBufSize,
-		            NULL, 0, NI_NUMERICHOST);
+		            nullptr, 0, NI_NUMERICHOST);
 		return pStringBuf;
 	}
 	else if (Family == AF_INET6)
 	{
-		struct sockaddr_in6 in = { 0 };
+		struct sockaddr_in6 in = WINPR_C_ARRAY_INIT;
 
 		in.sin6_family = AF_INET6;
 		memcpy(&in.sin6_addr, pAddr, sizeof(struct in_addr6));
 		getnameinfo((struct sockaddr*)&in, sizeof(struct sockaddr_in6), pStringBuf, StringBufSize,
-		            NULL, 0, NI_NUMERICHOST);
+		            nullptr, 0, NI_NUMERICHOST);
 		return pStringBuf;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 INT winpr_inet_pton(INT Family, PCSTR pszAddrString, PVOID pAddrBuf)
@@ -266,7 +267,7 @@ INT winpr_inet_pton(INT Family, PCSTR pszAddrString, PVOID pAddrBuf)
 	if ((Family != AF_INET) && (Family != AF_INET6))
 		return -1;
 
-	if (WSAStringToAddressA((char*)pszAddrString, Family, NULL, (struct sockaddr*)&addr,
+	if (WSAStringToAddressA((char*)pszAddrString, Family, nullptr, (struct sockaddr*)&addr,
 	                        &addr_len) != 0)
 		return 0;
 
@@ -293,8 +294,6 @@ INT winpr_inet_pton(INT Family, PCSTR pszAddrString, PVOID pAddrBuf)
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <net/if.h>
-
-#include <winpr/assert.h>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -495,6 +494,8 @@ void WSASetLastError(int iError)
 		case WSAEREMOTE:
 			errno = EREMOTE;
 			break;
+		default:
+			break;
 	}
 }
 
@@ -693,6 +694,8 @@ int WSAGetLastError(void)
 			iError = WSAECONNRESET;
 			break;
 #endif
+		default:
+			break;
 	}
 
 	/**
@@ -719,7 +722,7 @@ int WSAGetLastError(void)
 
 HANDLE WSACreateEvent(void)
 {
-	return CreateEvent(NULL, TRUE, FALSE, NULL);
+	return CreateEvent(nullptr, TRUE, FALSE, nullptr);
 }
 
 BOOL WSASetEvent(HANDLE hEvent)
@@ -727,7 +730,7 @@ BOOL WSASetEvent(HANDLE hEvent)
 	return SetEvent(hEvent);
 }
 
-BOOL WSAResetEvent(HANDLE hEvent)
+BOOL WSAResetEvent(WINPR_ATTR_UNUSED HANDLE hEvent)
 {
 	/* POSIX systems auto reset the socket,
 	 * if no more data is available. */
@@ -773,8 +776,9 @@ DWORD WSAWaitForMultipleEvents(DWORD cEvents, const HANDLE* lphEvents, BOOL fWai
 	return WaitForMultipleObjectsEx(cEvents, lphEvents, fWaitAll, dwTimeout, fAlertable);
 }
 
-SOCKET WSASocketA(int af, int type, int protocol, LPWSAPROTOCOL_INFOA lpProtocolInfo, GROUP g,
-                  DWORD dwFlags)
+SOCKET WSASocketA(int af, int type, int protocol,
+                  WINPR_ATTR_UNUSED LPWSAPROTOCOL_INFOA lpProtocolInfo, WINPR_ATTR_UNUSED GROUP g,
+                  WINPR_ATTR_UNUSED DWORD dwFlags)
 {
 	SOCKET s = 0;
 	s = _socket(af, type, protocol);
@@ -787,28 +791,29 @@ SOCKET WSASocketW(int af, int type, int protocol, LPWSAPROTOCOL_INFOW lpProtocol
 	return WSASocketA(af, type, protocol, (LPWSAPROTOCOL_INFOA)lpProtocolInfo, g, dwFlags);
 }
 
-int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuffer,
-             LPVOID lpvOutBuffer, DWORD cbOutBuffer, LPDWORD lpcbBytesReturned,
-             LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+int WSAIoctl(SOCKET s, DWORD dwIoControlCode, WINPR_ATTR_UNUSED LPVOID lpvInBuffer,
+             WINPR_ATTR_UNUSED DWORD cbInBuffer, LPVOID lpvOutBuffer, DWORD cbOutBuffer,
+             LPDWORD lpcbBytesReturned, WINPR_ATTR_UNUSED LPWSAOVERLAPPED lpOverlapped,
+             WINPR_ATTR_UNUSED LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
 {
 	int fd = 0;
 	int index = 0;
 	ULONG nFlags = 0;
 	size_t offset = 0;
 	size_t ifreq_len = 0;
-	struct ifreq* ifreq = NULL;
-	struct ifconf ifconf = { 0 };
-	char address[128] = { 0 };
-	char broadcast[128] = { 0 };
-	char netmask[128] = { 0 };
-	char buffer[4096] = { 0 };
+	struct ifreq* ifreq = nullptr;
+	struct ifconf ifconf = WINPR_C_ARRAY_INIT;
+	char address[128] = WINPR_C_ARRAY_INIT;
+	char broadcast[128] = WINPR_C_ARRAY_INIT;
+	char netmask[128] = WINPR_C_ARRAY_INIT;
+	char buffer[4096] = WINPR_C_ARRAY_INIT;
 	size_t numInterfaces = 0;
 	size_t maxNumInterfaces = 0;
-	INTERFACE_INFO* pInterface = NULL;
-	INTERFACE_INFO* pInterfaces = NULL;
-	struct sockaddr_in* pAddress = NULL;
-	struct sockaddr_in* pBroadcast = NULL;
-	struct sockaddr_in* pNetmask = NULL;
+	INTERFACE_INFO* pInterface = nullptr;
+	INTERFACE_INFO* pInterfaces = nullptr;
+	struct sockaddr_in* pAddress = nullptr;
+	struct sockaddr_in* pBroadcast = nullptr;
+	struct sockaddr_in* pNetmask = nullptr;
 
 	if ((dwIoControlCode != SIO_GET_INTERFACE_LIST) ||
 	    (!lpvOutBuffer || !cbOutBuffer || !lpcbBytesReturned))
@@ -822,7 +827,7 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuff
 	maxNumInterfaces = cbOutBuffer / sizeof(INTERFACE_INFO);
 #ifdef WSAIOCTL_IFADDRS
 	{
-		struct ifaddrs* ifap = NULL;
+		struct ifaddrs* ifap = nullptr;
 
 		if (getifaddrs(&ifap) != 0)
 		{
@@ -961,7 +966,7 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuff
 		if ((ifreq->ifr_addr.sa_family != AF_INET) && (ifreq->ifr_addr.sa_family != AF_INET6))
 			goto next_ifreq;
 
-		getnameinfo(&ifreq->ifr_addr, sizeof(ifreq->ifr_addr), address, sizeof(address), 0, 0,
+		getnameinfo(&ifreq->ifr_addr, sizeof(ifreq->ifr_addr), address, sizeof(address), nullptr, 0,
 		            NI_NUMERICHOST);
 		inet_pton(ifreq->ifr_addr.sa_family, address, (void*)&pAddress->sin_addr);
 
@@ -971,8 +976,8 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuff
 		if ((ifreq->ifr_addr.sa_family != AF_INET) && (ifreq->ifr_addr.sa_family != AF_INET6))
 			goto next_ifreq;
 
-		getnameinfo(&ifreq->ifr_addr, sizeof(ifreq->ifr_addr), broadcast, sizeof(broadcast), 0, 0,
-		            NI_NUMERICHOST);
+		getnameinfo(&ifreq->ifr_addr, sizeof(ifreq->ifr_addr), broadcast, sizeof(broadcast),
+		            nullptr, 0, NI_NUMERICHOST);
 		inet_pton(ifreq->ifr_addr.sa_family, broadcast, (void*)&pBroadcast->sin_addr);
 
 		if (ioctl(fd, SIOCGIFNETMASK, ifreq) != 0)
@@ -981,7 +986,7 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuff
 		if ((ifreq->ifr_addr.sa_family != AF_INET) && (ifreq->ifr_addr.sa_family != AF_INET6))
 			goto next_ifreq;
 
-		getnameinfo(&ifreq->ifr_addr, sizeof(ifreq->ifr_addr), netmask, sizeof(netmask), 0, 0,
+		getnameinfo(&ifreq->ifr_addr, sizeof(ifreq->ifr_addr), netmask, sizeof(netmask), nullptr, 0,
 		            NI_NUMERICHOST);
 		inet_pton(ifreq->ifr_addr.sa_family, netmask, (void*)&pNetmask->sin_addr);
 		numInterfaces++;
@@ -991,7 +996,7 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuff
 #else
 		ifreq_len = sizeof(*ifreq);
 #endif
-		ifreq = (struct ifreq*)&((BYTE*)ifreq)[ifreq_len];
+		ifreq = WINPR_PACKED_ALIGN_CAST(struct ifreq*, &((BYTE*)ifreq)[ifreq_len]);
 		offset += ifreq_len;
 		index++;
 	}
@@ -1002,12 +1007,11 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, LPVOID lpvInBuffer, DWORD cbInBuff
 
 SOCKET _accept(SOCKET s, struct sockaddr* addr, int* addrlen)
 {
-	int status = 0;
-	int fd = (int)s;
+	int fd = WINPR_ASSERTING_INT_CAST(int, s);
 	socklen_t s_addrlen = (socklen_t)*addrlen;
-	status = accept(fd, addr, &s_addrlen);
+	const int status = accept(fd, addr, &s_addrlen);
 	*addrlen = (int)s_addrlen;
-	return status;
+	return (SOCKET)status;
 }
 
 int _bind(SOCKET s, const struct sockaddr* addr, int namelen)
@@ -1100,7 +1104,8 @@ int _getsockopt(SOCKET s, int level, int optname, char* optval, int* optlen)
 
 u_long _htonl(u_long hostlong)
 {
-	return htonl(hostlong);
+	WINPR_ASSERT(hostlong <= UINT32_MAX);
+	return htonl((UINT32)hostlong);
 }
 
 u_short _htons(u_short hostshort)
@@ -1110,11 +1115,12 @@ u_short _htons(u_short hostshort)
 
 unsigned long _inet_addr(const char* cp)
 {
-	return (long)inet_addr(cp);
+	return WINPR_ASSERTING_INT_CAST(unsigned long, inet_addr(cp));
 }
 
 char* _inet_ntoa(struct in_addr in)
 {
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
 	return inet_ntoa(in);
 }
 
@@ -1128,7 +1134,8 @@ int _listen(SOCKET s, int backlog)
 
 u_long _ntohl(u_long netlong)
 {
-	return ntohl(netlong);
+	WINPR_ASSERT((netlong & 0xFFFFFFFF00000000ULL) == 0);
+	return ntohl((UINT32)netlong);
 }
 
 u_short _ntohs(u_short netshort)
@@ -1216,6 +1223,8 @@ int _shutdown(SOCKET s, int how)
 		case SD_BOTH:
 			s_how = SHUT_RDWR;
 			break;
+		default:
+			break;
 	}
 
 	if (s_how < 0)
@@ -1240,15 +1249,16 @@ SOCKET _socket(int af, int type, int protocol)
 
 struct hostent* _gethostbyaddr(const char* addr, int len, int type)
 {
-	struct hostent* host = NULL;
+	struct hostent* host = nullptr;
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
 	host = gethostbyaddr((const void*)addr, (socklen_t)len, type);
 	return host;
 }
 
 struct hostent* _gethostbyname(const char* name)
 {
-	struct hostent* host = NULL;
-	host = gethostbyname(name);
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+	struct hostent* host = gethostbyname(name);
 	return host;
 }
 
@@ -1259,32 +1269,30 @@ int _gethostname(char* name, int namelen)
 	return status;
 }
 
-struct servent* _getservbyport(int port, const char* proto)
+struct servent* /* codespell:ignore servent */ _getservbyport(int port, const char* proto)
 {
-	struct servent* serv = NULL;
-	serv = getservbyport(port, proto);
-	return serv;
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+	return getservbyport(port, proto);
 }
 
-struct servent* _getservbyname(const char* name, const char* proto)
+struct servent*                                     /* codespell:ignore servent */
+_getservbyname(const char* name, const char* proto) // codespell:ignore servent
+
 {
-	struct servent* serv = NULL;
-	serv = getservbyname(name, proto);
-	return serv;
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+	return getservbyname(name, proto);
 }
 
 struct protoent* _getprotobynumber(int number)
 {
-	struct protoent* proto = NULL;
-	proto = getprotobynumber(number);
-	return proto;
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+	return getprotobynumber(number);
 }
 
 struct protoent* _getprotobyname(const char* name)
 {
-	struct protoent* proto = NULL;
-	proto = getprotobyname(name);
-	return proto;
+	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+	return getprotobyname(name);
 }
 
 #endif /* _WIN32 */

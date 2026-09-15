@@ -47,17 +47,18 @@ extern "C"
 	typedef void (*opensl_receive_t)(void* context, const void* data, size_t size);
 
 	/*
-	Open the audio device with a given sampling rate (sr), input and output channels and IO buffer
-	size in frames. Returns a handle to the OpenSL stream
-	*/
-	FREERDP_LOCAL OPENSL_STREAM* android_OpenRecDevice(void* context, opensl_receive_t receive,
-	                                                   int sr, int inchannels, int bufferframes,
-	                                                   int bits_per_sample);
-	/*
 	Close the audio device
 	*/
 	FREERDP_LOCAL void android_CloseRecDevice(OPENSL_STREAM* p);
 
+	/*
+	Open the audio device with a given sampling rate (sr), input and output channels and IO buffer
+	size in frames. Returns a handle to the OpenSL stream
+	*/
+	WINPR_ATTR_MALLOC(android_CloseRecDevice, 1)
+	FREERDP_LOCAL OPENSL_STREAM* android_OpenRecDevice(void* context, opensl_receive_t receive,
+	                                                   size_t sr, size_t inchannels,
+	                                                   size_t bufferframes, size_t bits_per_sample);
 #ifdef __cplusplus
 };
 #endif

@@ -19,10 +19,11 @@
 #ifndef CLIENT_X11_XF_VIDEO_H_
 #define CLIENT_X11_XF_VIDEO_H_
 
-#include "xfreerdp.h"
+#include <freerdp/client/video.h>
 
-#include <freerdp/channels/geometry.h>
-#include <freerdp/channels/video.h>
+#include "xf_types.h"
+
+typedef struct s_xfVideoContext xfVideoContext;
 
 void xf_video_control_init(xfContext* xfc, VideoClientContext* video);
 void xf_video_control_uninit(xfContext* xfc, VideoClientContext* video);
@@ -30,6 +31,7 @@ void xf_video_control_uninit(xfContext* xfc, VideoClientContext* video);
 void xf_video_free(xfVideoContext* context);
 
 WINPR_ATTR_MALLOC(xf_video_free, 1)
+WINPR_ATTR_NODISCARD
 xfVideoContext* xf_video_new(xfContext* xfc);
 
 #endif /* CLIENT_X11_XF_VIDEO_H_ */

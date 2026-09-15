@@ -20,6 +20,7 @@
 
 #include <winpr/config.h>
 
+#include <winpr/assert.h>
 #include <winpr/sysinfo.h>
 #include <winpr/platform.h>
 
@@ -31,6 +32,19 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <limits.h>
+#endif
+
+#if defined(__MACOSX__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/ps/IOPowerSources.h>
+#include <IOKit/ps/IOPSKeys.h>
+#endif
+
+#if defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #endif
 
 #if !defined(_WIN32)
@@ -62,7 +76,7 @@ static UINT64 scaleHighPrecision(UINT64 i, UINT32 numer, UINT32 denom)
 
 static UINT64 mac_get_time_ns(void)
 {
-	mach_timebase_info_data_t timebase = { 0 };
+	mach_timebase_info_data_t timebase = WINPR_C_ARRAY_INIT;
 	mach_timebase_info(&timebase);
 	UINT64 t = mach_absolute_time();
 	return scaleHighPrecision(t, timebase.numer, timebase.denom);
@@ -102,14 +116,13 @@ static UINT64 mac_get_time_ns(void)
 #include <winpr/crt.h>
 #include <winpr/platform.h>
 
-#if defined(__MACOSX__) || defined(__IOS__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
-    defined(__OpenBSD__) || defined(__DragonFly__)
+#if defined(__MACOSX__) || defined(__IOS__)
 #include <sys/sysctl.h>
 #endif
 
-static DWORD GetProcessorArchitecture(void)
+static WORD GetProcessorArchitecture(void)
 {
-	DWORD cpuArch = PROCESSOR_ARCHITECTURE_UNKNOWN;
+	WORD cpuArch = PROCESSOR_ARCHITECTURE_UNKNOWN;
 #if defined(ANDROID)
 	AndroidCpuFamily family = android_getCpuFamily();
 
@@ -133,6 +146,29 @@ static DWORD GetProcessorArchitecture(void)
 		case ANDROID_CPU_FAMILY_MIPS64:
 			return PROCESSOR_ARCHITECTURE_MIPS64;
 
+		default:
+			return PROCESSOR_ARCHITECTURE_UNKNOWN;
+	}
+#elif defined(__MACOSX__) || defined(__IOS__)
+	int32_t val = 0;
+	size_t len = sizeof(val);
+
+	const int rc = sysctlbyname("hw.cputype", &val, &len, nullptr, 0);
+	if (rc != 0)
+		return PROCESSOR_ARCHITECTURE_UNKNOWN;
+
+	switch (val)
+	{
+		case CPU_TYPE_X86:
+			return PROCESSOR_ARCHITECTURE_INTEL;
+		case CPU_TYPE_X86_64:
+			return PROCESSOR_ARCHITECTURE_AMD64;
+		case CPU_TYPE_ARM:
+			return PROCESSOR_ARCHITECTURE_ARM;
+		case CPU_TYPE_ARM64:
+			return PROCESSOR_ARCHITECTURE_ARM64;
+		case CPU_TYPE_ARM64_32:
+			return PROCESSOR_ARCHITECTURE_ARM;
 		default:
 			return PROCESSOR_ARCHITECTURE_UNKNOWN;
 	}
@@ -165,35 +201,18 @@ static DWORD GetNumberOfProcessors(void)
 	DWORD numCPUs = 1;
 #if defined(ANDROID)
 	return android_getCpuCount();
-	/* TODO: iOS */
-#elif defined(__linux__) || defined(__sun) || defined(_AIX)
-	numCPUs = (DWORD)sysconf(_SC_NPROCESSORS_ONLN);
-#elif defined(__MACOSX__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
-    defined(__OpenBSD__) || defined(__DragonFly__)
-	{
-		int mib[4];
-		size_t length = sizeof(numCPUs);
-		mib[0] = CTL_HW;
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
-		mib[1] = HW_NCPU;
-#else
-		mib[1] = HW_AVAILCPU;
-#endif
-		sysctl(mib, 2, &numCPUs, &length, NULL, 0);
-
-		if (numCPUs < 1)
-		{
-			mib[1] = HW_NCPU;
-			sysctl(mib, 2, &numCPUs, &length, NULL, 0);
-
-			if (numCPUs < 1)
-				numCPUs = 1;
-		}
-	}
+#elif defined(__MACOSX__) || defined(__IOS__)
+	int32_t val = 0;
+	size_t len = sizeof(val);
+	const int rc = sysctlbyname("hw.logicalcpu", &val, &len, nullptr, 0);
+	if (rc == 0)
+		numCPUs = WINPR_ASSERTING_INT_CAST(DWORD, val);
 #elif defined(__hpux)
-	numCPUs = (DWORD)mpctl(MPC_GETNUMSPUS, NULL, NULL);
+	numCPUs = (DWORD)mpctl(MPC_GETNUMSPUS, nullptr, nullptr);
 #elif defined(__sgi)
 	numCPUs = (DWORD)sysconf(_SC_NPROC_ONLN);
+#elif defined(_SC_NPROCESSORS_ONLN)
+	numCPUs = (DWORD)sysconf(_SC_NPROCESSORS_ONLN);
 #endif
 	return numCPUs;
 }
@@ -226,17 +245,14 @@ static DWORD GetSystemPageSize(void)
 
 void GetSystemInfo(LPSYSTEM_INFO lpSystemInfo)
 {
-	lpSystemInfo->wProcessorArchitecture = GetProcessorArchitecture();
-	lpSystemInfo->wReserved = 0;
+	const SYSTEM_INFO empty = WINPR_C_ARRAY_INIT;
+	WINPR_ASSERT(lpSystemInfo);
+
+	*lpSystemInfo = empty;
+	lpSystemInfo->DUMMYUNIONNAME.DUMMYSTRUCTNAME.wProcessorArchitecture =
+	    GetProcessorArchitecture();
 	lpSystemInfo->dwPageSize = GetSystemPageSize();
-	lpSystemInfo->lpMinimumApplicationAddress = NULL;
-	lpSystemInfo->lpMaximumApplicationAddress = NULL;
-	lpSystemInfo->dwActiveProcessorMask = 0;
 	lpSystemInfo->dwNumberOfProcessors = GetNumberOfProcessors();
-	lpSystemInfo->dwProcessorType = 0;
-	lpSystemInfo->dwAllocationGranularity = 0;
-	lpSystemInfo->wProcessorLevel = 0;
-	lpSystemInfo->wProcessorRevision = 0;
 }
 
 void GetNativeSystemInfo(LPSYSTEM_INFO lpSystemInfo)
@@ -248,10 +264,11 @@ void GetSystemTime(LPSYSTEMTIME lpSystemTime)
 {
 	time_t ct = 0;
 	struct tm tres;
-	struct tm* stm = NULL;
+	struct tm* stm = nullptr;
 	WORD wMilliseconds = 0;
-	ct = time(NULL);
-	wMilliseconds = (WORD)(GetTickCount() % 1000);
+	UINT64 now = winpr_GetUnixTimeNS();
+	ct = WINPR_TIME_NS_TO_S(now);
+	wMilliseconds = (WORD)(WINPR_TIME_NS_REM_MS(now));
 	stm = gmtime_r(&ct, &tres);
 	ZeroMemory(lpSystemTime, sizeof(SYSTEMTIME));
 
@@ -268,9 +285,10 @@ void GetSystemTime(LPSYSTEMTIME lpSystemTime)
 	}
 }
 
-BOOL SetSystemTime(CONST SYSTEMTIME* lpSystemTime)
+BOOL SetSystemTime(WINPR_ATTR_UNUSED CONST SYSTEMTIME* lpSystemTime)
 {
 	/* TODO: Implement */
+	WLog_ERR("TODO", "TODO: Implement");
 	return FALSE;
 }
 
@@ -278,10 +296,11 @@ VOID GetLocalTime(LPSYSTEMTIME lpSystemTime)
 {
 	time_t ct = 0;
 	struct tm tres;
-	struct tm* ltm = NULL;
+	struct tm* ltm = nullptr;
 	WORD wMilliseconds = 0;
-	ct = time(NULL);
-	wMilliseconds = (WORD)(GetTickCount() % 1000);
+	UINT64 now = winpr_GetUnixTimeNS();
+	ct = WINPR_TIME_NS_TO_S(now);
+	wMilliseconds = (WORD)(WINPR_TIME_NS_REM_MS(now));
 	ltm = localtime_r(&ct, &tres);
 	ZeroMemory(lpSystemTime, sizeof(SYSTEMTIME));
 
@@ -298,9 +317,10 @@ VOID GetLocalTime(LPSYSTEMTIME lpSystemTime)
 	}
 }
 
-BOOL SetLocalTime(CONST SYSTEMTIME* lpSystemTime)
+BOOL SetLocalTime(WINPR_ATTR_UNUSED CONST SYSTEMTIME* lpSystemTime)
 {
 	/* TODO: Implement */
+	WLog_ERR("TODO", "TODO: Implement");
 	return FALSE;
 }
 
@@ -316,15 +336,19 @@ VOID GetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
 	*lpSystemTimeAsFileTime = t.ft;
 }
 
-BOOL GetSystemTimeAdjustment(PDWORD lpTimeAdjustment, PDWORD lpTimeIncrement,
-                             PBOOL lpTimeAdjustmentDisabled)
+BOOL GetSystemTimeAdjustment(WINPR_ATTR_UNUSED PDWORD lpTimeAdjustment,
+                             WINPR_ATTR_UNUSED PDWORD lpTimeIncrement,
+                             WINPR_ATTR_UNUSED PBOOL lpTimeAdjustmentDisabled)
 {
 	/* TODO: Implement */
+	WLog_ERR("TODO", "TODO: Implement");
 	return FALSE;
 }
 
-#ifndef CLOCK_MONOTONIC_RAW
-#define CLOCK_MONOTONIC_RAW 4
+#ifdef CLOCK_MONOTONIC_RAW
+#define CLOCK_ID CLOCK_MONOTONIC_RAW
+#else
+#define CLOCK_ID CLOCK_MONOTONIC
 #endif
 
 DWORD GetTickCount(void)
@@ -411,7 +435,7 @@ BOOL GetVersionExW(LPOSVERSIONINFOW lpVersionInformation)
 BOOL GetComputerNameW(LPWSTR lpBuffer, LPDWORD lpnSize)
 {
 	BOOL rc = 0;
-	LPSTR buffer = NULL;
+	LPSTR buffer = nullptr;
 	if (!lpnSize || (*lpnSize > INT_MAX))
 		return FALSE;
 
@@ -436,24 +460,24 @@ BOOL GetComputerNameW(LPWSTR lpBuffer, LPDWORD lpnSize)
 
 BOOL GetComputerNameA(LPSTR lpBuffer, LPDWORD lpnSize)
 {
-	char* dot = NULL;
-	size_t length = 0;
-	char hostname[256] = { 0 };
-
 	if (!lpnSize)
 	{
 		SetLastError(ERROR_BAD_ARGUMENTS);
 		return FALSE;
 	}
 
-	if (gethostname(hostname, sizeof(hostname)) == -1)
+	char hostname[256 + 1] = WINPR_C_ARRAY_INIT;
+	if (gethostname(hostname, ARRAYSIZE(hostname) - 1) == -1)
 		return FALSE;
 
-	length = strnlen(hostname, sizeof(hostname));
-	dot = strchr(hostname, '.');
-
+	size_t length = strnlen(hostname, MAX_COMPUTERNAME_LENGTH);
+	const char* dot = strchr(hostname, '.');
 	if (dot)
-		length = (dot - hostname);
+	{
+		const size_t dotlen = WINPR_ASSERTING_INT_CAST(size_t, (dot - hostname));
+		if (dotlen < length)
+			length = dotlen;
+	}
 
 	if ((*lpnSize <= (DWORD)length) || !lpBuffer)
 	{
@@ -462,7 +486,7 @@ BOOL GetComputerNameA(LPSTR lpBuffer, LPDWORD lpnSize)
 		return FALSE;
 	}
 
-	CopyMemory(lpBuffer, hostname, length);
+	strncpy(lpBuffer, hostname, length);
 	lpBuffer[length] = '\0';
 	*lpnSize = (DWORD)length;
 	return TRUE;
@@ -471,7 +495,7 @@ BOOL GetComputerNameA(LPSTR lpBuffer, LPDWORD lpnSize)
 BOOL GetComputerNameExA(COMPUTER_NAME_FORMAT NameType, LPSTR lpBuffer, LPDWORD lpnSize)
 {
 	size_t length = 0;
-	char hostname[256] = { 0 };
+	char hostname[256] = WINPR_C_ARRAY_INIT;
 
 	if (!lpnSize)
 	{
@@ -527,7 +551,7 @@ BOOL GetComputerNameExA(COMPUTER_NAME_FORMAT NameType, LPSTR lpBuffer, LPDWORD l
 BOOL GetComputerNameExW(COMPUTER_NAME_FORMAT NameType, LPWSTR lpBuffer, LPDWORD lpnSize)
 {
 	BOOL rc = 0;
-	LPSTR lpABuffer = NULL;
+	LPSTR lpABuffer = nullptr;
 
 	if (!lpnSize)
 	{
@@ -555,6 +579,386 @@ BOOL GetComputerNameExW(COMPUTER_NAME_FORMAT NameType, LPWSTR lpBuffer, LPDWORD 
 	return rc;
 }
 
+#if defined(__linux__)
+
+static BOOL sysinfo_read_sysfs_string(const char* path, char* buffer, size_t size)
+{
+	FILE* fp = fopen(path, "r");
+	if (!fp)
+		return FALSE;
+
+	BOOL rc = FALSE;
+	if (fgets(buffer, WINPR_ASSERTING_INT_CAST(int, size), fp))
+	{
+		size_t len = strlen(buffer);
+		while ((len > 0) && ((buffer[len - 1] == '\n') || (buffer[len - 1] == '\r')))
+			buffer[--len] = '\0';
+		rc = TRUE;
+	}
+	else
+	{
+		WLog_ERR(TAG, "error reading string in %s", path);
+	}
+	(void)fclose(fp);
+	return rc;
+}
+
+static BOOL sysinfo_read_sysfs_int(const char* path, long long* value)
+{
+	char buffer[64] = WINPR_C_ARRAY_INIT;
+	if (!sysinfo_read_sysfs_string(path, buffer, sizeof(buffer)))
+		return FALSE;
+
+	char* end = nullptr;
+	const long long v = strtoll(buffer, &end, 10);
+	if (end == buffer)
+		return FALSE;
+
+	*value = v;
+	return TRUE;
+}
+
+/** @brief reads /sys/class/power_supply/, the same kernel interface on both desktop Linux and
+ *  Android (no ANDROID-specific carve-out needed: Android exposes the identical sysfs nodes). */
+static BOOL sysinfo_get_power_status_platform(LPSYSTEM_POWER_STATUS status)
+{
+	DIR* dir = opendir("/sys/class/power_supply");
+	if (!dir)
+	{
+		/* no power_supply class at all: treat as a desktop with no battery, AC power assumed -
+		 * matches real Windows' behavior on a machine with no battery present */
+		status->ACLineStatus = AC_LINE_ONLINE;
+		status->BatteryFlag = BATTERY_FLAG_NO_BATTERY;
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+		return TRUE;
+	}
+
+	BOOL haveBattery = FALSE;
+	BOOL onAC = FALSE;
+	BOOL charging = FALSE;
+	long long percent = -1;
+	long long energyNow = -1;
+	long long energyFull = -1;
+	long long timeToEmpty = -1;
+
+	struct dirent* entry = nullptr;
+	// NOLINTNEXTLINE(concurrency-mt-unsafe): dir is a local DIR*, not shared across threads
+	while ((entry = readdir(dir)) != nullptr)
+	{
+		char path[PATH_MAX] = WINPR_C_ARRAY_INIT;
+		char value[64] = WINPR_C_ARRAY_INIT;
+		long long v = 0;
+
+		if (entry->d_name[0] == '.')
+			continue;
+
+		(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/type", entry->d_name);
+		if (!sysinfo_read_sysfs_string(path, value, sizeof(value)))
+			continue;
+
+		if (strcmp(value, "Battery") == 0)
+		{
+			(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/present",
+			               entry->d_name);
+			if (sysinfo_read_sysfs_int(path, &v) && (v == 0))
+				continue; /* battery slot present in sysfs, no battery physically installed */
+
+			haveBattery = TRUE;
+
+			(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/status",
+			               entry->d_name);
+			if (sysinfo_read_sysfs_string(path, value, sizeof(value)) &&
+			    (strcmp(value, "Charging") == 0))
+				charging = TRUE;
+
+			(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/capacity",
+			               entry->d_name);
+			if (sysinfo_read_sysfs_int(path, &v))
+				percent = v;
+
+			(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/time_to_empty_now",
+			               entry->d_name);
+			if (sysinfo_read_sysfs_int(path, &v) && (v > 0))
+				timeToEmpty = v;
+
+			/* not every driver exposes "capacity" directly; fall back to computing it from
+			 * energy_now/energy_full when present */
+			if (percent < 0)
+			{
+				(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/energy_now",
+				               entry->d_name);
+				(void)sysinfo_read_sysfs_int(path, &energyNow);
+				(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/energy_full",
+				               entry->d_name);
+				(void)sysinfo_read_sysfs_int(path, &energyFull);
+
+				if ((energyNow < 0) || (energyFull <= 0))
+				{
+					(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/charge_now",
+					               entry->d_name);
+					(void)sysinfo_read_sysfs_int(path, &energyNow);
+					(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/charge_full",
+					               entry->d_name);
+					(void)sysinfo_read_sysfs_int(path, &energyFull);
+				}
+
+				if ((energyNow >= 0) && (energyFull > 0))
+					percent = (energyNow * 100) / energyFull;
+			}
+		}
+		else
+		{
+			/* Mains / USB / Wireless: any of these reporting online means we're on AC power */
+			(void)snprintf(path, sizeof(path) - 1, "/sys/class/power_supply/%s/online",
+			               entry->d_name);
+			if (sysinfo_read_sysfs_int(path, &v) && (v != 0))
+				onAC = TRUE;
+		}
+	}
+	(void)closedir(dir);
+
+	if (!haveBattery)
+	{
+		status->ACLineStatus = AC_LINE_ONLINE;
+		status->BatteryFlag = BATTERY_FLAG_NO_BATTERY;
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+		return TRUE;
+	}
+
+	status->ACLineStatus = (onAC || charging) ? AC_LINE_ONLINE : AC_LINE_OFFLINE;
+
+	BYTE flag = 0;
+	if (charging)
+		flag |= BATTERY_FLAG_CHARGING;
+
+	if (percent >= 0)
+	{
+		if (percent > 100)
+			percent = 100;
+		status->BatteryLifePercent = (BYTE)percent;
+
+		if (percent <= 5)
+			flag |= BATTERY_FLAG_CRITICAL;
+		else if (percent <= 33)
+			flag |= BATTERY_FLAG_LOW;
+		else if (percent > 66)
+			flag |= BATTERY_FLAG_HIGH;
+	}
+	else
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+
+	status->BatteryFlag = flag ? flag : BATTERY_FLAG_UNKNOWN;
+
+	if (timeToEmpty > 0)
+		status->BatteryLifeTime = (DWORD)timeToEmpty;
+
+	return TRUE;
+}
+
+#elif defined(__MACOSX__)
+
+static BOOL sysinfo_get_power_status_platform(LPSYSTEM_POWER_STATUS status)
+{
+	BOOL rc = TRUE;
+	CFTypeRef blob = IOPSCopyPowerSourcesInfo();
+	if (!blob)
+	{
+		WLog_ERR(TAG, "unable to retrieve IOPSCopyPowerSourcesInfo()");
+		status->ACLineStatus = AC_LINE_ONLINE;
+		status->BatteryFlag = BATTERY_FLAG_NO_BATTERY;
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+		return TRUE;
+	}
+
+	BOOL haveBattery = FALSE;
+	BOOL onAC = FALSE;
+	BOOL charging = FALSE;
+	int percent = -1;
+	int timeToEmptySeconds = -1;
+
+	CFArrayRef sources = IOPSCopyPowerSourcesList(blob);
+	if (sources)
+	{
+		const CFIndex count = CFArrayGetCount(sources);
+		for (CFIndex i = 0; i < count; i++)
+		{
+			CFDictionaryRef desc =
+			    IOPSGetPowerSourceDescription(blob, CFArrayGetValueAtIndex(sources, i));
+			if (!desc)
+				continue;
+
+			CFBooleanRef isPresent = CFDictionaryGetValue(desc, CFSTR(kIOPSIsPresentKey));
+			if (isPresent && (CFBooleanGetValue(isPresent) == false))
+				continue;
+
+			CFStringRef stateStr = CFDictionaryGetValue(desc, CFSTR(kIOPSPowerSourceStateKey));
+			if (stateStr &&
+			    (CFStringCompare(stateStr, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo))
+				onAC = TRUE;
+
+			CFNumberRef curCapacity = CFDictionaryGetValue(desc, CFSTR(kIOPSCurrentCapacityKey));
+			CFNumberRef maxCapacity = CFDictionaryGetValue(desc, CFSTR(kIOPSMaxCapacityKey));
+			if (curCapacity && maxCapacity)
+			{
+				int cur = 0;
+				int max = 0;
+				CFNumberGetValue(curCapacity, kCFNumberIntType, &cur);
+				CFNumberGetValue(maxCapacity, kCFNumberIntType, &max);
+				if (max > 0)
+				{
+					haveBattery = TRUE;
+					percent = (int)(((long long)cur * 100) / max);
+				}
+			}
+
+			CFBooleanRef isCharging = CFDictionaryGetValue(desc, CFSTR(kIOPSIsChargingKey));
+			if (isCharging && CFBooleanGetValue(isCharging))
+				charging = TRUE;
+
+			CFNumberRef timeToEmpty = CFDictionaryGetValue(desc, CFSTR(kIOPSTimeToEmptyKey));
+			if (timeToEmpty)
+			{
+				int minutes = -1;
+				CFNumberGetValue(timeToEmpty, kCFNumberIntType, &minutes);
+				if (minutes > 0)
+					timeToEmptySeconds = minutes * 60;
+			}
+		}
+		CFRelease(sources);
+	}
+	CFRelease(blob);
+
+	if (!haveBattery)
+	{
+		status->ACLineStatus = AC_LINE_ONLINE;
+		status->BatteryFlag = BATTERY_FLAG_NO_BATTERY;
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+		return rc;
+	}
+
+	status->ACLineStatus = onAC ? AC_LINE_ONLINE : AC_LINE_OFFLINE;
+
+	BYTE flag = 0;
+	if (charging)
+		flag |= BATTERY_FLAG_CHARGING;
+
+	if (percent >= 0)
+	{
+		if (percent > 100)
+			percent = 100;
+		status->BatteryLifePercent = (BYTE)percent;
+
+		if (percent <= 5)
+			flag |= BATTERY_FLAG_CRITICAL;
+		else if (percent <= 33)
+			flag |= BATTERY_FLAG_LOW;
+		else if (percent > 66)
+			flag |= BATTERY_FLAG_HIGH;
+	}
+	else
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+
+	status->BatteryFlag = flag ? flag : BATTERY_FLAG_UNKNOWN;
+
+	if (timeToEmptySeconds > 0)
+		status->BatteryLifeTime = (DWORD)timeToEmptySeconds;
+
+	return rc;
+}
+
+#elif defined(__FreeBSD__)
+
+static BOOL sysinfo_sysctl_int(const char* name, int* value)
+{
+	size_t len = sizeof(*value);
+	return sysctlbyname(name, value, &len, nullptr, 0) == 0;
+}
+
+static BOOL sysinfo_get_power_status_platform(LPSYSTEM_POWER_STATUS status)
+{
+	int units = 0;
+	if (!sysinfo_sysctl_int("hw.acpi.battery.units", &units) || (units <= 0))
+	{
+		status->ACLineStatus = AC_LINE_ONLINE;
+		status->BatteryFlag = BATTERY_FLAG_NO_BATTERY;
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+		return TRUE;
+	}
+
+	int acline = -1;
+	(void)sysinfo_sysctl_int("hw.acpi.acline", &acline);
+	status->ACLineStatus =
+	    (acline == 1) ? AC_LINE_ONLINE : ((acline == 0) ? AC_LINE_OFFLINE : AC_LINE_UNKNOWN);
+
+	int life = -1;
+	(void)sysinfo_sysctl_int("hw.acpi.battery.life", &life);
+
+	int remaining = -1;
+	(void)sysinfo_sysctl_int("hw.acpi.battery.time", &remaining);
+
+	/* hw.acpi.battery.state bits mirror the ACPI _BST battery-state field:
+	 * 1=discharging, 2=charging, 4=critical */
+	int state = 0;
+	(void)sysinfo_sysctl_int("hw.acpi.battery.state", &state);
+
+	BYTE flag = 0;
+	if (state & 0x2)
+		flag |= BATTERY_FLAG_CHARGING;
+	if (state & 0x4)
+		flag |= BATTERY_FLAG_CRITICAL;
+
+	if ((life >= 0) && (life <= 100))
+	{
+		status->BatteryLifePercent = (BYTE)life;
+		if (!(flag & BATTERY_FLAG_CRITICAL))
+		{
+			if (life <= 5)
+				flag |= BATTERY_FLAG_CRITICAL;
+			else if (life <= 33)
+				flag |= BATTERY_FLAG_LOW;
+			else if (life > 66)
+				flag |= BATTERY_FLAG_HIGH;
+		}
+	}
+	else
+		status->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+
+	status->BatteryFlag = flag ? flag : BATTERY_FLAG_UNKNOWN;
+
+	if (remaining > 0)
+		status->BatteryLifeTime = (DWORD)remaining * 60; /* minutes -> seconds */
+
+	return TRUE;
+}
+
+#endif
+
+BOOL GetSystemPowerStatus(LPSYSTEM_POWER_STATUS lpSystemPowerStatus)
+{
+	if (!lpSystemPowerStatus)
+	{
+		SetLastError(ERROR_BAD_ARGUMENTS);
+		return FALSE;
+	}
+
+	/* safe, "no battery information available" defaults - overwritten below on platforms with a
+	 * real backend */
+	lpSystemPowerStatus->ACLineStatus = AC_LINE_UNKNOWN;
+	lpSystemPowerStatus->BatteryFlag = BATTERY_FLAG_UNKNOWN;
+	lpSystemPowerStatus->BatteryLifePercent = BATTERY_PERCENTAGE_UNKNOWN;
+	lpSystemPowerStatus->SystemStatusFlag = 0;
+	lpSystemPowerStatus->BatteryLifeTime = BATTERY_LIFE_UNKNOWN;
+	lpSystemPowerStatus->BatteryFullLifeTime = BATTERY_LIFE_UNKNOWN;
+
+#if defined(__linux__) || defined(__MACOSX__) || defined(__FreeBSD__)
+	return sysinfo_get_power_status_platform(lpSystemPowerStatus);
+#else
+	WLog_WARN(TAG, "GetSystemPowerStatus is not implemented on this platform, reporting "
+	               "\"no battery, unknown state\"");
+	return TRUE;
+#endif
+}
+
 #endif
 
 #if defined(_UWP)
@@ -580,21 +984,22 @@ UINT64 winpr_GetTickCount64NS(void)
 {
 	UINT64 ticks = 0;
 #if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 199309L)
-	struct timespec ts = { 0 };
+	struct timespec ts = WINPR_C_ARRAY_INIT;
 
-	if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts) == 0)
-		ticks = (ts.tv_sec * 1000000000ull) + ts.tv_nsec;
+	if (clock_gettime(CLOCK_ID, &ts) == 0)
+		ticks = (WINPR_ASSERTING_INT_CAST(uint64_t, ts.tv_sec) * 1000000000ull) +
+		        WINPR_ASSERTING_INT_CAST(uint64_t, ts.tv_nsec);
 #elif defined(__MACH__) && defined(__APPLE__)
 	ticks = mac_get_time_ns();
 #elif defined(_WIN32)
-	LARGE_INTEGER li = { 0 };
-	LARGE_INTEGER freq = { 0 };
+	LARGE_INTEGER li = WINPR_C_ARRAY_INIT;
+	LARGE_INTEGER freq = WINPR_C_ARRAY_INIT;
 	if (QueryPerformanceFrequency(&freq) && QueryPerformanceCounter(&li))
 		ticks = li.QuadPart * 1000000000ull / freq.QuadPart;
 #else
-	struct timeval tv = { 0 };
+	struct timeval tv = WINPR_C_ARRAY_INIT;
 
-	if (gettimeofday(&tv, NULL) == 0)
+	if (gettimeofday(&tv, nullptr) == 0)
 		ticks = (tv.tv_sec * 1000000000ull) + (tv.tv_usec * 1000ull);
 
 	/* We need to trick here:
@@ -608,7 +1013,7 @@ UINT64 winpr_GetTickCount64NS(void)
 	static UINT64 uptime = 0;
 	if (first == 0)
 	{
-		struct sysinfo info = { 0 };
+		struct sysinfo info = WINPR_C_ARRAY_INIT;
 		if (sysinfo(&info) == 0)
 		{
 			first = ticks;
@@ -629,17 +1034,18 @@ UINT64 winpr_GetUnixTimeNS(void)
 	{
 		UINT64 u64;
 		FILETIME ft;
-	} t = { 0 };
+	} t = WINPR_C_ARRAY_INIT;
 	GetSystemTimeAsFileTime(&t.ft);
 	return (t.u64 - FILETIME_TO_UNIX_OFFSET_S * 10000000ull) * 100ull;
 #elif defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 199309L)
-	struct timespec ts = { 0 };
+	struct timespec ts = WINPR_C_ARRAY_INIT;
 	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
 		return 0;
-	return ts.tv_sec * 1000000000ull + ts.tv_nsec;
+	return WINPR_ASSERTING_INT_CAST(uint64_t, ts.tv_sec) * 1000000000ull +
+	       WINPR_ASSERTING_INT_CAST(uint64_t, ts.tv_nsec);
 #else
-	struct timeval tv = { 0 };
-	if (gettimeofday(&tv, NULL) != 0)
+	struct timeval tv = WINPR_C_ARRAY_INIT;
+	if (gettimeofday(&tv, nullptr) != 0)
 		return 0;
 	return tv.tv_sec * 1000000000ULL + tv.tv_usec * 1000ull;
 #endif
@@ -666,10 +1072,10 @@ UINT64 winpr_GetUnixTimeNS(void)
 #define D_BIT_SSE (1 << 25)
 #define D_BIT_SSE2 (1 << 26)
 #define D_BIT_3DN (1 << 30)
-#define C_BIT_SSE3 (1 << 0)
+// #define C_BIT_SSE3 (1 << 0)
 #define C_BIT_PCLMULQDQ (1 << 1)
 #define C81_BIT_LZCNT (1 << 5)
-#define C_BIT_3DNP (1 << 8)
+// #define C_BIT_3DNP (1 << 8)
 #define C_BIT_3DNP (1 << 8)
 #define C_BIT_SSSE3 (1 << 9)
 #define C_BIT_SSE41 (1 << 19)
@@ -786,17 +1192,53 @@ BOOL IsProcessorFeaturePresent(DWORD ProcessorFeature)
 	BOOL ret = FALSE;
 #if defined(ANDROID)
 	const uint64_t features = android_getCpuFeatures();
+	const AndroidCpuFamily family = android_getCpuFamily();
+	const BOOL isArm = (family == ANDROID_CPU_FAMILY_ARM) || (family == ANDROID_CPU_FAMILY_ARM64);
+	const BOOL isX86 = (family == ANDROID_CPU_FAMILY_X86) || (family == ANDROID_CPU_FAMILY_X86_64);
 
-	switch (ProcessorFeature)
+	if (isX86)
 	{
-		case PF_ARM_NEON_INSTRUCTIONS_AVAILABLE:
-		case PF_ARM_NEON:
-			return features & ANDROID_CPU_ARM_FEATURE_NEON;
-
-		default:
-			WLog_WARN(TAG, "feature 0x%08" PRIx32 " check not implemented", ProcessorFeature);
-			return FALSE;
+		switch (ProcessorFeature)
+		{
+			case PF_MMX_INSTRUCTIONS_AVAILABLE:
+			case PF_XMMI_INSTRUCTIONS_AVAILABLE:
+			case PF_XMMI64_INSTRUCTIONS_AVAILABLE:
+			case PF_3DNOW_INSTRUCTIONS_AVAILABLE:
+			case PF_SSE3_INSTRUCTIONS_AVAILABLE:
+				return TRUE;
+			case PF_SSSE3_INSTRUCTIONS_AVAILABLE:
+				return features & ANDROID_CPU_X86_FEATURE_SSSE3;
+			case PF_SSE4_1_INSTRUCTIONS_AVAILABLE:
+				return features & ANDROID_CPU_X86_FEATURE_SSE4_1;
+			case PF_SSE4_2_INSTRUCTIONS_AVAILABLE:
+				return features & ANDROID_CPU_X86_FEATURE_SSE4_2;
+			case PF_AVX_INSTRUCTIONS_AVAILABLE:
+				return features & ANDROID_CPU_X86_FEATURE_AVX;
+			case PF_AVX2_INSTRUCTIONS_AVAILABLE:
+				return features & ANDROID_CPU_X86_FEATURE_AVX2;
+			case PF_AVX512F_INSTRUCTIONS_AVAILABLE:
+			default:
+				WLog_WARN(TAG, "feature 0x%08" PRIx32 " check not implemented", ProcessorFeature);
+				return FALSE;
+		}
 	}
+
+	if (isArm)
+	{
+		switch (ProcessorFeature)
+		{
+			case PF_ARM_NEON_INSTRUCTIONS_AVAILABLE:
+			case PF_ARM_NEON:
+				return features & ANDROID_CPU_ARM_FEATURE_NEON;
+
+			default:
+				WLog_WARN(TAG, "feature 0x%08" PRIx32 " check not implemented", ProcessorFeature);
+				return FALSE;
+		}
+	}
+
+	WLog_WARN(TAG, "Unsupported Android CPU family 0x%08" PRIx32, family);
+	return FALSE;
 
 #elif defined(_M_ARM) || defined(_M_ARM64)
 #ifdef __linux__
@@ -865,6 +1307,19 @@ BOOL IsProcessorFeaturePresent(DWORD ProcessorFeature)
 				ret = TRUE;
 
 			break;
+		case PF_MMX_INSTRUCTIONS_AVAILABLE:
+		case PF_XMMI_INSTRUCTIONS_AVAILABLE:
+		case PF_XMMI64_INSTRUCTIONS_AVAILABLE:
+		case PF_3DNOW_INSTRUCTIONS_AVAILABLE:
+		case PF_SSE3_INSTRUCTIONS_AVAILABLE:
+		case PF_SSSE3_INSTRUCTIONS_AVAILABLE:
+		case PF_SSE4_1_INSTRUCTIONS_AVAILABLE:
+		case PF_SSE4_2_INSTRUCTIONS_AVAILABLE:
+		case PF_AVX_INSTRUCTIONS_AVAILABLE:
+		case PF_AVX2_INSTRUCTIONS_AVAILABLE:
+		case PF_AVX512F_INSTRUCTIONS_AVAILABLE:
+			ret = FALSE;
+			break;
 		case PF_ARM_V8_INSTRUCTIONS_AVAILABLE:
 		case PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE:
 		case PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE:
@@ -881,6 +1336,19 @@ BOOL IsProcessorFeaturePresent(DWORD ProcessorFeature)
 
 	switch (ProcessorFeature)
 	{
+		case PF_MMX_INSTRUCTIONS_AVAILABLE:
+		case PF_XMMI_INSTRUCTIONS_AVAILABLE:
+		case PF_XMMI64_INSTRUCTIONS_AVAILABLE:
+		case PF_3DNOW_INSTRUCTIONS_AVAILABLE:
+		case PF_SSE3_INSTRUCTIONS_AVAILABLE:
+		case PF_SSSE3_INSTRUCTIONS_AVAILABLE:
+		case PF_SSE4_1_INSTRUCTIONS_AVAILABLE:
+		case PF_SSE4_2_INSTRUCTIONS_AVAILABLE:
+		case PF_AVX_INSTRUCTIONS_AVAILABLE:
+		case PF_AVX2_INSTRUCTIONS_AVAILABLE:
+		case PF_AVX512F_INSTRUCTIONS_AVAILABLE:
+			ret = FALSE;
+			break;
 		case PF_ARM_NEON_INSTRUCTIONS_AVAILABLE:
 		case PF_ARM_NEON:
 #ifdef __ARM_NEON
@@ -958,6 +1426,11 @@ BOOL IsProcessorFeaturePresent(DWORD ProcessorFeature)
 		case PF_AVX512F_INSTRUCTIONS_AVAILABLE:
 			ret = __builtin_cpu_supports("avx512f");
 			break;
+		case PF_ARM_NEON_INSTRUCTIONS_AVAILABLE:
+#if defined(__ARM_NEON__)
+			ret = TRUE;
+#endif
+			break;
 		default:
 			WLog_WARN(TAG, "feature 0x%08" PRIx32 " check not implemented", ProcessorFeature);
 			break;
@@ -1001,8 +1474,8 @@ BOOL IsProcessorFeaturePresent(DWORD ProcessorFeature)
 DWORD GetTickCountPrecise(void)
 {
 #ifdef _WIN32
-	LARGE_INTEGER freq;
-	LARGE_INTEGER current;
+	LARGE_INTEGER freq = WINPR_C_ARRAY_INIT;
+	LARGE_INTEGER current = WINPR_C_ARRAY_INIT;
 	QueryPerformanceFrequency(&freq);
 	QueryPerformanceCounter(&current);
 	return (DWORD)(current.QuadPart * 1000LL / freq.QuadPart);
@@ -1164,6 +1637,8 @@ BOOL IsProcessorFeaturePresentEx(DWORD ProcessorFeature)
 						if (c & C_BIT_PCLMULQDQ)
 							ret = TRUE;
 
+						break;
+					default:
 						break;
 				}
 			}

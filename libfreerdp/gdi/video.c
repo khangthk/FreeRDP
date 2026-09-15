@@ -52,8 +52,8 @@ void gdi_video_geometry_uninit(rdpGdi* gdi, GeometryClientContext* geom)
 	WINPR_UNUSED(geom);
 }
 
-static VideoSurface* gdiVideoCreateSurface(VideoClientContext* video, UINT32 x, UINT32 y,
-                                           UINT32 width, UINT32 height)
+static VideoSurface* gdiVideoCreateSurface(WINPR_ATTR_UNUSED VideoClientContext* video, UINT32 x,
+                                           UINT32 y, UINT32 width, UINT32 height)
 {
 	return VideoClient_CreateCommonContext(sizeof(VideoSurface), x, y, width, height);
 }
@@ -62,8 +62,8 @@ static BOOL gdiVideoShowSurface(VideoClientContext* video, const VideoSurface* s
                                 UINT32 destinationWidth, UINT32 destinationHeight)
 {
 	BOOL rc = FALSE;
-	rdpGdi* gdi = NULL;
-	rdpUpdate* update = NULL;
+	rdpGdi* gdi = nullptr;
+	rdpUpdate* update = nullptr;
 
 	WINPR_ASSERT(video);
 	WINPR_ASSERT(surface);
@@ -80,7 +80,7 @@ static BOOL gdiVideoShowSurface(VideoClientContext* video, const VideoSurface* s
 
 	if ((gdi->width < 0) || (gdi->height < 0))
 		goto fail;
-	else
+
 	{
 		const UINT32 nXSrc = surface->x;
 		const UINT32 nYSrc = surface->y;
@@ -106,11 +106,9 @@ static BOOL gdiVideoShowSurface(VideoClientContext* video, const VideoSurface* s
 		    (height > INT32_MAX))
 			goto fail;
 
-		gdi_InvalidateRegion(gdi->primary->hdc, (INT32)nXDst, (INT32)nYDst, (INT32)width,
-		                     (INT32)height);
+		rc = gdi_InvalidateRegion(gdi->primary->hdc, (INT32)nXDst, (INT32)nYDst, (INT32)width,
+		                          (INT32)height);
 	}
-
-	rc = TRUE;
 fail:
 
 	if (!update_end_paint(update))
@@ -139,49 +137,35 @@ void gdi_video_control_init(rdpGdi* gdi, VideoClientContext* video)
 	video->setGeometry(video, gdi->geometry);
 }
 
-void gdi_video_control_uninit(rdpGdi* gdi, VideoClientContext* video)
+void gdi_video_control_uninit(rdpGdi* gdi, WINPR_ATTR_UNUSED VideoClientContext* video)
 {
 	WINPR_ASSERT(gdi);
-	gdi->video = NULL;
+	gdi->video = nullptr;
 }
 
-static void gdi_video_timer(void* context, const TimerEventArgs* timer)
-{
-	rdpContext* ctx = (rdpContext*)context;
-	rdpGdi* gdi = NULL;
-
-	WINPR_ASSERT(ctx);
-	WINPR_ASSERT(timer);
-
-	gdi = ctx->gdi;
-
-	if (gdi && gdi->video)
-		gdi->video->timer(gdi->video, timer->now);
-}
-
-void gdi_video_data_init(rdpGdi* gdi, VideoClientContext* video)
+void gdi_video_data_init(WINPR_ATTR_UNUSED rdpGdi* gdi, WINPR_ATTR_UNUSED VideoClientContext* video)
 {
 	WINPR_ASSERT(gdi);
 	WINPR_ASSERT(gdi->context);
-	PubSub_SubscribeTimer(gdi->context->pubSub, gdi_video_timer);
 }
 
-void gdi_video_data_uninit(rdpGdi* gdi, VideoClientContext* context)
+void gdi_video_data_uninit(WINPR_ATTR_UNUSED rdpGdi* gdi,
+                           WINPR_ATTR_UNUSED VideoClientContext* context)
 {
 	WINPR_ASSERT(gdi);
 	WINPR_ASSERT(gdi->context);
-	PubSub_UnsubscribeTimer(gdi->context->pubSub, gdi_video_timer);
 }
 
 VideoSurface* VideoClient_CreateCommonContext(size_t size, UINT32 x, UINT32 y, UINT32 w, UINT32 h)
 {
-	VideoSurface* ret = NULL;
+	if ((w == 0) || (h == 0))
+		return nullptr;
 
 	WINPR_ASSERT(size >= sizeof(VideoSurface));
 
-	ret = calloc(1, size);
+	VideoSurface* ret = calloc(1, size);
 	if (!ret)
-		return NULL;
+		return nullptr;
 
 	ret->format = PIXEL_FORMAT_BGRX32;
 	ret->x = x;
@@ -198,7 +182,7 @@ VideoSurface* VideoClient_CreateCommonContext(size_t size, UINT32 x, UINT32 y, U
 	return ret;
 fail:
 	VideoClient_DestroyCommonContext(ret);
-	return NULL;
+	return nullptr;
 }
 
 void VideoClient_DestroyCommonContext(VideoSurface* surface)

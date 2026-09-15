@@ -37,6 +37,8 @@
 
 #include <string.h>
 
+#include <winpr/cast.h>
+
 #include "md5.h"
 
 /*
@@ -46,11 +48,26 @@
  * architectures that lack an AND-NOT instruction, just like in Colin Plumb's
  * implementation.
  */
-#define F(x, y, z) ((z) ^ ((x) & ((y) ^ (z))))
-#define G(x, y, z) ((y) ^ ((z) & ((x) ^ (y))))
-#define H(x, y, z) (((x) ^ (y)) ^ (z))
-#define H2(x, y, z) ((x) ^ ((y) ^ (z)))
-#define I(x, y, z) ((y) ^ ((x) | ~(z)))
+static inline winpr_MD5_u32plus F(winpr_MD5_u32plus x, winpr_MD5_u32plus y, winpr_MD5_u32plus z)
+{
+	return ((z) ^ ((x) & ((y) ^ (z))));
+}
+static inline winpr_MD5_u32plus G(winpr_MD5_u32plus x, winpr_MD5_u32plus y, winpr_MD5_u32plus z)
+{
+	return ((y) ^ ((z) & ((x) ^ (y))));
+}
+static inline winpr_MD5_u32plus H(winpr_MD5_u32plus x, winpr_MD5_u32plus y, winpr_MD5_u32plus z)
+{
+	return (((x) ^ (y)) ^ (z));
+}
+static inline winpr_MD5_u32plus H2(winpr_MD5_u32plus x, winpr_MD5_u32plus y, winpr_MD5_u32plus z)
+{
+	return ((x) ^ ((y) ^ (z)));
+}
+static inline winpr_MD5_u32plus I(winpr_MD5_u32plus x, winpr_MD5_u32plus y, winpr_MD5_u32plus z)
+{
+	return ((y) ^ ((x) | ~(z)));
+}
 
 /*
  * The MD5 transformation for all four rounds.
@@ -75,14 +92,15 @@
  * link-time optimizations.  For the time being, keeping these MD5 routines in
  * their own translation unit avoids the problem.
  */
-#if defined(__i386__) || defined(__x86_64__) || defined(__vax__)
-#define SET(n) (*(const winpr_MD5_u32plus*)&ptr[(n)*4])
+#if defined(WINPR_ARCH_SUPPORTED)
+#define SET(n) (*(WINPR_PACKED_ALIGN_CAST(const winpr_MD5_u32plus*, &ptr[4ULL * (n)])))
 #define GET(n) SET(n)
 #else
-#define SET(n)                                                                                    \
-	(ctx->block[(n)] = (winpr_MD5_u32plus)ptr[(n)*4] | ((winpr_MD5_u32plus)ptr[(n)*4 + 1] << 8) | \
-	                   ((winpr_MD5_u32plus)ptr[(n)*4 + 2] << 16) |                                \
-	                   ((winpr_MD5_u32plus)ptr[(n)*4 + 3] << 24))
+#define SET(n)                                                          \
+	(ctx->block[(n)] = (winpr_MD5_u32plus)ptr[4ULL * (n)] |             \
+	                   ((winpr_MD5_u32plus)ptr[4ULL * (n) + 1] << 8) |  \
+	                   ((winpr_MD5_u32plus)ptr[4ULL * (n) + 2] << 16) | \
+	                   ((winpr_MD5_u32plus)ptr[4ULL * (n) + 3] << 24))
 #define GET(n) (ctx->block[(n)])
 #endif
 
@@ -90,31 +108,21 @@
  * This processes one or more 64-byte data blocks, but does NOT update the bit
  * counters.  There are no alignment requirements.
  */
-static const void* body(WINPR_MD5_CTX* ctx, const void* data, unsigned long size)
+static const void* body(WINPR_MD5_CTX* ctx, const void* data, size_t size)
 {
-	const unsigned char* ptr = NULL;
-	winpr_MD5_u32plus a = 0;
-	winpr_MD5_u32plus b = 0;
-	winpr_MD5_u32plus c = 0;
-	winpr_MD5_u32plus d = 0;
-	winpr_MD5_u32plus saved_a = 0;
-	winpr_MD5_u32plus saved_b = 0;
-	winpr_MD5_u32plus saved_c = 0;
-	winpr_MD5_u32plus saved_d = 0;
+	const unsigned char* ptr = (const unsigned char*)data;
 
-	ptr = (const unsigned char*)data;
-
-	a = ctx->a;
-	b = ctx->b;
-	c = ctx->c;
-	d = ctx->d;
+	winpr_MD5_u32plus a = ctx->a;
+	winpr_MD5_u32plus b = ctx->b;
+	winpr_MD5_u32plus c = ctx->c;
+	winpr_MD5_u32plus d = ctx->d;
 
 	do
 	{
-		saved_a = a;
-		saved_b = b;
-		saved_c = c;
-		saved_d = d;
+		const winpr_MD5_u32plus saved_a = a;
+		const winpr_MD5_u32plus saved_b = b;
+		const winpr_MD5_u32plus saved_c = c;
+		const winpr_MD5_u32plus saved_d = d;
 
 		/* Round 1 */
 		STEP(F, a, b, c, d, SET(0), 0xd76aa478, 7)
@@ -215,22 +223,18 @@ void winpr_MD5_Init(WINPR_MD5_CTX* ctx)
 	ctx->hi = 0;
 }
 
-void winpr_MD5_Update(WINPR_MD5_CTX* ctx, const void* data, unsigned long size)
+void winpr_MD5_Update(WINPR_MD5_CTX* ctx, const void* data, size_t size)
 {
-	winpr_MD5_u32plus saved_lo = 0;
-	unsigned long used = 0;
-	unsigned long available = 0;
-
-	saved_lo = ctx->lo;
+	winpr_MD5_u32plus saved_lo = ctx->lo;
 	if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo)
 		ctx->hi++;
-	ctx->hi += size >> 29;
+	ctx->hi += (winpr_MD5_u32plus)((size >> 29) & 0xffffffff);
 
-	used = saved_lo & 0x3f;
+	size_t used = saved_lo & 0x3f;
 
 	if (used)
 	{
-		available = 64 - used;
+		size_t available = 64 - used;
 
 		if (size < available)
 		{
@@ -246,29 +250,28 @@ void winpr_MD5_Update(WINPR_MD5_CTX* ctx, const void* data, unsigned long size)
 
 	if (size >= 64)
 	{
-		data = body(ctx, data, size & ~(unsigned long)0x3f);
+		data = body(ctx, data, size & ~(size_t)0x3f);
 		size &= 0x3f;
 	}
 
 	memcpy(ctx->buffer, data, size);
 }
 
-#define OUT(dst, src)                        \
-	(dst)[0] = (unsigned char)(src);         \
-	(dst)[1] = (unsigned char)((src) >> 8);  \
-	(dst)[2] = (unsigned char)((src) >> 16); \
+static inline void mdOUT(unsigned char* dst, winpr_MD5_u32plus src)
+{
+	(dst)[0] = (unsigned char)(src);
+	(dst)[1] = (unsigned char)((src) >> 8);
+	(dst)[2] = (unsigned char)((src) >> 16);
 	(dst)[3] = (unsigned char)((src) >> 24);
+}
 
 void winpr_MD5_Final(unsigned char* result, WINPR_MD5_CTX* ctx)
 {
-	unsigned long used = 0;
-	unsigned long available = 0;
-
-	used = ctx->lo & 0x3f;
+	size_t used = ctx->lo & 0x3f;
 
 	ctx->buffer[used++] = 0x80;
 
-	available = 64 - used;
+	size_t available = 64 - used;
 
 	if (available < 8)
 	{
@@ -281,15 +284,15 @@ void winpr_MD5_Final(unsigned char* result, WINPR_MD5_CTX* ctx)
 	memset(&ctx->buffer[used], 0, available - 8);
 
 	ctx->lo <<= 3;
-	OUT(&ctx->buffer[56], ctx->lo)
-	OUT(&ctx->buffer[60], ctx->hi)
+	mdOUT(&ctx->buffer[56], ctx->lo);
+	mdOUT(&ctx->buffer[60], ctx->hi);
 
 	body(ctx, ctx->buffer, 64);
 
-	OUT(&result[0], ctx->a)
-	OUT(&result[4], ctx->b)
-	OUT(&result[8], ctx->c)
-	OUT(&result[12], ctx->d)
+	mdOUT(&result[0], ctx->a);
+	mdOUT(&result[4], ctx->b);
+	mdOUT(&result[8], ctx->c);
+	mdOUT(&result[12], ctx->d);
 
 	memset(ctx, 0, sizeof(*ctx));
 }

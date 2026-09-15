@@ -24,37 +24,12 @@
 #include <freerdp/freerdp.h>
 #include <freerdp/pointer.h>
 
-typedef struct
-{
-	UINT32 number;
-	UINT32 maxCellSize;
-	rdpGlyph** entries;
-} GLYPH_CACHE;
-
-typedef struct
-{
-	void* fragment;
-	UINT32 size;
-} FRAGMENT_CACHE_ENTRY;
-
-typedef struct
-{
-	FRAGMENT_CACHE_ENTRY entries[256];
-} FRAGMENT_CACHE;
-
-typedef struct
-{
-	FRAGMENT_CACHE fragCache;
-	GLYPH_CACHE glyphCache[10];
-
-	wLog* log;
-	rdpContext* context;
-} rdpGlyphCache;
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+	typedef struct glyphCache rdpGlyphCache;
 
 	FREERDP_LOCAL void glyph_cache_register_callbacks(rdpUpdate* update);
 
@@ -63,13 +38,17 @@ extern "C"
 	WINPR_ATTR_MALLOC(glyph_cache_free, 1)
 	FREERDP_LOCAL rdpGlyphCache* glyph_cache_new(rdpContext* context);
 
-	FREERDP_LOCAL CACHE_GLYPH_ORDER* copy_cache_glyph_order(rdpContext* context,
-	                                                        const CACHE_GLYPH_ORDER* glyph);
 	FREERDP_LOCAL void free_cache_glyph_order(rdpContext* context, CACHE_GLYPH_ORDER* glyph);
 
+	WINPR_ATTR_MALLOC(free_cache_glyph_order, 1)
+	FREERDP_LOCAL CACHE_GLYPH_ORDER* copy_cache_glyph_order(rdpContext* context,
+	                                                        const CACHE_GLYPH_ORDER* glyph);
+
+	FREERDP_LOCAL void free_cache_glyph_v2_order(rdpContext* context, CACHE_GLYPH_V2_ORDER* glyph);
+
+	WINPR_ATTR_MALLOC(free_cache_glyph_v2_order, 1)
 	FREERDP_LOCAL CACHE_GLYPH_V2_ORDER*
 	copy_cache_glyph_v2_order(rdpContext* context, const CACHE_GLYPH_V2_ORDER* glyph);
-	FREERDP_LOCAL void free_cache_glyph_v2_order(rdpContext* context, CACHE_GLYPH_V2_ORDER* glyph);
 
 #ifdef __cplusplus
 }

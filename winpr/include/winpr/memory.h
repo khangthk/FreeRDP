@@ -53,16 +53,20 @@ extern "C"
 	WINPR_ATTR_MALLOC(CloseHandle, 1)
 	WINPR_API HANDLE OpenFileMappingW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API LPVOID MapViewOfFile(HANDLE hFileMappingObject, DWORD dwDesiredAccess,
 	                               DWORD dwFileOffsetHigh, DWORD dwFileOffsetLow,
-	                               SIZE_T dwNumberOfBytesToMap);
+	                               size_t dwNumberOfBytesToMap);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API LPVOID MapViewOfFileEx(HANDLE hFileMappingObject, DWORD dwDesiredAccess,
 	                                 DWORD dwFileOffsetHigh, DWORD dwFileOffsetLow,
-	                                 SIZE_T dwNumberOfBytesToMap, LPVOID lpBaseAddress);
+	                                 size_t dwNumberOfBytesToMap, LPVOID lpBaseAddress);
 
-	WINPR_API BOOL FlushViewOfFile(LPCVOID lpBaseAddress, SIZE_T dwNumberOfBytesToFlush);
+	WINPR_ATTR_NODISCARD
+	WINPR_API BOOL FlushViewOfFile(LPCVOID lpBaseAddress, size_t dwNumberOfBytesToFlush);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL UnmapViewOfFile(LPCVOID lpBaseAddress);
 
 #ifdef __cplusplus

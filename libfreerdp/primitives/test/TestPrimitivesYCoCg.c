@@ -26,9 +26,9 @@
 static BOOL test_YCoCgRToRGB_8u_AC4R_func(UINT32 width, UINT32 height)
 {
 	pstatus_t status = -1;
-	BYTE* out_sse = NULL;
-	BYTE* in = NULL;
-	BYTE* out_c = NULL;
+	BYTE* out_sse = nullptr;
+	BYTE* in = nullptr;
+	BYTE* out_c = nullptr;
 	const UINT32 srcStride = width * 4;
 	const UINT32 size = srcStride * height;
 	const UINT32 formats[] = { PIXEL_FORMAT_ARGB32, PIXEL_FORMAT_ABGR32, PIXEL_FORMAT_RGBA32,
@@ -42,7 +42,8 @@ static BOOL test_YCoCgRToRGB_8u_AC4R_func(UINT32 width, UINT32 height)
 	if (!in || !out_c || !out_sse)
 		goto fail;
 
-	winpr_RAND(in, size);
+	if (winpr_RAND(in, size) < 0)
+		goto fail;
 
 	for (size_t x = 0; x < sizeof(formats) / sizeof(formats[0]); x++)
 	{
@@ -52,16 +53,18 @@ static BOOL test_YCoCgRToRGB_8u_AC4R_func(UINT32 width, UINT32 height)
 		PROFILER_CREATE(genericProf, "YCoCgRToRGB_8u_AC4R-GENERIC")
 		PROFILER_CREATE(optProf, "YCoCgRToRGB_8u_AC4R-OPT")
 		PROFILER_ENTER(genericProf)
-		status = generic->YCoCgToRGB_8u_AC4R(in, srcStride, out_c, format, dstStride, width, height,
-		                                     2, TRUE);
+		status = generic->YCoCgToRGB_8u_AC4R(in, WINPR_ASSERTING_INT_CAST(int, srcStride), out_c,
+		                                     format, WINPR_ASSERTING_INT_CAST(int, dstStride),
+		                                     width, height, 2, TRUE);
 		PROFILER_EXIT(genericProf)
 
 		if (status != PRIMITIVES_SUCCESS)
 			goto loop_fail;
 
 		PROFILER_ENTER(optProf)
-		status = optimized->YCoCgToRGB_8u_AC4R(in, srcStride, out_sse, format, dstStride, width,
-		                                       height, 2, TRUE);
+		status = optimized->YCoCgToRGB_8u_AC4R(
+		    in, WINPR_ASSERTING_INT_CAST(int, srcStride), out_sse, format,
+		    WINPR_ASSERTING_INT_CAST(int, dstStride), width, height, 2, TRUE);
 		PROFILER_EXIT(optProf)
 
 		if (status != PRIMITIVES_SUCCESS)
@@ -122,13 +125,15 @@ int TestPrimitivesYCoCg(int argc, char* argv[])
 
 			do
 			{
-				winpr_RAND(&w, sizeof(w));
+				if (winpr_RAND(&w, sizeof(w)) < 0)
+					return -1;
 				w %= 2048 / 4;
 			} while (w < 16);
 
 			do
 			{
-				winpr_RAND(&h, sizeof(h));
+				if (winpr_RAND(&h, sizeof(h)) < 0)
+					return -1;
 				h %= 2048 / 4;
 			} while (h < 16);
 

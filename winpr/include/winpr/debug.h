@@ -32,11 +32,27 @@ extern "C"
 
 	WINPR_API void winpr_log_backtrace(const char* tag, DWORD level, DWORD size);
 	WINPR_API void winpr_log_backtrace_ex(wLog* log, DWORD level, DWORD size);
-	WINPR_API void* winpr_backtrace(DWORD size);
+
 	WINPR_API void winpr_backtrace_free(void* buffer);
+
+	WINPR_ATTR_MALLOC(winpr_backtrace_free, 1)
+	WINPR_API void* winpr_backtrace(DWORD size);
+
+	WINPR_ATTR_MALLOC(free, 1)
 	WINPR_API char** winpr_backtrace_symbols(void* buffer, size_t* used);
+
 	WINPR_API void winpr_backtrace_symbols_fd(void* buffer, int fd);
+
+	WINPR_ATTR_NODISCARD
 	WINPR_API char* winpr_strerror(INT32 dw, char* dmsg, size_t size);
+
+	/**! @brief log all build related warnings to the logger \ref log at log level \ref level
+	 *
+	 * @param log The logger to use, must not be nullptr
+	 * @param level A log level to use of type \ref wLogLevel
+	 * @since version 3.32.0
+	 */
+	WINPR_API void winpr_log_build_warn(wLog* log, DWORD level);
 
 #ifdef __cplusplus
 }

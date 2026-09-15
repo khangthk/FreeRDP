@@ -39,35 +39,34 @@ static void msusb_mspipes_free(MSUSB_PIPE_DESCRIPTOR** MsPipes, UINT32 NumberOfP
 		for (UINT32 pnum = 0; pnum < NumberOfPipes && MsPipes[pnum]; pnum++)
 			free(MsPipes[pnum]);
 
-		free(MsPipes);
+		free((void*)MsPipes);
 	}
 }
 
-BOOL msusb_mspipes_replace(MSUSB_INTERFACE_DESCRIPTOR* MsInterface,
+void msusb_mspipes_replace(MSUSB_INTERFACE_DESCRIPTOR* MsInterface,
                            MSUSB_PIPE_DESCRIPTOR** NewMsPipes, UINT32 NewNumberOfPipes)
 {
-	if (!MsInterface || !NewMsPipes)
-		return FALSE;
+	WINPR_ASSERT(MsInterface);
+	WINPR_ASSERT(NewMsPipes || (NewNumberOfPipes == 0));
 
-	/* free orignal MsPipes */
+	/* free original MsPipes */
 	msusb_mspipes_free(MsInterface->MsPipes, MsInterface->NumberOfPipes);
 	/* And replace it */
 	MsInterface->MsPipes = NewMsPipes;
 	MsInterface->NumberOfPipes = NewNumberOfPipes;
-	return TRUE;
 }
 
 static MSUSB_PIPE_DESCRIPTOR** msusb_mspipes_read(wStream* s, UINT32 NumberOfPipes)
 {
-	MSUSB_PIPE_DESCRIPTOR** MsPipes = NULL;
+	MSUSB_PIPE_DESCRIPTOR** MsPipes = nullptr;
 
-	if (!Stream_CheckAndLogRequiredCapacityOfSize(TAG, (s), NumberOfPipes, 12ull))
-		return NULL;
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, (s), NumberOfPipes, 12ull))
+		return nullptr;
 
 	MsPipes = (MSUSB_PIPE_DESCRIPTOR**)calloc(NumberOfPipes, sizeof(MSUSB_PIPE_DESCRIPTOR*));
 
 	if (!MsPipes)
-		return NULL;
+		return nullptr;
 
 	for (UINT32 pnum = 0; pnum < NumberOfPipes; pnum++)
 	{
@@ -96,10 +95,11 @@ out_error:
 	for (UINT32 pnum = 0; pnum < NumberOfPipes; pnum++)
 		free(MsPipes[pnum]);
 
-	free(MsPipes);
-	return NULL;
+	free((void*)MsPipes);
+	return nullptr;
 }
 
+WINPR_ATTR_MALLOC(msusb_msinterface_free, 1)
 static MSUSB_INTERFACE_DESCRIPTOR* msusb_msinterface_new(void)
 {
 	return (MSUSB_INTERFACE_DESCRIPTOR*)calloc(1, sizeof(MSUSB_INTERFACE_DESCRIPTOR));
@@ -110,7 +110,7 @@ void msusb_msinterface_free(MSUSB_INTERFACE_DESCRIPTOR* MsInterface)
 	if (MsInterface)
 	{
 		msusb_mspipes_free(MsInterface->MsPipes, MsInterface->NumberOfPipes);
-		MsInterface->MsPipes = NULL;
+		MsInterface->MsPipes = nullptr;
 		free(MsInterface);
 	}
 }
@@ -125,7 +125,7 @@ static void msusb_msinterface_free_list(MSUSB_INTERFACE_DESCRIPTOR** MsInterface
 			msusb_msinterface_free(MsInterfaces[inum]);
 		}
 
-		free(MsInterfaces);
+		free((void*)MsInterfaces);
 	}
 }
 
@@ -133,6 +133,8 @@ BOOL msusb_msinterface_replace(MSUSB_CONFIG_DESCRIPTOR* MsConfig, BYTE Interface
                                MSUSB_INTERFACE_DESCRIPTOR* NewMsInterface)
 {
 	if (!MsConfig || !MsConfig->MsInterfaces)
+		return FALSE;
+	if (MsConfig->NumInterfaces <= InterfaceNumber)
 		return FALSE;
 
 	msusb_msinterface_free(MsConfig->MsInterfaces[InterfaceNumber]);
@@ -142,15 +144,13 @@ BOOL msusb_msinterface_replace(MSUSB_CONFIG_DESCRIPTOR* MsConfig, BYTE Interface
 
 MSUSB_INTERFACE_DESCRIPTOR* msusb_msinterface_read(wStream* s)
 {
-	MSUSB_INTERFACE_DESCRIPTOR* MsInterface = NULL;
+	if (!Stream_CheckAndLogRequiredLength(TAG, (s), 12))
+		return nullptr;
 
-	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 12))
-		return NULL;
-
-	MsInterface = msusb_msinterface_new();
+	MSUSB_INTERFACE_DESCRIPTOR* MsInterface = msusb_msinterface_new();
 
 	if (!MsInterface)
-		return NULL;
+		return nullptr;
 
 	Stream_Read_UINT16(s, MsInterface->Length);
 	Stream_Read_UINT16(s, MsInterface->NumberOfPipesExpected);
@@ -163,7 +163,7 @@ MSUSB_INTERFACE_DESCRIPTOR* msusb_msinterface_read(wStream* s)
 	MsInterface->bInterfaceSubClass = 0;
 	MsInterface->bInterfaceProtocol = 0;
 	MsInterface->InitCompleted = 0;
-	MsInterface->MsPipes = NULL;
+	MsInterface->MsPipes = nullptr;
 
 	if (MsInterface->NumberOfPipes > 0)
 	{
@@ -176,13 +176,13 @@ MSUSB_INTERFACE_DESCRIPTOR* msusb_msinterface_read(wStream* s)
 	return MsInterface;
 out_error:
 	msusb_msinterface_free(MsInterface);
-	return NULL;
+	return nullptr;
 }
 
-BOOL msusb_msinterface_write(MSUSB_INTERFACE_DESCRIPTOR* MsInterface, wStream* out)
+BOOL msusb_msinterface_write(const MSUSB_INTERFACE_DESCRIPTOR* MsInterface, wStream* out)
 {
-	MSUSB_PIPE_DESCRIPTOR** MsPipes = NULL;
-	MSUSB_PIPE_DESCRIPTOR* MsPipe = NULL;
+	MSUSB_PIPE_DESCRIPTOR** MsPipes = nullptr;
+	MSUSB_PIPE_DESCRIPTOR* MsPipe = nullptr;
 
 	if (!MsInterface)
 		return FALSE;
@@ -235,12 +235,12 @@ BOOL msusb_msinterface_write(MSUSB_INTERFACE_DESCRIPTOR* MsInterface, wStream* o
 
 static MSUSB_INTERFACE_DESCRIPTOR** msusb_msinterface_read_list(wStream* s, UINT32 NumInterfaces)
 {
-	MSUSB_INTERFACE_DESCRIPTOR** MsInterfaces = NULL;
+	MSUSB_INTERFACE_DESCRIPTOR** MsInterfaces = nullptr;
 	MsInterfaces =
 	    (MSUSB_INTERFACE_DESCRIPTOR**)calloc(NumInterfaces, sizeof(MSUSB_INTERFACE_DESCRIPTOR*));
 
 	if (!MsInterfaces)
-		return NULL;
+		return nullptr;
 
 	for (UINT32 inum = 0; inum < NumInterfaces; inum++)
 	{
@@ -256,31 +256,28 @@ fail:
 	for (UINT32 inum = 0; inum < NumInterfaces; inum++)
 		msusb_msinterface_free(MsInterfaces[inum]);
 
-	free(MsInterfaces);
-	return NULL;
+	free((void*)MsInterfaces);
+	return nullptr;
 }
 
-BOOL msusb_msconfig_write(MSUSB_CONFIG_DESCRIPTOR* MsConfg, wStream* out)
+BOOL msusb_msconfig_write(const MSUSB_CONFIG_DESCRIPTOR* MsConfig, wStream* out)
 {
-	MSUSB_INTERFACE_DESCRIPTOR** MsInterfaces = NULL;
-	MSUSB_INTERFACE_DESCRIPTOR* MsInterface = NULL;
-
-	if (!MsConfg)
+	if (!MsConfig)
 		return FALSE;
 
 	if (!Stream_EnsureRemainingCapacity(out, 8))
 		return FALSE;
 
 	/* ConfigurationHandle*/
-	Stream_Write_UINT32(out, MsConfg->ConfigurationHandle);
+	Stream_Write_UINT32(out, MsConfig->ConfigurationHandle);
 	/* NumInterfaces*/
-	Stream_Write_UINT32(out, MsConfg->NumInterfaces);
+	Stream_Write_UINT32(out, MsConfig->NumInterfaces);
 	/* Interfaces */
-	MsInterfaces = MsConfg->MsInterfaces;
+	MSUSB_INTERFACE_DESCRIPTOR** MsInterfaces = MsConfig->MsInterfaces;
 
-	for (UINT32 inum = 0; inum < MsConfg->NumInterfaces; inum++)
+	for (UINT32 inum = 0; inum < MsConfig->NumInterfaces; inum++)
 	{
-		MsInterface = MsInterfaces[inum];
+		const MSUSB_INTERFACE_DESCRIPTOR* MsInterface = MsInterfaces[inum];
 
 		if (!msusb_msinterface_write(MsInterface, out))
 			return FALSE;
@@ -299,19 +296,19 @@ void msusb_msconfig_free(MSUSB_CONFIG_DESCRIPTOR* MsConfig)
 	if (MsConfig)
 	{
 		msusb_msinterface_free_list(MsConfig->MsInterfaces, MsConfig->NumInterfaces);
-		MsConfig->MsInterfaces = NULL;
+		MsConfig->MsInterfaces = nullptr;
 		free(MsConfig);
 	}
 }
 
 MSUSB_CONFIG_DESCRIPTOR* msusb_msconfig_read(wStream* s, UINT32 NumInterfaces)
 {
-	MSUSB_CONFIG_DESCRIPTOR* MsConfig = NULL;
+	MSUSB_CONFIG_DESCRIPTOR* MsConfig = nullptr;
 	BYTE lenConfiguration = 0;
 	BYTE typeConfiguration = 0;
 
-	if (!Stream_CheckAndLogRequiredCapacityOfSize(TAG, (s), 3ULL + NumInterfaces, 2ULL))
-		return NULL;
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, (s), 3ULL + NumInterfaces, 2ULL))
+		return nullptr;
 
 	MsConfig = msusb_msconfig_new();
 
@@ -321,6 +318,12 @@ MSUSB_CONFIG_DESCRIPTOR* msusb_msconfig_read(wStream* s, UINT32 NumInterfaces)
 	MsConfig->MsInterfaces = msusb_msinterface_read_list(s, NumInterfaces);
 
 	if (!MsConfig->MsInterfaces)
+		goto fail;
+
+	/* Record the count now so the cleanup path frees every interface descriptor. */
+	MsConfig->NumInterfaces = NumInterfaces;
+
+	if (!Stream_CheckAndLogRequiredLength(TAG, (s), 6))
 		goto fail;
 
 	Stream_Read_UINT8(s, lenConfiguration);
@@ -336,19 +339,18 @@ MSUSB_CONFIG_DESCRIPTOR* msusb_msconfig_read(wStream* s, UINT32 NumInterfaces)
 	Stream_Read_UINT16(s, MsConfig->wTotalLength);
 	Stream_Seek(s, 1);
 	Stream_Read_UINT8(s, MsConfig->bConfigurationValue);
-	MsConfig->NumInterfaces = NumInterfaces;
 	return MsConfig;
 fail:
 	msusb_msconfig_free(MsConfig);
-	return NULL;
+	return nullptr;
 }
 
-void msusb_msconfig_dump(MSUSB_CONFIG_DESCRIPTOR* MsConfig)
+void msusb_msconfig_dump(const MSUSB_CONFIG_DESCRIPTOR* MsConfig)
 {
-	MSUSB_INTERFACE_DESCRIPTOR** MsInterfaces = NULL;
-	MSUSB_INTERFACE_DESCRIPTOR* MsInterface = NULL;
-	MSUSB_PIPE_DESCRIPTOR** MsPipes = NULL;
-	MSUSB_PIPE_DESCRIPTOR* MsPipe = NULL;
+	MSUSB_INTERFACE_DESCRIPTOR** MsInterfaces = nullptr;
+	MSUSB_INTERFACE_DESCRIPTOR* MsInterface = nullptr;
+	MSUSB_PIPE_DESCRIPTOR** MsPipes = nullptr;
+	MSUSB_PIPE_DESCRIPTOR* MsPipe = nullptr;
 
 	WLog_INFO(TAG, "=================MsConfig:========================");
 	WLog_INFO(TAG, "wTotalLength:%" PRIu16 "", MsConfig->wTotalLength);

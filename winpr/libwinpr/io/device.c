@@ -64,13 +64,13 @@
 
 static char* GetDeviceFileNameWithoutPrefixA(LPCSTR lpName)
 {
-	char* lpFileName = NULL;
+	char* lpFileName = nullptr;
 
 	if (!lpName)
-		return NULL;
+		return nullptr;
 
 	if (strncmp(lpName, DEVICE_FILE_PREFIX_PATH, sizeof(DEVICE_FILE_PREFIX_PATH) - 1) != 0)
-		return NULL;
+		return nullptr;
 
 	lpFileName =
 	    _strdup(&lpName[strnlen(DEVICE_FILE_PREFIX_PATH, sizeof(DEVICE_FILE_PREFIX_PATH))]);
@@ -79,12 +79,12 @@ static char* GetDeviceFileNameWithoutPrefixA(LPCSTR lpName)
 
 static char* GetDeviceFileUnixDomainSocketBaseFilePathA(void)
 {
-	char* lpTempPath = NULL;
-	char* lpPipePath = NULL;
+	char* lpTempPath = nullptr;
+	char* lpPipePath = nullptr;
 	lpTempPath = GetKnownPath(KNOWN_PATH_TEMP);
 
 	if (!lpTempPath)
-		return NULL;
+		return nullptr;
 
 	lpPipePath = GetCombinedPath(lpTempPath, ".device");
 	free(lpTempPath);
@@ -93,20 +93,20 @@ static char* GetDeviceFileUnixDomainSocketBaseFilePathA(void)
 
 static char* GetDeviceFileUnixDomainSocketFilePathA(LPCSTR lpName)
 {
-	char* lpPipePath = NULL;
-	char* lpFileName = NULL;
-	char* lpFilePath = NULL;
+	char* lpPipePath = nullptr;
+	char* lpFileName = nullptr;
+	char* lpFilePath = nullptr;
 	lpPipePath = GetDeviceFileUnixDomainSocketBaseFilePathA();
 
 	if (!lpPipePath)
-		return NULL;
+		return nullptr;
 
 	lpFileName = GetDeviceFileNameWithoutPrefixA(lpName);
 
 	if (!lpFileName)
 	{
 		free(lpPipePath);
-		return NULL;
+		return nullptr;
 	}
 
 	lpFilePath = GetCombinedPath(lpPipePath, lpFileName);
@@ -120,14 +120,15 @@ static char* GetDeviceFileUnixDomainSocketFilePathA(LPCSTR lpName)
  * http://msdn.microsoft.com/en-us/library/windows/hardware/ff548397/
  */
 
-NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtensionSize,
-                           PUNICODE_STRING DeviceName, DEVICE_TYPE DeviceType,
-                           ULONG DeviceCharacteristics, BOOLEAN Exclusive,
-                           PDEVICE_OBJECT_EX* DeviceObject)
+NTSTATUS _IoCreateDeviceEx(WINPR_ATTR_UNUSED PDRIVER_OBJECT_EX DriverObject,
+                           WINPR_ATTR_UNUSED ULONG DeviceExtensionSize, PUNICODE_STRING DeviceName,
+                           WINPR_ATTR_UNUSED DEVICE_TYPE DeviceType,
+                           WINPR_ATTR_UNUSED ULONG DeviceCharacteristics,
+                           WINPR_ATTR_UNUSED BOOLEAN Exclusive, PDEVICE_OBJECT_EX* DeviceObject)
 {
 	int status = 0;
-	char* DeviceBasePath = NULL;
-	DEVICE_OBJECT_EX* pDeviceObjectEx = NULL;
+	char* DeviceBasePath = nullptr;
+	DEVICE_OBJECT_EX* pDeviceObjectEx = nullptr;
 	DeviceBasePath = GetDeviceFileUnixDomainSocketBaseFilePathA();
 
 	if (!DeviceBasePath)
@@ -149,7 +150,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 		return STATUS_NO_MEMORY;
 
 	pDeviceObjectEx->DeviceName =
-	    ConvertWCharNToUtf8Alloc(DeviceName->Buffer, DeviceName->Length / sizeof(WCHAR), NULL);
+	    ConvertWCharNToUtf8Alloc(DeviceName->Buffer, DeviceName->Length / sizeof(WCHAR), nullptr);
 	if (!pDeviceObjectEx->DeviceName)
 	{
 		free(pDeviceObjectEx);
@@ -219,7 +220,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 
 VOID _IoDeleteDeviceEx(PDEVICE_OBJECT_EX DeviceObject)
 {
-	DEVICE_OBJECT_EX* pDeviceObjectEx = NULL;
+	DEVICE_OBJECT_EX* pDeviceObjectEx = nullptr;
 	pDeviceObjectEx = (DEVICE_OBJECT_EX*)DeviceObject;
 
 	if (!pDeviceObjectEx)

@@ -26,7 +26,8 @@
 #include <winpr/wtypes.h>
 #include <winpr/stream.h>
 
-#if !defined(BUILD_TESTING)
+WINPR_ATTR_NODISCARD
+#if !defined(BUILD_TESTING_INTERNAL)
 static
 #else
 FREERDP_LOCAL
@@ -34,10 +35,11 @@ FREERDP_LOCAL
     BOOL
     stream_dump_read_line(FILE* fp, wStream* s, UINT64* pts, size_t* pOffset, UINT32* flags);
 
-#if !defined(BUILD_TESTING)
+WINPR_ATTR_NODISCARD
+#if !defined(BUILD_TESTING_INTERNAL)
 static
 #else
-FREERDP_LOCAL
+    FREERDP_LOCAL
 #endif
     BOOL
     stream_dump_write_line(FILE* fp, UINT32 flags, wStream* s);

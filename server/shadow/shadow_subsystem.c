@@ -22,13 +22,14 @@
 
 #include "shadow_subsystem.h"
 
-static pfnShadowSubsystemEntry pSubsystemEntry = NULL;
+static pfnShadowSubsystemEntry pSubsystemEntry = nullptr;
 
 void shadow_subsystem_set_entry(pfnShadowSubsystemEntry pEntry)
 {
 	pSubsystemEntry = pEntry;
 }
 
+WINPR_ATTR_NODISCARD
 static int shadow_subsystem_load_entry_points(RDP_SHADOW_ENTRY_POINTS* pEntryPoints)
 {
 	WINPR_ASSERT(pEntryPoints);
@@ -45,20 +46,20 @@ static int shadow_subsystem_load_entry_points(RDP_SHADOW_ENTRY_POINTS* pEntryPoi
 
 rdpShadowSubsystem* shadow_subsystem_new(void)
 {
-	RDP_SHADOW_ENTRY_POINTS ep;
-	rdpShadowSubsystem* subsystem = NULL;
+	RDP_SHADOW_ENTRY_POINTS ep = WINPR_C_ARRAY_INIT;
 
-	shadow_subsystem_load_entry_points(&ep);
+	if (shadow_subsystem_load_entry_points(&ep) < 0)
+		return nullptr;
 
 	if (!ep.New)
-		return NULL;
+		return nullptr;
 
-	subsystem = ep.New();
+	rdpShadowSubsystem* subsystem = ep.New();
 
 	if (!subsystem)
-		return NULL;
+		return nullptr;
 
-	CopyMemory(&(subsystem->ep), &ep, sizeof(RDP_SHADOW_ENTRY_POINTS));
+	subsystem->ep = ep;
 
 	return subsystem;
 }
@@ -85,20 +86,21 @@ int shadow_subsystem_init(rdpShadowSubsystem* subsystem, rdpShadowServer* server
 	if (!(subsystem->updateEvent = shadow_multiclient_new()))
 		goto fail;
 
-	if ((status = subsystem->ep.Init(subsystem)) >= 0)
+	status = subsystem->ep.Init(subsystem);
+	if (status >= 0)
 		return status;
 
 fail:
 	if (subsystem->MsgPipe)
 	{
 		MessagePipe_Free(subsystem->MsgPipe);
-		subsystem->MsgPipe = NULL;
+		subsystem->MsgPipe = nullptr;
 	}
 
 	if (subsystem->updateEvent)
 	{
 		shadow_multiclient_free(subsystem->updateEvent);
-		subsystem->updateEvent = NULL;
+		subsystem->updateEvent = nullptr;
 	}
 
 	return status;
@@ -110,7 +112,7 @@ static void shadow_subsystem_free_queued_message(void* obj)
 	if (message->Free)
 	{
 		message->Free(message);
-		message->Free = NULL;
+		message->Free = nullptr;
 	}
 }
 
@@ -124,8 +126,8 @@ void shadow_subsystem_uninit(rdpShadowSubsystem* subsystem)
 
 	if (subsystem->MsgPipe)
 	{
-		wObject* obj1 = NULL;
-		wObject* obj2 = NULL;
+		wObject* obj1 = nullptr;
+		wObject* obj2 = nullptr;
 		/* Release resource in messages before free */
 		obj1 = MessageQueue_Object(subsystem->MsgPipe->In);
 
@@ -136,13 +138,13 @@ void shadow_subsystem_uninit(rdpShadowSubsystem* subsystem)
 		obj2->fnObjectFree = shadow_subsystem_free_queued_message;
 		MessageQueue_Clear(subsystem->MsgPipe->Out);
 		MessagePipe_Free(subsystem->MsgPipe);
-		subsystem->MsgPipe = NULL;
+		subsystem->MsgPipe = nullptr;
 	}
 
 	if (subsystem->updateEvent)
 	{
 		shadow_multiclient_free(subsystem->updateEvent);
-		subsystem->updateEvent = NULL;
+		subsystem->updateEvent = nullptr;
 	}
 }
 
@@ -189,6 +191,7 @@ UINT32 shadow_enum_monitors(MONITOR_DEF* monitors, UINT32 maxMonitors)
  * and andmask data and fill into SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE
  * Caller should free the andMaskData and xorMaskData later.
  */
+#if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
 int shadow_subsystem_pointer_convert_alpha_pointer_data(
     const BYTE* WINPR_RESTRICT pixels, BOOL premultiplied, UINT32 width, UINT32 height,
     SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE* WINPR_RESTRICT pointerColor)
@@ -196,6 +199,7 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data(
 	return shadow_subsystem_pointer_convert_alpha_pointer_data_to_format(
 	    pixels, PIXEL_FORMAT_BGRX32, premultiplied, width, height, pointerColor);
 }
+#endif
 
 int shadow_subsystem_pointer_convert_alpha_pointer_data_to_format(
     const BYTE* pixels, UINT32 format, BOOL premultiplied, UINT32 width, UINT32 height,
@@ -204,7 +208,7 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data_to_format(
 	UINT32 xorStep = 0;
 	UINT32 andStep = 0;
 	UINT32 andBit = 0;
-	BYTE* andBits = NULL;
+	BYTE* andBits = nullptr;
 	UINT32 andPixel = 0;
 	const size_t bpp = FreeRDPGetBytesPerPixel(format);
 
@@ -226,7 +230,7 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data_to_format(
 	if (!pointerColor->andMaskData)
 	{
 		free(pointerColor->xorMaskData);
-		pointerColor->xorMaskData = NULL;
+		pointerColor->xorMaskData = nullptr;
 		return -1;
 	}
 
@@ -246,7 +250,7 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data_to_format(
 			BYTE A = 0;
 
 			const UINT32 color = FreeRDPReadColor(&pSrc8[x * bpp], format);
-			FreeRDPSplitColor(color, format, &R, &G, &B, &A, NULL);
+			FreeRDPSplitColor(color, format, &R, &G, &B, &A, nullptr);
 
 			andPixel = 0;
 

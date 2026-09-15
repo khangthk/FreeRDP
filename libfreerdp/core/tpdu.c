@@ -119,7 +119,8 @@ BOOL tpdu_write_header(wStream* s, UINT16 length, BYTE code)
 	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 3))
 		return FALSE;
 
-	Stream_Write_UINT8(s, length); /* LI */
+	WINPR_ASSERT(length <= UINT8_MAX);
+	Stream_Write_UINT8(s, (UINT8)length); /* LI */
 	Stream_Write_UINT8(s, code);   /* code */
 
 	if (code == X224_TPDU_DATA)
@@ -202,9 +203,7 @@ BOOL tpdu_read_connection_confirm(wStream* s, BYTE* li, UINT16 tpktlength)
 	 */
 	bytes_read = (Stream_GetPosition(s) - position) - 1;
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, (size_t)(*li - bytes_read)))
-		return FALSE;
-	return TRUE;
+	return Stream_CheckAndLogRequiredLength(TAG, s, (size_t)(*li - bytes_read));
 }
 
 /**
@@ -254,8 +253,9 @@ BOOL tpdu_read_data(wStream* s, UINT16* LI, UINT16 tpktlength)
 
 	if (code != X224_TPDU_DATA)
 	{
-		WLog_ERR(TAG, "tpdu got code 0x%02" PRIx8 " expected X224_TPDU_DATA [0x%02x]", code,
-		         X224_TPDU_DATA);
+		const BYTE dCode = X224_TPDU_DATA;
+		WLog_ERR(TAG, "tpdu got code 0x%02" PRIx8 " expected X224_TPDU_DATA [0x%02" PRIx8 "]", code,
+		         dCode);
 		return FALSE;
 	}
 

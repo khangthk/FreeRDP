@@ -21,6 +21,8 @@
 #include <freerdp/config.h>
 
 #include <winpr/crt.h>
+#include <winpr/assert.h>
+#include <winpr/cast.h>
 
 #include <freerdp/crypto/er.h>
 #include <freerdp/crypto/ber.h>
@@ -62,10 +64,11 @@ void er_read_length(wStream* s, int* length)
 
 int er_write_length(wStream* s, int length, BOOL flag)
 {
+	WINPR_ASSERT(length >= 0);
 	if (flag)
 		return der_write_length(s, length);
 	else
-		return ber_write_length(s, length);
+		return (int)ber_write_length(s, (size_t)length);
 }
 
 int _er_skip_length(int length)
@@ -97,10 +100,7 @@ BOOL er_read_universal_tag(wStream* s, BYTE tag, BOOL pc)
 
 	Stream_Read_UINT8(s, byte);
 
-	if (byte != (ER_CLASS_UNIV | ER_PC(pc) | (ER_TAG_MASK & tag)))
-		return FALSE;
-
-	return TRUE;
+	return (byte == (ER_CLASS_UNIV | ER_PC(pc) | (ER_TAG_MASK & tag)));
 }
 
 /**
@@ -258,7 +258,7 @@ BOOL er_read_enumerated(wStream* s, BYTE* enumerated, BYTE count)
 	return TRUE;
 }
 
-void er_write_enumerated(wStream* s, BYTE enumerated, BYTE count, BOOL flag)
+void er_write_enumerated(wStream* s, BYTE enumerated, WINPR_ATTR_UNUSED BYTE count, BOOL flag)
 {
 	er_write_universal_tag(s, ER_TAG_ENUMERATED, FALSE);
 	er_write_length(s, 1, flag);
@@ -277,7 +277,7 @@ BOOL er_read_bit_string(wStream* s, int* length, BYTE* padding)
 BOOL er_write_bit_string_tag(wStream* s, UINT32 length, BYTE padding, BOOL flag)
 {
 	er_write_universal_tag(s, ER_TAG_BIT_STRING, FALSE);
-	er_write_length(s, length, flag);
+	er_write_length(s, WINPR_ASSERTING_INT_CAST(int, length), flag);
 	Stream_Write_UINT8(s, padding);
 	return TRUE;
 }
@@ -302,7 +302,7 @@ void er_write_octet_string(wStream* s, BYTE* oct_str, int length, BOOL flag)
 {
 	er_write_universal_tag(s, ER_TAG_OCTET_STRING, FALSE);
 	er_write_length(s, length, flag);
-	Stream_Write(s, oct_str, length);
+	Stream_Write(s, oct_str, WINPR_ASSERTING_INT_CAST(size_t, length));
 }
 
 int er_write_octet_string_tag(wStream* s, int length, BOOL flag)
@@ -334,7 +334,7 @@ BOOL er_read_BOOL(wStream* s, BOOL* value)
 	if (length != 1)
 		return FALSE;
 	Stream_Read_UINT8(s, v);
-	*value = (v ? TRUE : FALSE);
+	*value = v != 0;
 	return TRUE;
 }
 
@@ -358,9 +358,9 @@ BOOL er_read_integer(wStream* s, UINT32* value)
 	er_read_universal_tag(s, ER_TAG_INTEGER, FALSE);
 	er_read_length(s, &length);
 
-	if (value == NULL)
+	if (value == nullptr)
 	{
-		Stream_Seek(s, length);
+		Stream_Seek(s, WINPR_ASSERTING_INT_CAST(size_t, length));
 		return TRUE;
 	}
 
@@ -377,7 +377,7 @@ BOOL er_read_integer(wStream* s, UINT32* value)
 		BYTE byte = 0;
 		Stream_Read_UINT8(s, byte);
 		Stream_Read_UINT16_BE(s, *value);
-		*value += (byte << 16);
+		*value += (byte << 16) & 0xFF0000;
 	}
 	else if (length == 4)
 	{
@@ -404,19 +404,19 @@ int er_write_integer(wStream* s, INT32 value)
 	if (value <= 127 && value >= -128)
 	{
 		er_write_length(s, 1, FALSE);
-		Stream_Write_UINT8(s, value);
+		Stream_Write_INT8(s, WINPR_ASSERTING_INT_CAST(INT8, value));
 		return 2;
 	}
 	else if (value <= 32767 && value >= -32768)
 	{
 		er_write_length(s, 2, FALSE);
-		Stream_Write_UINT16_BE(s, value);
+		Stream_Write_INT16_BE(s, WINPR_ASSERTING_INT_CAST(INT16, value));
 		return 3;
 	}
 	else
 	{
 		er_write_length(s, 4, FALSE);
-		Stream_Write_UINT32_BE(s, value);
+		Stream_Write_INT32_BE(s, value);
 		return 5;
 	}
 }

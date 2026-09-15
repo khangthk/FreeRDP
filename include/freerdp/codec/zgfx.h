@@ -39,14 +39,19 @@ extern "C"
 
 	typedef struct S_ZGFX_CONTEXT ZGFX_CONTEXT;
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int zgfx_decompress(ZGFX_CONTEXT* WINPR_RESTRICT zgfx,
 	                                const BYTE* WINPR_RESTRICT pSrcData, UINT32 SrcSize,
 	                                BYTE** WINPR_RESTRICT ppDstData,
 	                                UINT32* WINPR_RESTRICT pDstSize, UINT32 flags);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int zgfx_compress(ZGFX_CONTEXT* WINPR_RESTRICT zgfx,
 	                              const BYTE* WINPR_RESTRICT pSrcData, UINT32 SrcSize,
-	                              BYTE** WINPR_RESTRICT ppDstData, UINT32* pDstSize,
+	                              BYTE** WINPR_RESTRICT ppDstData, UINT32* WINPR_RESTRICT pDstSize,
 	                              UINT32* WINPR_RESTRICT pFlags);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int zgfx_compress_to_stream(ZGFX_CONTEXT* WINPR_RESTRICT zgfx,
 	                                        wStream* WINPR_RESTRICT sDst,
 	                                        const BYTE* WINPR_RESTRICT pUncompressed,
@@ -57,6 +62,7 @@ extern "C"
 	FREERDP_API void zgfx_context_free(ZGFX_CONTEXT* zgfx);
 
 	WINPR_ATTR_MALLOC(zgfx_context_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API ZGFX_CONTEXT* zgfx_context_new(BOOL Compressor);
 
 #ifdef __cplusplus

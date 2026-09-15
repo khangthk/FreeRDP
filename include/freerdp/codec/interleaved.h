@@ -33,6 +33,7 @@ extern "C"
 
 	typedef struct S_BITMAP_INTERLEAVED_CONTEXT BITMAP_INTERLEAVED_CONTEXT;
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* WINPR_RESTRICT interleaved,
 	                                        const BYTE* WINPR_RESTRICT pSrcData, UINT32 SrcSize,
 	                                        UINT32 nSrcWidth, UINT32 nSrcHeight, UINT32 bpp,
@@ -41,6 +42,7 @@ extern "C"
 	                                        UINT32 nDstWidth, UINT32 nDstHeight,
 	                                        const gdiPalette* WINPR_RESTRICT palette);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL interleaved_compress(BITMAP_INTERLEAVED_CONTEXT* WINPR_RESTRICT interleaved,
 	                                      BYTE* WINPR_RESTRICT pDstData,
 	                                      UINT32* WINPR_RESTRICT pDstSize, UINT32 nWidth,
@@ -49,6 +51,7 @@ extern "C"
 	                                      UINT32 nYSrc, const gdiPalette* WINPR_RESTRICT palette,
 	                                      UINT32 bpp);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL
 	bitmap_interleaved_context_reset(BITMAP_INTERLEAVED_CONTEXT* WINPR_RESTRICT interleaved);
 
@@ -56,6 +59,7 @@ extern "C"
 	bitmap_interleaved_context_free(BITMAP_INTERLEAVED_CONTEXT* WINPR_RESTRICT interleaved);
 
 	WINPR_ATTR_MALLOC(bitmap_interleaved_context_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BITMAP_INTERLEAVED_CONTEXT* bitmap_interleaved_context_new(BOOL Compressor);
 
 #ifdef __cplusplus

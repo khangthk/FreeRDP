@@ -8,14 +8,14 @@ int TestWtsApiEnumerateProcesses(int argc, char* argv[])
 {
 	DWORD count = 0;
 	BOOL bSuccess = 0;
-	HANDLE hServer = NULL;
-	PWTS_PROCESS_INFOA pProcessInfo = NULL;
+	HANDLE hServer = nullptr;
+	PWTS_PROCESS_INFOA pProcessInfo = nullptr;
 
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
 
 #ifndef _WIN32
-	if (!GetEnvironmentVariableA("WTSAPI_LIBRARY", NULL, 0))
+	if (!GetEnvironmentVariableA("WTSAPI_LIBRARY", nullptr, 0))
 	{
 		printf("%s: No RDS environment detected, skipping test\n", __func__);
 		return 0;
@@ -25,7 +25,7 @@ int TestWtsApiEnumerateProcesses(int argc, char* argv[])
 	hServer = WTS_CURRENT_SERVER_HANDLE;
 
 	count = 0;
-	pProcessInfo = NULL;
+	pProcessInfo = nullptr;
 
 	bSuccess = WTSEnumerateProcessesA(hServer, 0, 1, &pProcessInfo, &count);
 
@@ -35,15 +35,19 @@ int TestWtsApiEnumerateProcesses(int argc, char* argv[])
 		return -1;
 	}
 
-#if 0
+	int rc = 0;
 	{
-		printf("WTSEnumerateProcesses enumerated %"PRIu32" processs:\n", count);
+		printf("WTSEnumerateProcesses enumerated %"PRIu32" process:\n", count);
 		for (DWORD i = 0; i < count; i++)
-			printf("\t[%"PRIu32"]: %s (%"PRIu32")\n", i, pProcessInfo[i].pProcessName, pProcessInfo[i].ProcessId);
+		{
+			const WTS_PROCESS_INFOA* cur = &pProcessInfo[i];
+			if (!cur->pProcessName)
+				rc = -1;
+			printf("\t[%" PRIu32 "]: %s (%" PRIu32 ")\n", i, cur->pProcessName, cur->ProcessId);
+		}
 	}
-#endif
 
 	WTSFreeMemory(pProcessInfo);
 
-	return 0;
+	return rc;
 }

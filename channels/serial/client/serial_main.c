@@ -50,7 +50,7 @@ typedef struct
 	DEVICE device;
 	BOOL permissive;
 	SERIAL_DRIVER_ID ServerSerialDriverId;
-	HANDLE* hComm;
+	HANDLE hComm;
 
 	wLog* log;
 	HANDLE MainThread;
@@ -69,7 +69,7 @@ typedef struct
 } IRP_THREAD_DATA;
 
 static void close_terminated_irp_thread_handles(SERIAL_DEVICE* serial, BOOL forceClose);
-static UINT32 GetLastErrorToIoStatus(SERIAL_DEVICE* serial)
+static NTSTATUS GetLastErrorToIoStatus(SERIAL_DEVICE* serial)
 {
 	/* http://msdn.microsoft.com/en-us/library/ff547466%28v=vs.85%29.aspx#generic_status_values_for_serial_device_control_requests
 	 */
@@ -107,7 +107,8 @@ static UINT32 GetLastErrorToIoStatus(SERIAL_DEVICE* serial)
 
 		case ERROR_TIMEOUT:
 			return STATUS_TIMEOUT;
-			/* no default */
+		default:
+			break;
 	}
 
 	WLog_Print(serial->log, WLOG_DEBUG, "unexpected last-error: 0x%08" PRIX32 "", GetLastError());
@@ -164,10 +165,10 @@ static UINT serial_process_irp_create(SERIAL_DEVICE* serial, IRP* irp)
 	SharedAccess = 0;
 	CreateDisposition = OPEN_EXISTING;
 #endif
-	serial->hComm =
-	    CreateFile(serial->device.name, DesiredAccess, SharedAccess, NULL, /* SecurityAttributes */
-	               CreateDisposition, 0,                                   /* FlagsAndAttributes */
-	               NULL);                                                  /* TemplateFile */
+	serial->hComm = winpr_CreateFile(serial->device.name, DesiredAccess, SharedAccess,
+	                                 nullptr,              /* SecurityAttributes */
+	                                 CreateDisposition, 0, /* FlagsAndAttributes */
+	                                 nullptr);             /* TemplateFile */
 
 	if (!serial->hComm || (serial->hComm == INVALID_HANDLE_VALUE))
 	{
@@ -192,6 +193,14 @@ static UINT serial_process_irp_create(SERIAL_DEVICE* serial, IRP* irp)
 	irp->IoStatus = STATUS_SUCCESS;
 	WLog_Print(serial->log, WLOG_DEBUG, "%s (DeviceId: %" PRIu32 ", FileId: %" PRIu32 ") created.",
 	           serial->device.name, irp->device->id, irp->FileId);
+
+	{
+		DWORD BytesReturned = 0;
+		if (!CommDeviceIoControl(serial->hComm, IOCTL_SERIAL_RESET_DEVICE, nullptr, 0, nullptr, 0,
+		                         &BytesReturned, nullptr))
+			goto error_handle;
+	}
+
 error_handle:
 	Stream_Write_UINT32(irp->output, irp->FileId); /* FileId (4 bytes) */
 	Stream_Write_UINT8(irp->output, 0);            /* Information (1 byte) */
@@ -222,7 +231,7 @@ static UINT serial_process_irp_close(SERIAL_DEVICE* serial, IRP* irp)
 	           serial->device.name, irp->device->id, irp->FileId);
 	irp->IoStatus = STATUS_SUCCESS;
 error_handle:
-	serial->hComm = NULL;
+	serial->hComm = nullptr;
 	Stream_Zero(irp->output, 5); /* Padding (5 bytes) */
 	return CHANNEL_RC_OK;
 }
@@ -236,7 +245,7 @@ static UINT serial_process_irp_read(SERIAL_DEVICE* serial, IRP* irp)
 {
 	UINT32 Length = 0;
 	UINT64 Offset = 0;
-	BYTE* buffer = NULL;
+	BYTE* buffer = nullptr;
 	DWORD nbRead = 0;
 
 	WINPR_ASSERT(serial);
@@ -247,12 +256,12 @@ static UINT serial_process_irp_read(SERIAL_DEVICE* serial, IRP* irp)
 
 	Stream_Read_UINT32(irp->input, Length); /* Length (4 bytes) */
 	Stream_Read_UINT64(irp->input, Offset); /* Offset (8 bytes) */
-	(void)Offset; /* [MS-RDPESP] 3.2.5.1.4 Processing a Server Read Request Message
-	               * ignored */
-	Stream_Seek(irp->input, 20);            /* Padding (20 bytes) */
+	(void)Offset;                /* [MS-RDPESP] 3.2.5.1.4 Processing a Server Read Request Message
+	                              * ignored */
+	Stream_Seek(irp->input, 20); /* Padding (20 bytes) */
 	buffer = (BYTE*)calloc(Length, sizeof(BYTE));
 
-	if (buffer == NULL)
+	if (buffer == nullptr)
 	{
 		irp->IoStatus = STATUS_NO_MEMORY;
 		goto error_handle;
@@ -265,7 +274,7 @@ static UINT serial_process_irp_read(SERIAL_DEVICE* serial, IRP* irp)
 	           serial->device.name);
 
 	/* FIXME: CommReadFile to be replaced by ReadFile */
-	if (CommReadFile(serial->hComm, buffer, Length, &nbRead, NULL))
+	if (CommReadFile(serial->hComm, buffer, Length, &nbRead, nullptr))
 	{
 		irp->IoStatus = STATUS_SUCCESS;
 	}
@@ -314,7 +323,7 @@ static UINT serial_process_irp_write(SERIAL_DEVICE* serial, IRP* irp)
 	Stream_Read_UINT64(irp->input, Offset); /* Offset (8 bytes) */
 	(void)Offset; /* [MS-RDPESP] 3.2.5.1.4 Processing a Server Read Request Message
 	               * ignored */
-	if (!Stream_SafeSeek(irp->input, 20))   /* Padding (20 bytes) */
+	if (!Stream_SafeSeek(irp->input, 20)) /* Padding (20 bytes) */
 		return ERROR_INVALID_DATA;
 
 	/* MS-RDPESP 3.2.5.1.5: The Offset field is ignored
@@ -330,7 +339,7 @@ static UINT serial_process_irp_write(SERIAL_DEVICE* serial, IRP* irp)
 	if (!Stream_SafeSeek(irp->input, Length))
 		return ERROR_INVALID_DATA;
 	/* FIXME: CommWriteFile to be replaced by WriteFile */
-	if (CommWriteFile(serial->hComm, ptr, Length, &nbWritten, NULL))
+	if (CommWriteFile(serial->hComm, ptr, Length, &nbWritten, nullptr))
 	{
 		irp->IoStatus = STATUS_SUCCESS;
 	}
@@ -356,11 +365,6 @@ static UINT serial_process_irp_write(SERIAL_DEVICE* serial, IRP* irp)
  */
 static UINT serial_process_irp_device_control(SERIAL_DEVICE* serial, IRP* irp)
 {
-	UINT32 IoControlCode = 0;
-	UINT32 InputBufferLength = 0;
-	BYTE* InputBuffer = NULL;
-	UINT32 OutputBufferLength = 0;
-	BYTE* OutputBuffer = NULL;
 	DWORD BytesReturned = 0;
 
 	WINPR_ASSERT(serial);
@@ -369,38 +373,38 @@ static UINT serial_process_irp_device_control(SERIAL_DEVICE* serial, IRP* irp)
 	if (!Stream_CheckAndLogRequiredLengthWLog(serial->log, irp->input, 32))
 		return ERROR_INVALID_DATA;
 
-	Stream_Read_UINT32(irp->input, OutputBufferLength); /* OutputBufferLength (4 bytes) */
-	Stream_Read_UINT32(irp->input, InputBufferLength);  /* InputBufferLength (4 bytes) */
-	Stream_Read_UINT32(irp->input, IoControlCode);      /* IoControlCode (4 bytes) */
+	const UINT32 OutputBufferLength =
+	    Stream_Get_UINT32(irp->input); /* OutputBufferLength (4 bytes) */
+	const UINT32 InputBufferLength =
+	    Stream_Get_UINT32(irp->input);                          /* InputBufferLength (4 bytes) */
+	const UINT32 IoControlCode = Stream_Get_UINT32(irp->input); /* IoControlCode (4 bytes) */
 	Stream_Seek(irp->input, 20);                        /* Padding (20 bytes) */
 
 	if (!Stream_CheckAndLogRequiredLengthWLog(serial->log, irp->input, InputBufferLength))
 		return ERROR_INVALID_DATA;
 
-	OutputBuffer = (BYTE*)calloc(OutputBufferLength, sizeof(BYTE));
+	const BYTE* InputBuffer = Stream_PointerAs(irp->input, BYTE);
+	if (!Stream_SafeSeek(irp->input, InputBufferLength))
+		return ERROR_INVALID_DATA;
 
-	if (OutputBuffer == NULL)
-	{
-		irp->IoStatus = STATUS_NO_MEMORY;
-		goto error_handle;
-	}
-
-	InputBuffer = (BYTE*)calloc(InputBufferLength, sizeof(BYTE));
-
-	if (InputBuffer == NULL)
-	{
-		irp->IoStatus = STATUS_NO_MEMORY;
-		goto error_handle;
-	}
-
-	Stream_Read(irp->input, InputBuffer, InputBufferLength);
 	WLog_Print(serial->log, WLOG_DEBUG,
 	           "CommDeviceIoControl: CompletionId=%" PRIu32 ", IoControlCode=[0x%" PRIX32 "] %s",
 	           irp->CompletionId, IoControlCode, _comm_serial_ioctl_name(IoControlCode));
 
+	BYTE* OutputBuffer = nullptr;
+	if (OutputBufferLength > 0)
+	{
+		OutputBuffer = (BYTE*)calloc(OutputBufferLength, sizeof(BYTE));
+		if (!OutputBuffer)
+		{
+			irp->IoStatus = STATUS_NO_MEMORY;
+			goto error_handle;
+		}
+	}
+
 	/* FIXME: CommDeviceIoControl to be replaced by DeviceIoControl() */
 	if (CommDeviceIoControl(serial->hComm, IoControlCode, InputBuffer, InputBufferLength,
-	                        OutputBuffer, OutputBufferLength, &BytesReturned, NULL))
+	                        OutputBuffer, OutputBufferLength, &BytesReturned, nullptr))
 	{
 		/* WLog_Print(serial->log, WLOG_DEBUG, "CommDeviceIoControl: CompletionId=%"PRIu32",
 		 * IoControlCode=[0x%"PRIX32"] %s done", irp->CompletionId, IoControlCode,
@@ -417,10 +421,6 @@ static UINT serial_process_irp_device_control(SERIAL_DEVICE* serial, IRP* irp)
 	}
 
 error_handle:
-	/* FIXME: find out whether it's required or not to get
-	 * BytesReturned == OutputBufferLength when
-	 * CommDeviceIoControl returns FALSE */
-	WINPR_ASSERT(OutputBufferLength == BytesReturned);
 	Stream_Write_UINT32(irp->output, BytesReturned); /* OutputBufferLength (4 bytes) */
 
 	if (BytesReturned > 0)
@@ -428,7 +428,6 @@ error_handle:
 		if (!Stream_EnsureRemainingCapacity(irp->output, BytesReturned))
 		{
 			WLog_Print(serial->log, WLOG_ERROR, "Stream_EnsureRemainingCapacity failed!");
-			free(InputBuffer);
 			free(OutputBuffer);
 			return CHANNEL_RC_NO_MEMORY;
 		}
@@ -444,7 +443,6 @@ error_handle:
 	/* { */
 	/* 	Stream_Write_UINT8(irp->output, 0); /\* Padding (1 byte) *\/ */
 	/* } */
-	free(InputBuffer);
 	free(OutputBuffer);
 	return CHANNEL_RC_OK;
 }
@@ -499,7 +497,7 @@ static UINT serial_process_irp(SERIAL_DEVICE* serial, IRP* irp)
 	           "[%s|0x%08" PRIx32 "] completed with %s [0x%08" PRIx32 "] (IoStatus %s [0x%08" PRIx32
 	           "])",
 	           rdpdr_irp_string(irp->MajorFunction), irp->MajorFunction, WTSErrorToString(error),
-	           error, NtStatus2Tag(irp->IoStatus), irp->IoStatus);
+	           error, NtStatus2Tag(irp->IoStatus), WINPR_CXX_COMPAT_CAST(UINT32, irp->IoStatus));
 
 	return error;
 }
@@ -507,21 +505,23 @@ static UINT serial_process_irp(SERIAL_DEVICE* serial, IRP* irp)
 static DWORD WINAPI irp_thread_func(LPVOID arg)
 {
 	IRP_THREAD_DATA* data = (IRP_THREAD_DATA*)arg;
-	UINT error = 0;
 
 	WINPR_ASSERT(data);
 	WINPR_ASSERT(data->serial);
 	WINPR_ASSERT(data->irp);
 
 	/* blocks until the end of the request */
-	if ((error = serial_process_irp(data->serial, data->irp)))
+	UINT error = serial_process_irp(data->serial, data->irp);
+	if (error)
 	{
 		WLog_Print(data->serial->log, WLOG_ERROR,
 		           "serial_process_irp failed with error %" PRIu32 "", error);
+		data->irp->Discard(data->irp);
 		goto error_out;
 	}
 
 	EnterCriticalSection(&data->serial->TerminatingIrpThreadsLock);
+	WINPR_ASSERT(data->irp->Complete);
 	error = data->irp->Complete(data->irp);
 	LeaveCriticalSection(&data->serial->TerminatingIrpThreadsLock);
 error_out:
@@ -554,7 +554,7 @@ static void close_terminated_irp_thread(wListDictionary* list, wLog* log, ULONG_
 
 	HANDLE cirpThread = ListDictionary_GetItemValue(list, (void*)id);
 	/* FIXME: not quite sure a zero timeout is a good thing to check whether a thread is
-	 * stil alived or not */
+	 * still alive or not */
 	const DWORD waitResult = WaitForSingleObject(cirpThread, 0);
 
 	if (waitResult == WAIT_OBJECT_0)
@@ -573,7 +573,8 @@ void close_terminated_irp_thread_handles(SERIAL_DEVICE* serial, BOOL forceClose)
 
 	EnterCriticalSection(&serial->TerminatingIrpThreadsLock);
 
-	ULONG_PTR* ids = NULL;
+	ListDictionary_Lock(serial->IrpThreads);
+	ULONG_PTR* ids = nullptr;
 	const size_t nbIds = ListDictionary_GetKeys(serial->IrpThreads, &ids);
 
 	for (size_t i = 0; i < nbIds; i++)
@@ -586,15 +587,16 @@ void close_terminated_irp_thread_handles(SERIAL_DEVICE* serial, BOOL forceClose)
 	}
 
 	free(ids);
+	ListDictionary_Unlock(serial->IrpThreads);
 
 	LeaveCriticalSection(&serial->TerminatingIrpThreadsLock);
 }
 
 static void create_irp_thread(SERIAL_DEVICE* serial, IRP* irp)
 {
-	IRP_THREAD_DATA* data = NULL;
-	HANDLE irpThread = NULL;
-	HANDLE previousIrpThread = NULL;
+	IRP_THREAD_DATA* data = nullptr;
+	HANDLE irpThread = nullptr;
+	HANDLE previousIrpThread = nullptr;
 	uintptr_t key = 0;
 
 	WINPR_ASSERT(serial);
@@ -613,7 +615,10 @@ static void create_irp_thread(SERIAL_DEVICE* serial, IRP* irp)
 	 * observed with FreeRDP).
 	 */
 	key = irp->CompletionId + 1ull;
+
+	ListDictionary_Lock(serial->IrpThreads);
 	previousIrpThread = ListDictionary_GetItemValue(serial->IrpThreads, (void*)key);
+	ListDictionary_Unlock(serial->IrpThreads);
 
 	if (previousIrpThread)
 	{
@@ -639,6 +644,29 @@ static void create_irp_thread(SERIAL_DEVICE* serial, IRP* irp)
 		return;
 	}
 
+	/* error_handle to be used ... */
+	data = (IRP_THREAD_DATA*)calloc(1, sizeof(IRP_THREAD_DATA));
+
+	if (data == nullptr)
+	{
+		WLog_Print(serial->log, WLOG_WARN, "Could not allocate a new IRP_THREAD_DATA.");
+		goto error_handle;
+	}
+
+	data->serial = serial;
+	data->irp = irp;
+	/* data freed by irp_thread_func */
+	irpThread = CreateThread(nullptr, 0, irp_thread_func, (void*)data, CREATE_SUSPENDED, nullptr);
+
+	if (irpThread == INVALID_HANDLE_VALUE)
+	{
+		WLog_Print(serial->log, WLOG_WARN, "Could not allocate a new IRP thread.");
+		goto error_handle;
+	}
+
+	key = irp->CompletionId + 1ull;
+
+	ListDictionary_Lock(serial->IrpThreads);
 	if (ListDictionary_Count(serial->IrpThreads) >= MAX_IRP_THREADS)
 	{
 		WLog_Print(serial->log, WLOG_WARN,
@@ -652,32 +680,15 @@ static void create_irp_thread(SERIAL_DEVICE* serial, IRP* irp)
 		                      */
 	}
 
-	/* error_handle to be used ... */
-	data = (IRP_THREAD_DATA*)calloc(1, sizeof(IRP_THREAD_DATA));
-
-	if (data == NULL)
 	{
-		WLog_Print(serial->log, WLOG_WARN, "Could not allocate a new IRP_THREAD_DATA.");
-		goto error_handle;
-	}
+		const BOOL added = ListDictionary_Add(serial->IrpThreads, (void*)key, irpThread);
+		ListDictionary_Unlock(serial->IrpThreads);
 
-	data->serial = serial;
-	data->irp = irp;
-	/* data freed by irp_thread_func */
-	irpThread = CreateThread(NULL, 0, irp_thread_func, (void*)data, CREATE_SUSPENDED, NULL);
-
-	if (irpThread == INVALID_HANDLE_VALUE)
-	{
-		WLog_Print(serial->log, WLOG_WARN, "Could not allocate a new IRP thread.");
-		goto error_handle;
-	}
-
-	key = irp->CompletionId + 1ull;
-
-	if (!ListDictionary_Add(serial->IrpThreads, (void*)key, irpThread))
-	{
-		WLog_Print(serial->log, WLOG_ERROR, "ListDictionary_Add failed!");
-		goto error_handle;
+		if (!added)
+		{
+			WLog_Print(serial->log, WLOG_ERROR, "ListDictionary_Add failed!");
+			goto error_handle;
+		}
 	}
 
 	ResumeThread(irpThread);
@@ -687,14 +698,17 @@ error_handle:
 	if (irpThread)
 		(void)CloseHandle(irpThread);
 	irp->IoStatus = STATUS_NO_MEMORY;
-	irp->Complete(irp);
+	WINPR_ASSERT(irp->Complete);
+	const UINT rc = irp->Complete(irp);
+	if (rc != CHANNEL_RC_OK)
+		WLog_Print(serial->log, WLOG_WARN, "irp->Complete failed with %" PRIu32, rc);
 	free(data);
 }
 
 static DWORD WINAPI serial_thread_func(LPVOID arg)
 {
-	IRP* irp = NULL;
-	wMessage message = { 0 };
+	IRP* irp = nullptr;
+	wMessage message = WINPR_C_ARRAY_INIT;
 	SERIAL_DEVICE* serial = (SERIAL_DEVICE*)arg;
 	UINT error = CHANNEL_RC_OK;
 
@@ -725,7 +739,10 @@ static DWORD WINAPI serial_thread_func(LPVOID arg)
 			create_irp_thread(serial, irp);
 	}
 
+	ListDictionary_Lock(serial->IrpThreads);
 	ListDictionary_Clear(serial->IrpThreads);
+	ListDictionary_Unlock(serial->IrpThreads);
+
 	if (error && serial->rdpcontext)
 		setChannelError(serial->rdpcontext, error, "serial_thread_func reported an error");
 
@@ -741,20 +758,18 @@ static DWORD WINAPI serial_thread_func(LPVOID arg)
 static UINT serial_irp_request(DEVICE* device, IRP* irp)
 {
 	SERIAL_DEVICE* serial = (SERIAL_DEVICE*)device;
-	WINPR_ASSERT(irp != NULL);
+	WINPR_ASSERT(irp != nullptr);
 	WINPR_ASSERT(serial);
-
-	if (irp == NULL)
-		return CHANNEL_RC_OK;
 
 	/* NB: ENABLE_ASYNCIO is set, (MS-RDPEFS 2.2.2.7.2) this
 	 * allows the server to send multiple simultaneous read or
 	 * write requests.
 	 */
 
-	if (!MessageQueue_Post(serial->MainIrpQueue, NULL, 0, (void*)irp, NULL))
+	if (!MessageQueue_Post(serial->MainIrpQueue, nullptr, 0, (void*)irp, nullptr))
 	{
 		WLog_Print(serial->log, WLOG_ERROR, "MessageQueue_Post failed!");
+		irp->Discard(irp);
 		return ERROR_INTERNAL_ERROR;
 	}
 
@@ -789,7 +804,7 @@ static UINT serial_free(DEVICE* device)
 	}
 
 	if (serial->hComm)
-		(void)CloseHandle(*serial->hComm);
+		(void)CloseHandle(serial->hComm);
 
 	/* Clean up resources */
 	Stream_Free(serial->device.data, TRUE);
@@ -841,7 +856,7 @@ FREERDP_ENTRY_POINT(
     UINT VCAPITYPE serial_DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints))
 {
 	size_t len = 0;
-	SERIAL_DEVICE* serial = NULL;
+	SERIAL_DEVICE* serial = nullptr;
 	UINT error = CHANNEL_RC_OK;
 
 	WINPR_ASSERT(pEntryPoints);
@@ -888,7 +903,7 @@ FREERDP_ENTRY_POINT(
 		serial->device.Free = serial_free;
 		serial->rdpcontext = pEntryPoints->rdpcontext;
 		len = strlen(name);
-		serial->device.data = Stream_New(NULL, len + 1);
+		serial->device.data = Stream_New(nullptr, len + 1);
 
 		if (!serial->device.data)
 		{
@@ -898,9 +913,9 @@ FREERDP_ENTRY_POINT(
 		}
 
 		for (size_t i = 0; i <= len; i++)
-			Stream_Write_UINT8(serial->device.data, name[i] < 0 ? '_' : name[i]);
+			Stream_Write_INT8(serial->device.data, name[i] < 0 ? '_' : name[i]);
 
-		if (driver != NULL)
+		if (driver != nullptr)
 		{
 			if (_stricmp(driver, "Serial") == 0)
 				serial->ServerSerialDriverId = SerialDriverSerialSys;
@@ -922,7 +937,7 @@ FREERDP_ENTRY_POINT(
 			serial->ServerSerialDriverId = SerialDriverSerialSys;
 		}
 
-		if (device->Permissive != NULL)
+		if (device->Permissive != nullptr)
 		{
 			if (_stricmp(device->Permissive, "permissive") == 0)
 			{
@@ -935,10 +950,10 @@ FREERDP_ENTRY_POINT(
 			}
 		}
 
-		WLog_Print(serial->log, WLOG_DEBUG, "Server's serial driver: %s (id: %d)", driver,
+		WLog_Print(serial->log, WLOG_DEBUG, "Server's serial driver: %s (id: %u)", driver,
 		           serial->ServerSerialDriverId);
 
-		serial->MainIrpQueue = MessageQueue_New(NULL);
+		serial->MainIrpQueue = MessageQueue_New(nullptr);
 
 		if (!serial->MainIrpQueue)
 		{
@@ -979,7 +994,7 @@ FREERDP_ENTRY_POINT(
 			goto error_out;
 		}
 
-		serial->MainThread = CreateThread(NULL, 0, serial_thread_func, serial, 0, NULL);
+		serial->MainThread = CreateThread(nullptr, 0, serial_thread_func, serial, 0, nullptr);
 		if (!serial->MainThread)
 		{
 			WLog_Print(serial->log, WLOG_ERROR, "CreateThread failed!");

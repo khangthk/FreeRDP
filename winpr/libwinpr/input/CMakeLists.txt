@@ -15,7 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-winpr_module_add(
-	virtualkey.c
-	scancode.c
-	keycode.c)
+winpr_module_add(virtualkey.c scancode.c keycode.c)
+
+if(BUILD_TESTING_INTERNAL OR BUILD_TESTING)
+  add_subdirectory(test)
+endif()

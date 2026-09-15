@@ -44,11 +44,11 @@
 
 typedef struct
 {
-	SIZE_T PagedPoolLimit;
-	SIZE_T NonPagedPoolLimit;
-	SIZE_T MinimumWorkingSetSize;
-	SIZE_T MaximumWorkingSetSize;
-	SIZE_T PagefileLimit;
+	size_t PagedPoolLimit;
+	size_t NonPagedPoolLimit;
+	size_t MinimumWorkingSetSize;
+	size_t MaximumWorkingSetSize;
+	size_t PagefileLimit;
 	LARGE_INTEGER TimeLimit;
 } QUOTA_LIMITS, *PQUOTA_LIMITS;
 
@@ -107,24 +107,30 @@ extern "C"
 {
 #endif
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL LogonUserA(LPCSTR lpszUsername, LPCSTR lpszDomain, LPCSTR lpszPassword,
 	                          DWORD dwLogonType, DWORD dwLogonProvider, PHANDLE phToken);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL LogonUserW(LPCWSTR lpszUsername, LPCWSTR lpszDomain, LPCWSTR lpszPassword,
 	                          DWORD dwLogonType, DWORD dwLogonProvider, PHANDLE phToken);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL LogonUserExA(LPCSTR lpszUsername, LPCSTR lpszDomain, LPCSTR lpszPassword,
 	                            DWORD dwLogonType, DWORD dwLogonProvider, PHANDLE phToken,
 	                            PSID* ppLogonSid, PVOID* ppProfileBuffer, LPDWORD pdwProfileLength,
 	                            PQUOTA_LIMITS pQuotaLimits);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL LogonUserExW(LPCWSTR lpszUsername, LPCWSTR lpszDomain, LPCWSTR lpszPassword,
 	                            DWORD dwLogonType, DWORD dwLogonProvider, PHANDLE phToken,
 	                            PSID* ppLogonSid, PVOID* ppProfileBuffer, LPDWORD pdwProfileLength,
 	                            PQUOTA_LIMITS pQuotaLimits);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL GetUserNameExA(EXTENDED_NAME_FORMAT NameFormat, LPSTR lpNameBuffer,
 	                              PULONG nSize);
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL GetUserNameExW(EXTENDED_NAME_FORMAT NameFormat, LPWSTR lpNameBuffer,
 	                              PULONG nSize);
 

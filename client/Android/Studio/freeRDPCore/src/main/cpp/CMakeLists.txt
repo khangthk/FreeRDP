@@ -19,55 +19,54 @@
 
 cmake_minimum_required(VERSION 3.13)
 
-if (NOT FREERDP_DEFAULT_PROJECT_VERSION)
-	set(FREERDP_DEFAULT_PROJECT_VERSION "1.0.0.0")
+if(POLICY CMP0177)
+  cmake_policy(SET CMP0177 NEW)
+endif()
+if(NOT FREERDP_DEFAULT_PROJECT_VERSION)
+  set(FREERDP_DEFAULT_PROJECT_VERSION "1.0.0.0")
 endif()
 
-project("freerdp-android"
-	LANGUAGES C
-	VERSION ${FREERDP_DEFAULT_PROJECT_VERSION}
-)
+project("freerdp-android" LANGUAGES C VERSION ${FREERDP_DEFAULT_PROJECT_VERSION})
 
 message("project ${PROJECT_NAME} is using version ${PROJECT_VERSION}")
 
 set(MODULE_NAME "freerdp-android")
 set(MODULE_PREFIX "FREERDP_CLIENT_ANDROID")
 
-set(FREERDP_IMPORT_DIR_RELATIVE ../jniLibs/${CMAKE_ANDROID_ARCH_ABI})
-get_filename_component(FREERDP_IMPORT_DIR ${FREERDP_IMPORT_DIR_RELATIVE} ABSOLUTE)
+get_filename_component(FREERDP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../.." ABSOLUTE)
 
-include_directories(SYSTEM
-        ${FREERDP_IMPORT_DIR}/include/freerdp3
-        ${FREERDP_IMPORT_DIR}/include/winpr3
-        ${FREERDP_IMPORT_DIR}/include/openssl
-)
+include(GNUInstallDirs)
 
+# Module path for our cmake helpers
+list(APPEND CMAKE_MODULE_PATH "${FREERDP_SOURCE_DIR}/client/Android/cmake")
+list(APPEND CMAKE_MODULE_PATH "${FREERDP_SOURCE_DIR}/cmake")
+
+include(AndroidHelpers)
+detect_ndk_root(NDK_ROOT)
+detect_ndk_host_platform(NDK_HOST_PLATFORM)
+get_android_api_level(NDK_API_LEVEL)
+
+include(ExternalDeps)
 set(${MODULE_PREFIX}_SRCS
-        android_event.c
-        android_event.h
-        android_freerdp.c
-        android_freerdp.h
-        android_jni_utils.c
-        android_jni_utils.h
-        android_jni_callback.c
-        android_jni_callback.h)
-
-if(WITH_CLIENT_CHANNELS)
-    set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
-            android_cliprdr.c
-            android_cliprdr.h)
-endif()
+    android_cliprdr.c
+    android_cliprdr.h
+    android_disp.c
+    android_disp.h
+    android_event.c
+    android_event.h
+    android_freerdp.c
+    android_freerdp.h
+    android_jni_utils.c
+    android_jni_utils.h
+    android_jni_callback.c
+    android_jni_callback.h
+    android_rail.c
+    android_rail.h
+)
 
 add_library(${MODULE_NAME} SHARED ${${MODULE_PREFIX}_SRCS})
 
-add_library(freerdp3-lib SHARED IMPORTED)
-set_property(TARGET freerdp3-lib PROPERTY IMPORTED_LOCATION ${FREERDP_IMPORT_DIR}/libfreerdp3.so)
-
-add_library(freerdp-client3-lib SHARED IMPORTED)
-set_property(TARGET freerdp-client3-lib PROPERTY IMPORTED_LOCATION ${FREERDP_IMPORT_DIR}/libfreerdp-client3.so)
-
-add_library(winpr3-lib SHARED IMPORTED)
-set_property(TARGET winpr3-lib PROPERTY IMPORTED_LOCATION ${FREERDP_IMPORT_DIR}/libwinpr3.so)
+add_dependencies(${MODULE_NAME} copyLibs)
 
 find_library(log-lib log)
 find_library(dl-lib dl)
@@ -78,12 +77,5 @@ find_library(jnigraphics-lib jnigraphics)
 # build script, prebuilt third-party libraries, or system libraries.
 
 target_link_libraries(
-        ${MODULE_NAME}
-
-        freerdp3-lib
-        freerdp-client3-lib
-        winpr3-lib
-
-        ${log-lib}
-        ${dl-lib}
-        ${jnigraphics-lib} )
+  ${MODULE_NAME} PRIVATE freerdp3-lib freerdp-client3-lib winpr3-lib ${log-lib} ${dl-lib} ${jnigraphics-lib}
+)

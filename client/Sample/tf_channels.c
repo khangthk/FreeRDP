@@ -32,12 +32,6 @@
 #include "tf_channels.h"
 #include "tf_freerdp.h"
 
-static UINT tf_update_surfaces(RdpgfxClientContext* context)
-{
-	WINPR_UNUSED(context);
-	return CHANNEL_RC_OK;
-}
-
 void tf_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEventArgs* e)
 {
 	tfContext* tf = (tfContext*)context;
@@ -72,7 +66,7 @@ void tf_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnect
 	{
 		CliprdrClientContext* clip = (CliprdrClientContext*)e->pInterface;
 		WINPR_ASSERT(clip);
-		clip->custom = NULL;
+		clip->custom = nullptr;
 	}
 	else
 		freerdp_client_OnChannelDisconnectedEventHandler(&tf->common, e);

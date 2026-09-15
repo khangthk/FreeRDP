@@ -8,13 +8,13 @@
 
 int TestLibraryGetModuleFileName(int argc, char* argv[])
 {
-	char ModuleFileName[4096];
+	char ModuleFileName[4096] = WINPR_C_ARRAY_INIT;
 	DWORD len = 0;
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
 	/* Test insufficient buffer size behaviour */
 	SetLastError(ERROR_SUCCESS);
-	len = GetModuleFileNameA(NULL, ModuleFileName, 2);
+	len = GetModuleFileNameA(nullptr, ModuleFileName, 2);
 	if (len != 2)
 	{
 		printf("%s: GetModuleFileNameA unexpectedly returned %" PRIu32 " instead of 2\n", __func__,
@@ -31,7 +31,7 @@ int TestLibraryGetModuleFileName(int argc, char* argv[])
 
 	/* Test with real/sufficient buffer size */
 	SetLastError(ERROR_SUCCESS);
-	len = GetModuleFileNameA(NULL, ModuleFileName, sizeof(ModuleFileName));
+	len = GetModuleFileNameA(nullptr, ModuleFileName, sizeof(ModuleFileName));
 	if (len == 0)
 	{
 		printf("%s: GetModuleFileNameA failed with error 0x%08" PRIX32 "\n", __func__,
@@ -40,7 +40,7 @@ int TestLibraryGetModuleFileName(int argc, char* argv[])
 	}
 	if (len == sizeof(ModuleFileName))
 	{
-		printf("%s: GetModuleFileNameA unexpectedly returned nSize\n", __func__);
+		printf("%s: GetModuleFileNameA unexpectedly returned nSize %" PRIu32 "\n", __func__, len);
 		return -1;
 	}
 	if (GetLastError() != ERROR_SUCCESS)

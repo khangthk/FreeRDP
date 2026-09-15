@@ -29,14 +29,16 @@
 typedef krb5_key krb5glue_key;
 typedef krb5_authenticator* krb5glue_authenticator;
 
+#define krb5glue_free_authenticator(ctx, auth) krb5_free_authenticator((ctx), (auth))
+
 #define krb5glue_crypto_length(ctx, key, type, size) \
 	krb5_c_crypto_length(ctx, krb5_k_key_enctype(ctx, key), type, size)
 #define krb5glue_crypto_length_iov(ctx, key, iov, size) \
 	krb5_c_crypto_length_iov(ctx, krb5_k_key_enctype(ctx, key), iov, size)
 #define krb5glue_encrypt_iov(ctx, key, usage, iov, size) \
-	krb5_k_encrypt_iov(ctx, key, usage, NULL, iov, size)
+	krb5_k_encrypt_iov(ctx, key, usage, nullptr, iov, size)
 #define krb5glue_decrypt_iov(ctx, key, usage, iov, size) \
-	krb5_k_decrypt_iov(ctx, key, usage, NULL, iov, size)
+	krb5_k_decrypt_iov(ctx, key, usage, nullptr, iov, size)
 #define krb5glue_make_checksum_iov(ctx, key, usage, iov, size) \
 	krb5_k_make_checksum_iov(ctx, 0, key, usage, iov, size)
 #define krb5glue_verify_checksum_iov(ctx, key, usage, iov, size, is_valid) \
@@ -57,18 +59,20 @@ krb5_prompt_type krb5glue_get_prompt_type(krb5_context ctx, krb5_prompt prompts[
 typedef krb5_crypto krb5glue_key;
 typedef krb5_authenticator krb5glue_authenticator;
 
+#define krb5glue_free_authenticator(ctx, auth) krb5_free_authenticator((ctx), &(auth))
+
 krb5_error_code krb5glue_crypto_length(krb5_context ctx, krb5glue_key key, int type,
                                        unsigned int* size);
 #define krb5glue_crypto_length_iov(ctx, key, iov, size) krb5_crypto_length_iov(ctx, key, iov, size)
 #define krb5glue_encrypt_iov(ctx, key, usage, iov, size) \
-	krb5_encrypt_iov_ivec(ctx, key, usage, iov, size, NULL)
+	krb5_encrypt_iov_ivec(ctx, key, usage, iov, size, nullptr)
 #define krb5glue_decrypt_iov(ctx, key, usage, iov, size) \
-	krb5_decrypt_iov_ivec(ctx, key, usage, iov, size, NULL)
+	krb5_decrypt_iov_ivec(ctx, key, usage, iov, size, nullptr)
 #define krb5glue_make_checksum_iov(ctx, key, usage, iov, size) \
-	krb5_create_checksum_iov(ctx, key, usage, iov, size, NULL)
-krb5_error_code krb5glue_verify_checksum_iov(krb5_context ctx, krb5glue_key key, unsigned usage,
-                                             krb5_crypto_iov* iov, unsigned int iov_size,
-                                             krb5_boolean* is_valid);
+	krb5_create_checksum_iov(ctx, key, usage, iov, size, nullptr)
+krb5_error_code krb5glue_verify_checksum_iov(krb5_context ctx, krb5glue_key key,
+                                             krb5_keyusage usage, krb5_crypto_iov* iov,
+                                             unsigned int iov_size, krb5_boolean* is_valid);
 #define krb5glue_auth_con_set_cksumtype(ctx, auth_ctx, cksumtype) \
 	krb5_auth_con_setcksumtype(ctx, auth_ctx, cksumtype)
 #define krb5glue_set_principal_realm(ctx, principal, realm) \
@@ -99,6 +103,15 @@ BOOL krb5glue_authenticator_validate_chksum(krb5glue_authenticator authenticator
                                             uint32_t* flags);
 krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, krb5_ccache ccache,
                                         krb5_prompter_fct prompter, char* password,
-                                        SEC_WINPR_KERBEROS_SETTINGS* krb_settings);
+                                        SEC_WINPR_KERBEROS_SETTINGS_V2* krb_settings);
+
+void krb_log_context_encryption(krb5_context ctx, krb5_principal princ);
+
+#define krb_log_exec(fkt, ctx, ...) \
+	kerberos_log_msg(ctx, fkt(ctx, ##__VA_ARGS__), #fkt, __FILE__, __func__, __LINE__)
+#define krb_log_exec_ptr(fkt, ctx, ...) \
+	kerberos_log_msg(*ctx, fkt(ctx, ##__VA_ARGS__), #fkt, __FILE__, __func__, __LINE__)
+krb5_error_code kerberos_log_msg(krb5_context ctx, krb5_error_code code, const char* what,
+                                 const char* file, const char* fkt, size_t line);
 
 #endif /* WINPR_SSPI_KERBEROS_GLUE_PRIVATE_H */

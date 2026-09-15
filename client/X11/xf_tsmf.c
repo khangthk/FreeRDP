@@ -44,7 +44,7 @@ static long xv_port = 0;
 
 struct xf_xv_context
 {
-	long xv_port;
+	XvPortID xv_port;
 	Atom xv_colorkey_atom;
 	int xv_image_size;
 	int xv_shmid;
@@ -75,16 +75,16 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 	int y = 0;
 	UINT32 width = 0;
 	UINT32 height = 0;
-	BYTE* data1 = NULL;
-	BYTE* data2 = NULL;
+	BYTE* data1 = nullptr;
+	BYTE* data2 = nullptr;
 	UINT32 pixfmt = 0;
 	UINT32 xvpixfmt = 0;
-	XvImage* image = NULL;
+	XvImage* image = nullptr;
 	int colorkey = 0;
 	int numRects = 0;
-	xfContext* xfc = NULL;
-	xfXvContext* xv = NULL;
-	XRectangle* xrects = NULL;
+	xfContext* xfc = nullptr;
+	xfXvContext* xv = nullptr;
+	XRectangle* xrects = nullptr;
 	XShmSegmentInfo shminfo;
 	BOOL converti420yv12 = FALSE;
 
@@ -110,7 +110,7 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 		return -1002;
 	}
 
-	xrects = NULL;
+	xrects = nullptr;
 	numRects = event->numVisibleRects;
 
 	if (numRects > 0)
@@ -127,8 +127,8 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 			width = event->visibleRects[i].right - event->visibleRects[i].left;
 			height = event->visibleRects[i].bottom - event->visibleRects[i].top;
 
-			xrects[i].x = x;
-			xrects[i].y = y;
+			xrects[i].x = WINPR_ASSERTING_INT_CAST(short, x);
+			xrects[i].y = WINPR_ASSERTING_INT_CAST(short, y);
 			xrects[i].width = width;
 			xrects[i].height = height;
 		}
@@ -137,13 +137,13 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 	if (xv->xv_colorkey_atom != None)
 	{
 		XvGetPortAttribute(xfc->display, xv->xv_port, xv->xv_colorkey_atom, &colorkey);
-		XSetFunction(xfc->display, xfc->gc, GXcopy);
-		XSetFillStyle(xfc->display, xfc->gc, FillSolid);
-		XSetForeground(xfc->display, xfc->gc, colorkey);
+		LogDynAndXSetFunction(xfc->log, xfc->display, xfc->gc, GXcopy);
+		LogDynAndXSetFillStyle(xfc->log, xfc->display, xfc->gc, FillSolid);
+		LogDynAndXSetForeground(xfc->log, xfc->display, xfc->gc, colorkey);
 
 		if (event->numVisibleRects < 1)
 		{
-			XSetClipMask(xfc->display, xfc->gc, None);
+			LogDynAndXSetClipMask(xfc->log, xfc->display, xfc->gc, None);
 		}
 		else
 		{
@@ -152,12 +152,12 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 	}
 	else
 	{
-		XSetFunction(xfc->display, xfc->gc, GXcopy);
-		XSetFillStyle(xfc->display, xfc->gc, FillSolid);
+		LogDynAndXSetFunction(xfc->log, xfc->display, xfc->gc, GXcopy);
+		LogDynAndXSetFillStyle(xfc->log, xfc->display, xfc->gc, FillSolid);
 
 		if (event->numVisibleRects < 1)
 		{
-			XSetClipMask(xfc->display, xfc->gc, None);
+			LogDynAndXSetClipMask(xfc->log, xfc->display, xfc->gc, None);
 		}
 		else
 		{
@@ -188,15 +188,15 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 		return -1003;
 	}
 
-	image = XvShmCreateImage(xfc->display, xv->xv_port, xvpixfmt, 0, event->frameWidth,
-	                         event->frameHeight, &shminfo);
+	image = XvShmCreateImage(xfc->display, xv->xv_port, WINPR_ASSERTING_INT_CAST(int, xvpixfmt), 0,
+	                         event->frameWidth, event->frameHeight, &shminfo);
 
 	if (xv->xv_image_size != image->data_size)
 	{
 		if (xv->xv_image_size > 0)
 		{
 			shmdt(xv->xv_shmaddr);
-			shmctl(xv->xv_shmid, IPC_RMID, NULL);
+			shmctl(xv->xv_shmid, IPC_RMID, nullptr);
 		}
 
 		xv->xv_image_size = image->data_size;
@@ -295,9 +295,9 @@ static int xf_tsmf_xv_video_frame_event(TsmfClientContext* tsmf, TSMF_VIDEO_FRAM
 	              FALSE);
 
 	if (xv->xv_colorkey_atom == None)
-		XSetClipMask(xfc->display, xfc->gc, None);
+		LogDynAndXSetClipMask(xfc->log, xfc->display, xfc->gc, None);
 
-	XSync(xfc->display, FALSE);
+	LogDynAndXSync(xfc->log, xfc->display, FALSE);
 
 	XShmDetach(xfc->display, &shminfo);
 	XFree(image);
@@ -316,10 +316,10 @@ static int xf_tsmf_xv_init(xfContext* xfc, TsmfClientContext* tsmf)
 	unsigned int error_base = 0;
 	unsigned int request_base = 0;
 	unsigned int num_adaptors = 0;
-	xfXvContext* xv = NULL;
-	XvAdaptorInfo* ai = NULL;
-	XvAttribute* attr = NULL;
-	XvImageFormatValues* fo = NULL;
+	xfXvContext* xv = nullptr;
+	XvAdaptorInfo* ai = nullptr;
+	XvAttribute* attr = nullptr;
+	XvImageFormatValues* fo = nullptr;
 
 	if (xfc->xv_context)
 		return 1; /* context already created */
@@ -386,7 +386,7 @@ static int xf_tsmf_xv_init(xfContext* xfc, TsmfClientContext* tsmf)
 	{
 		if (strcmp(attr[i].name, "XV_COLORKEY") == 0)
 		{
-			static wLog* log = NULL;
+			static wLog* log = nullptr;
 			if (!log)
 				log = WLog_Get(TAG);
 			xv->xv_colorkey_atom = Logging_XInternAtom(log, xfc->display, "XV_COLORKEY", FALSE);
@@ -405,14 +405,15 @@ static int xf_tsmf_xv_init(xfContext* xfc, TsmfClientContext* tsmf)
 	{
 		xv->xv_pixfmts = (UINT32*)calloc((ret + 1), sizeof(UINT32));
 
-		for (unsigned int i = 0; i < (unsigned int)ret; i++)
+		size_t x = 0;
+		for (; x < (size_t)ret; x++)
 		{
-			xv->xv_pixfmts[i] = fo[i].id;
-			WLog_DBG(TAG, "%c%c%c%c ", ((char*)(xv->xv_pixfmts + i))[0],
-			         ((char*)(xv->xv_pixfmts + i))[1], ((char*)(xv->xv_pixfmts + i))[2],
-			         ((char*)(xv->xv_pixfmts + i))[3]);
+			xv->xv_pixfmts[x] = fo[x].id;
+			WLog_DBG(TAG, "%c%c%c%c ", ((char*)(xv->xv_pixfmts + x))[0],
+			         ((char*)(xv->xv_pixfmts + x))[1], ((char*)(xv->xv_pixfmts + x))[2],
+			         ((char*)(xv->xv_pixfmts + x))[3]);
 		}
-		xv->xv_pixfmts[i] = 0;
+		xv->xv_pixfmts[x] = 0;
 	}
 	XFree(fo);
 
@@ -437,21 +438,21 @@ static int xf_tsmf_xv_uninit(xfContext* xfc, TsmfClientContext* tsmf)
 		if (xv->xv_image_size > 0)
 		{
 			shmdt(xv->xv_shmaddr);
-			shmctl(xv->xv_shmid, IPC_RMID, NULL);
+			shmctl(xv->xv_shmid, IPC_RMID, nullptr);
 		}
 		if (xv->xv_pixfmts)
 		{
 			free(xv->xv_pixfmts);
-			xv->xv_pixfmts = NULL;
+			xv->xv_pixfmts = nullptr;
 		}
 		free(xv);
-		xfc->xv_context = NULL;
+		xfc->xv_context = nullptr;
 	}
 
 	if (xfc->tsmf)
 	{
-		xfc->tsmf->custom = NULL;
-		xfc->tsmf = NULL;
+		xfc->tsmf->custom = nullptr;
+		xfc->tsmf = nullptr;
 	}
 
 	return 1;

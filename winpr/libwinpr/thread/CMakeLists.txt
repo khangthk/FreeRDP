@@ -16,15 +16,24 @@
 # limitations under the License.
 
 winpr_module_add(
-	apc.h
-	apc.c
-	argv.c
-	process.c
-	processor.c
-	thread.c
-	thread.h
-	tls.c)
+  apc.h
+  apc.c
+  argv.c
+  process.c
+  processor.c
+  procthreadattr.c
+  thread.c
+  thread.h
+)
 
-if(BUILD_TESTING)
-	add_subdirectory(test)
+# tls.c only provides a pthread-based TlsAlloc/TlsGetValue/TlsSetValue/TlsFree
+# fallback for non-Windows targets. On Cygwin the real system TlsAlloc family
+# is available from libkernel32.a, so skip compiling it there instead of
+# growing the file's own platform guard.
+if(NOT CYGWIN)
+  winpr_module_add(tls.c)
+endif()
+
+if(BUILD_TESTING_INTERNAL OR BUILD_TESTING)
+  add_subdirectory(test)
 endif()

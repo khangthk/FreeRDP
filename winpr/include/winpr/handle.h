@@ -32,11 +32,48 @@ extern "C"
 {
 #endif
 
-#define WINPR_FD_READ_BIT 0
-#define WINPR_FD_READ (1 << WINPR_FD_READ_BIT)
+#define WINPR_FD_READ_BIT 0u
+#define WINPR_FD_READ (1u << WINPR_FD_READ_BIT)
 
-#define WINPR_FD_WRITE_BIT 1
-#define WINPR_FD_WRITE (1 << WINPR_FD_WRITE_BIT)
+#define WINPR_FD_WRITE_BIT 1u
+#define WINPR_FD_WRITE (1u << WINPR_FD_WRITE_BIT)
+
+	/**
+	 * Exports an handle to a string platform independently (so exports the HANDLE
+	 * pointer as hexa under WIN32, and under UNIXes a single character identifying the
+	 * handle's type followed by the file descriptor number in hexa, e.g. "P4" for a pipe)
+	 * formatting it with the pseudo format string with {} for the handle (for instance
+	 * `--fdIn={}`). You can use winpr_importHandleFromString to quickly get back a
+	 * HANDLE from the output of this call.
+	 *
+	 * Only pipe HANDLEs (as returned by CreatePipe) can be exported for now under UNIXes.
+	 *
+	 * 	@param h the HANDLE to export
+	 * 	@param format the format string with {} for the handle value
+	 * 	@param outStr the output buffer
+	 * 	@param outSz outStr size
+	 * 	@return if the operation completed successfully
+	 *
+	 * 	@since version 3.32.0
+	 */
+	WINPR_ATTR_NODISCARD
+	WINPR_API BOOL winpr_exportHandleToString(HANDLE h, const char* format, char* outStr,
+	                                          size_t outSz);
+
+	/**
+	 * Imports a HANDLE that was previously exported as a string by winpr_exportHandleToString.
+	 * Under WIN32 it just converts the string to a HANDLE, and under UNIXes it creates a new
+	 * HANDLE.
+	 *
+	 * @param str the input string
+	 * @param format the format string that was used by winpr_exportHandleToString with {} for the
+	 * handle
+	 * @returns the created HANDLE or INVALID_HANDLE if something wrong happened
+	 *
+	 * @since version 3.32.0
+	 */
+	WINPR_ATTR_NODISCARD
+	WINPR_API HANDLE winpr_importHandleFromString(const char* str, const char* format);
 
 #ifndef _WIN32
 
@@ -48,11 +85,15 @@ extern "C"
 
 	WINPR_API BOOL CloseHandle(HANDLE hObject);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL DuplicateHandle(HANDLE hSourceProcessHandle, HANDLE hSourceHandle,
 	                               HANDLE hTargetProcessHandle, LPHANDLE lpTargetHandle,
 	                               DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwOptions);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL GetHandleInformation(HANDLE hObject, LPDWORD lpdwFlags);
+
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL SetHandleInformation(HANDLE hObject, DWORD dwMask, DWORD dwFlags);
 
 #endif

@@ -23,15 +23,12 @@
 
 #include <winpr/crt.h>
 
-#include <freerdp/log.h>
 #include <freerdp/update.h>
 #include <freerdp/freerdp.h>
 #include <winpr/stream.h>
 
 #include "nine_grid.h"
 #include "cache.h"
-
-#define TAG FREERDP_TAG("cache.nine_grid")
 
 typedef struct
 {
@@ -51,9 +48,6 @@ struct rdp_nine_grid_cache
 
 	rdpContext* context;
 };
-
-static void* nine_grid_cache_get(rdpNineGridCache* nine_grid, UINT32 index);
-static void nine_grid_cache_put(rdpNineGridCache* nine_grid, UINT32 index, void* entry);
 
 static BOOL update_gdi_draw_nine_grid(rdpContext* context,
                                       const DRAW_NINE_GRID_ORDER* draw_nine_grid)
@@ -80,43 +74,10 @@ void nine_grid_cache_register_callbacks(rdpUpdate* update)
 	update->primary->MultiDrawNineGrid = update_gdi_multi_draw_nine_grid;
 }
 
-void* nine_grid_cache_get(rdpNineGridCache* nine_grid, UINT32 index)
-{
-	void* entry = NULL;
-
-	if (index >= nine_grid->maxEntries)
-	{
-		WLog_ERR(TAG, "invalid NineGrid index: 0x%08" PRIX32 "", index);
-		return NULL;
-	}
-
-	entry = nine_grid->entries[index].entry;
-
-	if (entry == NULL)
-	{
-		WLog_ERR(TAG, "invalid NineGrid at index: 0x%08" PRIX32 "", index);
-		return NULL;
-	}
-
-	return entry;
-}
-
-void nine_grid_cache_put(rdpNineGridCache* nine_grid, UINT32 index, void* entry)
-{
-	if (index >= nine_grid->maxEntries)
-	{
-		WLog_ERR(TAG, "invalid NineGrid index: 0x%08" PRIX32 "", index);
-		return;
-	}
-
-	free(nine_grid->entries[index].entry);
-	nine_grid->entries[index].entry = entry;
-}
-
 rdpNineGridCache* nine_grid_cache_new(rdpContext* context)
 {
-	rdpNineGridCache* nine_grid = NULL;
-	rdpSettings* settings = NULL;
+	rdpNineGridCache* nine_grid = nullptr;
+	rdpSettings* settings = nullptr;
 
 	WINPR_ASSERT(context);
 
@@ -125,7 +86,7 @@ rdpNineGridCache* nine_grid_cache_new(rdpContext* context)
 
 	nine_grid = (rdpNineGridCache*)calloc(1, sizeof(rdpNineGridCache));
 	if (!nine_grid)
-		return NULL;
+		return nullptr;
 
 	nine_grid->context = context;
 
@@ -149,14 +110,14 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	nine_grid_cache_free(nine_grid);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void nine_grid_cache_free(rdpNineGridCache* nine_grid)
 {
-	if (nine_grid != NULL)
+	if (nine_grid != nullptr)
 	{
-		if (nine_grid->entries != NULL)
+		if (nine_grid->entries != nullptr)
 		{
 			for (size_t i = 0; i < nine_grid->maxEntries; i++)
 				free(nine_grid->entries[i].entry);

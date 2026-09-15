@@ -54,9 +54,15 @@ typedef enum
 
 typedef state_run_t (*TransportRecv)(rdpTransport* transport, wStream* stream, void* extra);
 
+WINPR_ATTR_MALLOC(Stream_Release, 1)
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL wStream* transport_send_stream_init(rdpTransport* transport, size_t size);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect(rdpTransport* transport, const char* hostname, UINT16 port,
                                      DWORD timeout);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect_childsession(rdpTransport* transport);
 
 /**! \brief Attach a socket to the transport layer
@@ -73,6 +79,7 @@ FREERDP_LOCAL BOOL transport_connect_childsession(rdpTransport* transport);
  *
  * \return \b TRUE in case of success, \b FALSE otherwise.
  */
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_attach(rdpTransport* transport, int sockfd);
 
 /**! \brief Attach a transport layer
@@ -89,87 +96,146 @@ FREERDP_LOCAL BOOL transport_attach(rdpTransport* transport, int sockfd);
  *
  * \return \b TRUE in case of success, \b FALSE otherwise.
  */
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_attach_layer(rdpTransport* transport, rdpTransportLayer* layer);
 
 FREERDP_LOCAL BOOL transport_disconnect(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect_rdp(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect_tls(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect_nla(rdpTransport* transport, BOOL earlyUserAuth);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect_rdstls(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_connect_aad(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_accept_rdp(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_accept_tls(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_accept_nla(rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_accept_rdstls(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL int transport_read_pdu(rdpTransport* transport, wStream* s);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL int transport_write(rdpTransport* transport, wStream* s);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_get_public_key(rdpTransport* transport, const BYTE** data,
                                             DWORD* length);
 
 #if defined(WITH_FREERDP_DEPRECATED)
 FREERDP_LOCAL void transport_get_fds(rdpTransport* transport, void** rfds, int* rcount);
 #endif
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL int transport_check_fds(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events,
                                                 DWORD nCount);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL HANDLE transport_get_front_bio(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_set_blocking_mode(rdpTransport* transport, BOOL blocking);
+
 FREERDP_LOCAL void transport_set_gateway_enabled(rdpTransport* transport, BOOL GatewayEnabled);
 FREERDP_LOCAL void transport_set_nla_mode(rdpTransport* transport, BOOL NlaMode);
 FREERDP_LOCAL void transport_set_rdstls_mode(rdpTransport* transport, BOOL RdstlsMode);
 FREERDP_LOCAL void transport_set_aad_mode(rdpTransport* transport, BOOL AadMode);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_is_write_blocked(rdpTransport* transport);
+
 FREERDP_LOCAL int transport_drain_output_buffer(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_io_callback_set_event(rdpTransport* transport, BOOL set);
 
-FREERDP_LOCAL const rdpTransportIo* transport_get_io_callbacks(rdpTransport* transport);
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL const rdpTransportIo* transport_get_io_callbacks(const rdpTransport* transport);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_set_io_callbacks(rdpTransport* transport,
                                               const rdpTransportIo* io_callbacks);
 
 FREERDP_LOCAL BOOL transport_set_nla(rdpTransport* transport, rdpNla* nla);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL rdpNla* transport_get_nla(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_set_tls(rdpTransport* transport, rdpTls* tls);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL rdpTls* transport_get_tls(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_set_tsg(rdpTransport* transport, rdpTsg* tsg);
+
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL rdpTsg* transport_get_tsg(rdpTransport* transport);
 
+WINPR_ATTR_MALLOC(Stream_Release, 1)
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL wStream* transport_take_from_pool(rdpTransport* transport, size_t size);
 
-FREERDP_LOCAL ULONG transport_get_bytes_sent(rdpTransport* transport, BOOL resetCount);
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL UINT64 transport_get_bytes_sent(rdpTransport* transport, BOOL resetCount);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_have_more_bytes_to_read(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL TRANSPORT_LAYER transport_get_layer(rdpTransport* transport);
+
 FREERDP_LOCAL BOOL transport_set_layer(rdpTransport* transport, TRANSPORT_LAYER layer);
 
-FREERDP_LOCAL BOOL transport_get_blocking(rdpTransport* transport);
+WINPR_ATTR_NODISCARD
+FREERDP_LOCAL BOOL transport_get_blocking(const rdpTransport* transport);
+
 FREERDP_LOCAL BOOL transport_set_blocking(rdpTransport* transport, BOOL blocking);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_set_connected_event(rdpTransport* transport);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL transport_set_recv_callbacks(rdpTransport* transport, TransportRecv recv,
                                                 void* extra);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL int transport_tcp_connect(rdpTransport* transport, const char* hostname, int port,
                                         DWORD timeout);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL rdpTransportLayer*
 transport_connect_layer(rdpTransport* transport, const char* hostname, int port, DWORD timeout);
 
 FREERDP_LOCAL void transport_free(rdpTransport* transport);
 
 WINPR_ATTR_MALLOC(transport_free, 1)
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL rdpTransport* transport_new(rdpContext* context);
 
 FREERDP_LOCAL void transport_set_early_user_auth_mode(rdpTransport* transport, BOOL EUAMode);
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BIO_METHOD* BIO_s_transport_layer(void);
 
 #endif /* FREERDP_LIB_CORE_TRANSPORT_H */

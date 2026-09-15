@@ -59,7 +59,6 @@ internal class Program
 			fs.WriteLine("};");
 			fs.WriteLine("");
 			fs.WriteLine("static const size_t " + fname + "Size = ARRAYSIZE(" + fname + ");");
-			fs.WriteLine("");
 		}
 		return true;
 	}
@@ -170,7 +169,6 @@ internal class Program
 			fs.WriteLine("");
 			fs.WriteLine("#include \"" + fname + ".h\"");
 			fs.WriteLine("");
-			fs.WriteLine("// clang-format off");
 			fs.WriteLine("const WINDOWS_TZID_ENTRY " + fname + "[] = {");
 
 			foreach (XmlNode mzone in mzones)
@@ -186,7 +184,6 @@ internal class Program
 			fs.WriteLine("};");
 			fs.WriteLine("");
 			fs.WriteLine("const size_t " + fname + "NrElements = ARRAYSIZE(" + fname + ");");
-			fs.WriteLine("// clang-format on");
 		}
 		stdout.WriteLine("Finished update");
 		return true;

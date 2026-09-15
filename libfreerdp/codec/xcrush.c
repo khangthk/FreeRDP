@@ -20,6 +20,8 @@
  */
 
 #include <winpr/assert.h>
+#include <winpr/cast.h>
+
 #include <freerdp/config.h>
 
 #include <winpr/crt.h>
@@ -159,10 +161,10 @@ static const char* xcrush_get_level_1_compression_flags_string(UINT32 flags)
 }
 #endif
 
-static UINT32 xcrush_update_hash(const BYTE* WINPR_RESTRICT data, UINT32 size)
+static UINT16 xcrush_update_hash(const BYTE* WINPR_RESTRICT data, UINT32 size)
 {
-	const BYTE* end = NULL;
-	UINT32 seed = 5381; /* same value as in djb2 */
+	const BYTE* end = nullptr;
+	UINT16 seed = 5381; /* same value as in djb2 */
 
 	WINPR_ASSERT(data);
 	WINPR_ASSERT(size >= 4);
@@ -181,7 +183,7 @@ static UINT32 xcrush_update_hash(const BYTE* WINPR_RESTRICT data, UINT32 size)
 		data += 4;
 	}
 
-	return (UINT16)seed;
+	return seed;
 }
 
 static int xcrush_append_chunk(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
@@ -204,8 +206,8 @@ static int xcrush_append_chunk(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 
 	if (size >= 15)
 	{
-		UINT32 seed = xcrush_update_hash(&data[*beg], (UINT16)size);
-		xcrush->Signatures[xcrush->SignatureIndex].size = size;
+		const UINT16 seed = xcrush_update_hash(&data[*beg], WINPR_ASSERTING_INT_CAST(UINT16, size));
+		xcrush->Signatures[xcrush->SignatureIndex].size = WINPR_ASSERTING_INT_CAST(UINT16, size);
 		xcrush->Signatures[xcrush->SignatureIndex].seed = seed;
 		xcrush->SignatureIndex++;
 		*beg = end;
@@ -332,7 +334,7 @@ static int xcrush_find_next_matching_chunk(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush
                                            XCRUSH_CHUNK* WINPR_RESTRICT chunk,
                                            XCRUSH_CHUNK** WINPR_RESTRICT pNextChunk)
 {
-	XCRUSH_CHUNK* next = NULL;
+	XCRUSH_CHUNK* next = nullptr;
 
 	WINPR_ASSERT(xcrush);
 
@@ -368,9 +370,6 @@ static int xcrush_insert_chunk(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
                                XCRUSH_SIGNATURE* WINPR_RESTRICT signature, UINT32 offset,
                                XCRUSH_CHUNK** WINPR_RESTRICT pPrevChunk)
 {
-	UINT32 seed = 0;
-	UINT32 index = 0;
-
 	WINPR_ASSERT(xcrush);
 
 	if (xcrush->ChunkHead >= 65530)
@@ -385,16 +384,13 @@ static int xcrush_insert_chunk(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 		xcrush->ChunkTail += 10000;
 	}
 
-	index = xcrush->ChunkHead++;
+	const UINT32 index = xcrush->ChunkHead++;
 
 	if (xcrush->ChunkHead >= 65534)
 		return -3001; /* error */
 
 	xcrush->Chunks[index].offset = offset;
-	seed = signature->seed;
-
-	if (seed >= 65536)
-		return -3002; /* error */
+	const UINT16 seed = signature->seed;
 
 	if (xcrush->NextChunks[seed])
 	{
@@ -406,7 +402,7 @@ static int xcrush_insert_chunk(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 	}
 
 	xcrush->Chunks[index].next = xcrush->NextChunks[seed] & 0xFFFF;
-	xcrush->NextChunks[seed] = index;
+	xcrush->NextChunks[seed] = WINPR_ASSERTING_INT_CAST(UINT16, index);
 	return 1;
 }
 
@@ -417,18 +413,18 @@ static int xcrush_find_match_length(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, UINT3
 {
 	UINT32 MatchSymbol = 0;
 	UINT32 ChunkSymbol = 0;
-	BYTE* ChunkBuffer = NULL;
-	BYTE* MatchBuffer = NULL;
-	BYTE* MatchStartPtr = NULL;
-	BYTE* ForwardChunkPtr = NULL;
-	BYTE* ReverseChunkPtr = NULL;
-	BYTE* ForwardMatchPtr = NULL;
-	BYTE* ReverseMatchPtr = NULL;
-	BYTE* HistoryBufferEnd = NULL;
+	BYTE* ChunkBuffer = nullptr;
+	BYTE* MatchBuffer = nullptr;
+	BYTE* MatchStartPtr = nullptr;
+	BYTE* ForwardChunkPtr = nullptr;
+	BYTE* ReverseChunkPtr = nullptr;
+	BYTE* ForwardMatchPtr = nullptr;
+	BYTE* ReverseMatchPtr = nullptr;
+	BYTE* HistoryBufferEnd = nullptr;
 	UINT32 ReverseMatchLength = 0;
 	UINT32 ForwardMatchLength = 0;
 	UINT32 TotalMatchLength = 0;
-	BYTE* HistoryBuffer = NULL;
+	BYTE* HistoryBuffer = nullptr;
 	UINT32 HistoryBufferSize = 0;
 
 	WINPR_ASSERT(xcrush);
@@ -500,8 +496,12 @@ static int xcrush_find_match_length(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, UINT3
 	if (MatchStartPtr < HistoryBuffer)
 		return -2006; /* error */
 
-	MatchInfo->MatchOffset = MatchStartPtr - HistoryBuffer;
-	MatchInfo->ChunkOffset = ChunkBuffer - ReverseMatchLength - HistoryBuffer;
+	const intptr_t diff = MatchStartPtr - HistoryBuffer;
+	const intptr_t cdiff = ChunkBuffer - ReverseMatchLength - HistoryBuffer;
+	if ((diff > UINT32_MAX) || (diff < 0) || (cdiff < 0) || (cdiff > UINT32_MAX))
+		return -1;
+	MatchInfo->MatchOffset = (UINT32)diff;
+	MatchInfo->ChunkOffset = (UINT32)cdiff;
 	MatchInfo->MatchLength = TotalMatchLength;
 	return (int)TotalMatchLength;
 }
@@ -513,12 +513,12 @@ static int xcrush_find_all_matches(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, UINT32
 	int status = 0;
 	UINT32 ChunkIndex = 0;
 	UINT32 ChunkCount = 0;
-	XCRUSH_CHUNK* chunk = NULL;
+	XCRUSH_CHUNK* chunk = nullptr;
 	UINT32 MatchLength = 0;
 	UINT32 MaxMatchLength = 0;
 	UINT32 PrevMatchEnd = 0;
-	XCRUSH_SIGNATURE* Signatures = NULL;
-	XCRUSH_MATCH_INFO MaxMatchInfo = { 0 };
+	XCRUSH_SIGNATURE* Signatures = nullptr;
+	XCRUSH_MATCH_INFO MaxMatchInfo = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(xcrush);
 
@@ -526,7 +526,7 @@ static int xcrush_find_all_matches(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, UINT32
 
 	for (UINT32 i = 0; i < SignatureIndex; i++)
 	{
-		XCRUSH_MATCH_INFO MatchInfo = { 0 };
+		XCRUSH_MATCH_INFO MatchInfo = WINPR_C_ARRAY_INIT;
 		UINT32 offset = SrcOffset + HistoryOffset;
 
 		if (!Signatures[i].size)
@@ -616,10 +616,10 @@ static int xcrush_optimize_matches(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush)
 	UINT32 TotalMatchLength = 0;
 	UINT32 OriginalMatchCount = 0;
 	UINT32 OptimizedMatchCount = 0;
-	XCRUSH_MATCH_INFO* OriginalMatch = NULL;
-	XCRUSH_MATCH_INFO* OptimizedMatch = NULL;
-	XCRUSH_MATCH_INFO* OriginalMatches = NULL;
-	XCRUSH_MATCH_INFO* OptimizedMatches = NULL;
+	XCRUSH_MATCH_INFO* OriginalMatch = nullptr;
+	XCRUSH_MATCH_INFO* OptimizedMatch = nullptr;
+	XCRUSH_MATCH_INFO* OriginalMatches = nullptr;
+	XCRUSH_MATCH_INFO* OptimizedMatches = nullptr;
 
 	WINPR_ASSERT(xcrush);
 
@@ -678,29 +678,28 @@ static int xcrush_generate_output(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
                                   BYTE* WINPR_RESTRICT OutputBuffer, UINT32 OutputSize,
                                   UINT32 HistoryOffset, UINT32* WINPR_RESTRICT pDstSize)
 {
-	BYTE* Literals = NULL;
-	BYTE* OutputEnd = NULL;
+	BYTE* Literals = nullptr;
+	BYTE* OutputEnd = nullptr;
 	UINT32 MatchIndex = 0;
 	UINT32 MatchOffset = 0;
 	UINT16 MatchLength = 0;
-	UINT32 MatchCount = 0;
 	UINT32 CurrentOffset = 0;
 	UINT32 MatchOffsetDiff = 0;
 	UINT32 HistoryOffsetDiff = 0;
-	RDP61_MATCH_DETAILS* MatchDetails = NULL;
+	RDP61_MATCH_DETAILS* MatchDetails = nullptr;
 
 	WINPR_ASSERT(xcrush);
 	WINPR_ASSERT(OutputBuffer);
 	WINPR_ASSERT(OutputSize >= 2);
 	WINPR_ASSERT(pDstSize);
 
-	MatchCount = xcrush->OptimizedMatchCount;
+	const UINT32 MatchCount = xcrush->OptimizedMatchCount;
 	OutputEnd = &OutputBuffer[OutputSize];
 
 	if (&OutputBuffer[2] >= &OutputBuffer[OutputSize])
 		return -6001; /* error */
 
-	Data_Write_UINT16(OutputBuffer, MatchCount);
+	winpr_Data_Write_UINT16(OutputBuffer, WINPR_ASSERTING_INT_CAST(UINT16, MatchCount));
 	MatchDetails = (RDP61_MATCH_DETAILS*)&OutputBuffer[2];
 	Literals = (BYTE*)&MatchDetails[MatchCount];
 
@@ -709,12 +708,18 @@ static int xcrush_generate_output(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 
 	for (MatchIndex = 0; MatchIndex < MatchCount; MatchIndex++)
 	{
-		Data_Write_UINT16(&MatchDetails[MatchIndex].MatchLength,
-		                  xcrush->OptimizedMatches[MatchIndex].MatchLength);
-		Data_Write_UINT16(&MatchDetails[MatchIndex].MatchOutputOffset,
-		                  xcrush->OptimizedMatches[MatchIndex].MatchOffset - HistoryOffset);
-		Data_Write_UINT32(&MatchDetails[MatchIndex].MatchHistoryOffset,
-		                  xcrush->OptimizedMatches[MatchIndex].ChunkOffset);
+		const UINT32 len = xcrush->OptimizedMatches[MatchIndex].MatchLength;
+		winpr_Data_Write_UINT16(&MatchDetails[MatchIndex].MatchLength,
+		                        WINPR_ASSERTING_INT_CAST(UINT16, len));
+
+		const UINT32 moff = xcrush->OptimizedMatches[MatchIndex].MatchOffset;
+		WINPR_ASSERT(moff >= HistoryOffset);
+
+		const UINT32 off = moff - HistoryOffset;
+		winpr_Data_Write_UINT16(&MatchDetails[MatchIndex].MatchOutputOffset,
+		                        WINPR_ASSERTING_INT_CAST(UINT16, off));
+		winpr_Data_Write_UINT32(&MatchDetails[MatchIndex].MatchHistoryOffset,
+		                        xcrush->OptimizedMatches[MatchIndex].ChunkOffset);
 	}
 
 	CurrentOffset = HistoryOffset;
@@ -754,17 +759,22 @@ static int xcrush_generate_output(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 		return -6006; /* error */
 
 	CopyMemory(Literals, &xcrush->HistoryBuffer[CurrentOffset], HistoryOffsetDiff);
-	*pDstSize = Literals + HistoryOffsetDiff - OutputBuffer;
+	const intptr_t diff = Literals + HistoryOffsetDiff - OutputBuffer;
+	if ((diff < 0) || (diff > UINT32_MAX))
+		return -1;
+	*pDstSize = (UINT32)diff;
 	return 1;
 }
 
-static INLINE size_t xcrush_copy_bytes_no_overlap(BYTE* WINPR_RESTRICT dst,
+static inline size_t xcrush_copy_bytes_no_overlap(BYTE* WINPR_RESTRICT dst,
                                                   const BYTE* WINPR_RESTRICT src, size_t num)
 {
 	// src and dst overlaps
-	// we should copy the area that doesn't overlap repeatly
-	const size_t diff = (dst > src) ? dst - src : src - dst;
-	const size_t rest = num % diff;
+	// we should copy the area that doesn't overlap repeatedly
+	const size_t diff = WINPR_ASSERTING_INT_CAST(size_t, (dst > src) ? dst - src : src - dst);
+	size_t rest = 0;
+	if (diff != 0)
+		rest = num % diff;
 	const size_t end = num - rest;
 
 	for (size_t a = 0; a < end; a += diff)
@@ -776,7 +786,7 @@ static INLINE size_t xcrush_copy_bytes_no_overlap(BYTE* WINPR_RESTRICT dst,
 	return num;
 }
 
-static INLINE size_t xcrush_copy_bytes(BYTE* dst, const BYTE* src, size_t num)
+static inline size_t xcrush_copy_bytes(BYTE* dst, const BYTE* src, size_t num)
 {
 	WINPR_ASSERT(dst);
 	WINPR_ASSERT(src);
@@ -794,21 +804,21 @@ static int xcrush_decompress_l1(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
                                 const BYTE** WINPR_RESTRICT ppDstData,
                                 UINT32* WINPR_RESTRICT pDstSize, UINT32 flags)
 {
-	const BYTE* pSrcEnd = NULL;
-	const BYTE* Literals = NULL;
+	const BYTE* pSrcEnd = nullptr;
+	const BYTE* Literals = nullptr;
 	UINT16 MatchCount = 0;
 	UINT16 MatchIndex = 0;
-	BYTE* OutputPtr = NULL;
+	BYTE* OutputPtr = nullptr;
 	size_t OutputLength = 0;
-	UINT32 OutputOffset = 0;
-	BYTE* HistoryPtr = NULL;
-	BYTE* HistoryBuffer = NULL;
-	BYTE* HistoryBufferEnd = NULL;
+	size_t OutputOffset = 0;
+	BYTE* HistoryPtr = nullptr;
+	BYTE* HistoryBuffer = nullptr;
+	BYTE* HistoryBufferEnd = nullptr;
 	UINT32 HistoryBufferSize = 0;
 	UINT16 MatchLength = 0;
 	UINT16 MatchOutputOffset = 0;
 	UINT32 MatchHistoryOffset = 0;
-	const RDP61_MATCH_DETAILS* MatchDetails = NULL;
+	const RDP61_MATCH_DETAILS* MatchDetails = nullptr;
 
 	WINPR_ASSERT(xcrush);
 
@@ -840,7 +850,7 @@ static int xcrush_decompress_l1(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 		if ((pSrcData + 2) > pSrcEnd)
 			return -1003;
 
-		Data_Read_UINT16(pSrcData, MatchCount);
+		MatchCount = winpr_Data_Get_UINT16(pSrcData);
 		MatchDetails = (const RDP61_MATCH_DETAILS*)&pSrcData[2];
 		Literals = (const BYTE*)&MatchDetails[MatchCount];
 		OutputOffset = 0;
@@ -850,9 +860,10 @@ static int xcrush_decompress_l1(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 
 		for (MatchIndex = 0; MatchIndex < MatchCount; MatchIndex++)
 		{
-			Data_Read_UINT16(&MatchDetails[MatchIndex].MatchLength, MatchLength);
-			Data_Read_UINT16(&MatchDetails[MatchIndex].MatchOutputOffset, MatchOutputOffset);
-			Data_Read_UINT32(&MatchDetails[MatchIndex].MatchHistoryOffset, MatchHistoryOffset);
+			MatchLength = winpr_Data_Get_UINT16(&MatchDetails[MatchIndex].MatchLength);
+			MatchOutputOffset = winpr_Data_Get_UINT16(&MatchDetails[MatchIndex].MatchOutputOffset);
+			MatchHistoryOffset =
+			    winpr_Data_Get_UINT32(&MatchDetails[MatchIndex].MatchHistoryOffset);
 
 			if (MatchOutputOffset < OutputOffset)
 				return -1005;
@@ -897,7 +908,7 @@ static int xcrush_decompress_l1(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 
 	if (Literals < pSrcEnd)
 	{
-		OutputLength = pSrcEnd - Literals;
+		OutputLength = WINPR_ASSERTING_INT_CAST(size_t, pSrcEnd - Literals);
 
 		if ((&HistoryPtr[OutputLength] >= HistoryBufferEnd) || (&Literals[OutputLength] > pSrcEnd))
 			return -1012;
@@ -906,8 +917,15 @@ static int xcrush_decompress_l1(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 		HistoryPtr += OutputLength;
 	}
 
-	xcrush->HistoryOffset = HistoryPtr - HistoryBuffer;
-	*pDstSize = HistoryPtr - xcrush->HistoryPtr;
+	const intptr_t diff = HistoryPtr - HistoryBuffer;
+	if ((diff < 0) || (diff > UINT32_MAX))
+		return -1;
+	xcrush->HistoryOffset = (UINT32)diff;
+
+	const intptr_t sizediff = HistoryPtr - xcrush->HistoryPtr;
+	if ((sizediff < 0) || (sizediff > UINT32_MAX))
+		return -1;
+	*pDstSize = (UINT32)sizediff;
 	*ppDstData = xcrush->HistoryPtr;
 	return 1;
 }
@@ -918,7 +936,7 @@ int xcrush_decompress(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, const BYTE* WINPR_R
 {
 	int status = 0;
 	UINT32 DstSize = 0;
-	const BYTE* pDstData = NULL;
+	const BYTE* pDstData = nullptr;
 	BYTE Level1ComprFlags = 0;
 	BYTE Level2ComprFlags = 0;
 
@@ -967,8 +985,8 @@ static int xcrush_compress_l1(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush,
 	int status = 0;
 	UINT32 Flags = 0;
 	UINT32 HistoryOffset = 0;
-	BYTE* HistoryPtr = NULL;
-	BYTE* HistoryBuffer = NULL;
+	BYTE* HistoryPtr = nullptr;
+	BYTE* HistoryBuffer = nullptr;
 	UINT32 SignatureIndex = 0;
 
 	WINPR_ASSERT(xcrush);
@@ -1041,10 +1059,10 @@ int xcrush_compress(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, const BYTE* WINPR_RES
 {
 	int status = 0;
 	UINT32 DstSize = 0;
-	BYTE* pDstData = NULL;
-	const BYTE* CompressedData = NULL;
+	BYTE* pDstData = nullptr;
+	const BYTE* CompressedData = nullptr;
 	UINT32 CompressedDataSize = 0;
-	BYTE* OriginalData = NULL;
+	BYTE* OriginalData = nullptr;
 	UINT32 OriginalDataSize = 0;
 	UINT32 Level1ComprFlags = 0;
 	UINT32 Level2ComprFlags = 0;
@@ -1095,7 +1113,7 @@ int xcrush_compress(XCRUSH_CONTEXT* WINPR_RESTRICT xcrush, const BYTE* WINPR_RES
 
 	if (CompressedDataSize > 50)
 	{
-		const BYTE* pUnusedDstData = NULL;
+		const BYTE* pUnusedDstData = nullptr;
 		status = mppc_compress(xcrush->mppc, CompressedData, CompressedDataSize, pDstData,
 		                       &pUnusedDstData, &DstSize, &Level2ComprFlags);
 	}
@@ -1185,7 +1203,7 @@ XCRUSH_CONTEXT* xcrush_context_new(BOOL Compressor)
 fail:
 	xcrush_context_free(xcrush);
 
-	return NULL;
+	return nullptr;
 }
 
 void xcrush_context_free(XCRUSH_CONTEXT* xcrush)

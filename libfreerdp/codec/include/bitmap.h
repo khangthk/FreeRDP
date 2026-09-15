@@ -19,29 +19,34 @@
  * limitations under the License.
  */
 
+#include <winpr/assert.h>
+#include <winpr/cast.h>
+#include <winpr/wtypes.h>
+
 /* do not compile the file directly */
 
 /**
  * Write a foreground/background image to a destination buffer.
  */
-static INLINE BYTE* WRITEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
+WINPR_ATTR_NODISCARD
+static inline BYTE* WRITEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
                                    const BYTE* WINPR_RESTRICT pbDestEnd, UINT32 rowDelta,
-                                   BYTE bitmask, PIXEL fgPel, INT32 cBits)
+                                   BYTE bitmask, PIXEL fgPel, UINT32 cBits)
 {
-	PIXEL xorPixel;
+	PIXEL xorPixel = 0;
 	BYTE mask = 0x01;
 
 	if (cBits > 8)
 	{
-		WLog_ERR(TAG, "cBits %d > 8", cBits);
-		return NULL;
+		WLog_ERR(TAG, "cBits %" PRIu32 " > 8", cBits);
+		return nullptr;
 	}
 
 	if (!ENSURE_CAPACITY(pbDest, pbDestEnd, cBits))
-		return NULL;
+		return nullptr;
 
 	UNROLL(cBits, {
-		UINT32 data;
+		PIXEL data = 0;
 		DESTREADPIXEL(xorPixel, pbDest - rowDelta);
 
 		if (bitmask & mask)
@@ -50,7 +55,7 @@ static INLINE BYTE* WRITEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
 			data = xorPixel;
 
 		DESTWRITEPIXEL(pbDest, data);
-		mask = mask << 1;
+		mask = WINPR_ASSERTING_INT_CAST(BYTE, (mask << 1) & 0xFF);
 	});
 	return pbDest;
 }
@@ -59,7 +64,8 @@ static INLINE BYTE* WRITEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
  * Write a foreground/background image to a destination buffer
  * for the first line of compressed data.
  */
-static INLINE BYTE* WRITEFIRSTLINEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
+WINPR_ATTR_NODISCARD
+static inline BYTE* WRITEFIRSTLINEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
                                             const BYTE* WINPR_RESTRICT pbDestEnd, BYTE bitmask,
                                             PIXEL fgPel, UINT32 cBits)
 {
@@ -67,15 +73,15 @@ static INLINE BYTE* WRITEFIRSTLINEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
 
 	if (cBits > 8)
 	{
-		WLog_ERR(TAG, "cBits %d > 8", cBits);
-		return NULL;
+		WLog_ERR(TAG, "cBits %" PRIu32 " > 8", cBits);
+		return nullptr;
 	}
 
 	if (!ENSURE_CAPACITY(pbDest, pbDestEnd, cBits))
-		return NULL;
+		return nullptr;
 
 	UNROLL(cBits, {
-		UINT32 data;
+		PIXEL data;
 
 		if (bitmask & mask)
 			data = fgPel;
@@ -83,7 +89,7 @@ static INLINE BYTE* WRITEFIRSTLINEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
 			data = BLACK_PIXEL;
 
 		DESTWRITEPIXEL(pbDest, data);
-		mask = mask << 1;
+		mask = WINPR_ASSERTING_INT_CAST(BYTE, (mask << 1) & 0xFF);
 	});
 	return pbDest;
 }
@@ -91,25 +97,22 @@ static INLINE BYTE* WRITEFIRSTLINEFGBGIMAGE(BYTE* WINPR_RESTRICT pbDest,
 /**
  * Decompress an RLE compressed bitmap.
  */
-static INLINE BOOL RLEDECOMPRESS(const BYTE* WINPR_RESTRICT pbSrcBuffer, UINT32 cbSrcBuffer,
+WINPR_ATTR_NODISCARD
+static inline BOOL RLEDECOMPRESS(const BYTE* WINPR_RESTRICT pbSrcBuffer, UINT32 cbSrcBuffer,
                                  BYTE* WINPR_RESTRICT pbDestBuffer, UINT32 rowDelta, UINT32 width,
                                  UINT32 height)
 {
-#if defined(WITH_DEBUG_CODECS)
-	char sbuffer[128] = { 0 };
-#endif
 	const BYTE* pbSrc = pbSrcBuffer;
-	const BYTE* pbEnd;
-	const BYTE* pbDestEnd;
 	BYTE* pbDest = pbDestBuffer;
-	PIXEL temp;
+	PIXEL temp = 0;
 	PIXEL fgPel = WHITE_PIXEL;
 	BOOL fInsertFgPel = FALSE;
 	BOOL fFirstLine = TRUE;
-	BYTE bitmask;
-	PIXEL pixelA, pixelB;
-	UINT32 runLength;
-	UINT32 code;
+	BYTE bitmask = 0;
+	PIXEL pixelA = 0;
+	PIXEL pixelB = 0;
+	UINT32 runLength = 0;
+	UINT32 code = 0;
 	UINT32 advance = 0;
 	RLEEXTRA
 
@@ -122,13 +125,14 @@ static INLINE BOOL RLEDECOMPRESS(const BYTE* WINPR_RESTRICT pbSrcBuffer, UINT32 
 
 	if (!pbSrcBuffer || !pbDestBuffer)
 	{
-		WLog_ERR(TAG, "Invalid arguments: pbSrcBuffer=%p, pbDestBuffer=%p", pbSrcBuffer,
-		         pbDestBuffer);
+		WLog_ERR(TAG, "Invalid arguments: pbSrcBuffer=%p, pbDestBuffer=%p",
+		         WINPR_CXX_COMPAT_CAST(const void*, pbSrcBuffer),
+		         WINPR_CXX_COMPAT_CAST(const void*, pbDestBuffer));
 		return FALSE;
 	}
 
-	pbEnd = pbSrcBuffer + cbSrcBuffer;
-	pbDestEnd = pbDestBuffer + rowDelta * height;
+	const BYTE* pbEnd = &pbSrcBuffer[cbSrcBuffer];
+	const BYTE* pbDestEnd = &pbDestBuffer[1ULL * rowDelta * height];
 
 	while (pbSrc < pbEnd)
 	{
@@ -149,8 +153,8 @@ static INLINE BOOL RLEDECOMPRESS(const BYTE* WINPR_RESTRICT pbSrcBuffer, UINT32 
 		code = ExtractCodeId(*pbSrc);
 
 #if defined(WITH_DEBUG_CODECS)
-		WLog_VRB(TAG, "pbSrc=%p code=%s, rem=%" PRIuz, pbSrc,
-		         rle_code_str_buffer(code, sbuffer, sizeof(sbuffer)), pbEnd - pbSrc);
+		WLog_VRB(TAG, "pbSrc=%p code=%s, rem=%ld", (const void*)pbSrc, rle_code_str(code),
+		         pbEnd - pbSrc);
 #endif
 
 		/* Handle Background Run Orders. */
@@ -443,7 +447,9 @@ static INLINE BOOL RLEDECOMPRESS(const BYTE* WINPR_RESTRICT pbSrcBuffer, UINT32 
 
 			default:
 				WLog_ERR(TAG, "invalid code 0x%08" PRIx32 ", pbSrcBuffer=%p, pbSrc=%p, pbEnd=%p",
-				         code, pbSrcBuffer, pbSrc, pbEnd);
+				         code, WINPR_CXX_COMPAT_CAST(const void*, pbSrcBuffer),
+				         WINPR_CXX_COMPAT_CAST(const void*, pbSrc),
+				         WINPR_CXX_COMPAT_CAST(const void*, pbEnd));
 				return FALSE;
 		}
 	}

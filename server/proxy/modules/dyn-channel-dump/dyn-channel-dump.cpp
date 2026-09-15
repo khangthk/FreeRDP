@@ -57,7 +57,7 @@ static constexpr char plugin_name[] = "dyn-channel-dump";
 static constexpr char plugin_desc[] =
     "This plugin dumps configurable dynamic channel data to a file.";
 
-static const std::vector<std::string>& plugin_static_intercept()
+[[nodiscard]] static const std::vector<std::string>& plugin_static_intercept()
 {
 	static std::vector<std::string> vec;
 	if (vec.empty())
@@ -101,9 +101,9 @@ class ChannelData
 		_base /= str;
 	}
 
-	bool add(const std::string& name, bool back)
+	bool add(const std::string& name, WINPR_ATTR_UNUSED bool back)
 	{
-		std::lock_guard<std::mutex> guard(_mux);
+		std::scoped_lock guard(_mux);
 		if (_map.find(name) == _map.end())
 		{
 			WLog_INFO(TAG, "adding '%s' to dump list", name.c_str());
@@ -114,7 +114,7 @@ class ChannelData
 
 	std::ofstream stream(const std::string& name, bool back)
 	{
-		std::lock_guard<std::mutex> guard(_mux);
+		std::scoped_lock guard(_mux);
 		auto& atom = _map[name];
 		auto count = atom++;
 		auto path = filepath(name, back, count);
@@ -204,7 +204,7 @@ class ChannelData
 	uint64_t _session_id;
 };
 
-static PluginData* dump_get_plugin_data(proxyPlugin* plugin)
+[[nodiscard]] static PluginData* dump_get_plugin_data(proxyPlugin* plugin)
 {
 	WINPR_ASSERT(plugin);
 
@@ -213,7 +213,7 @@ static PluginData* dump_get_plugin_data(proxyPlugin* plugin)
 	return plugindata;
 }
 
-static ChannelData* dump_get_plugin_data(proxyPlugin* plugin, proxyData* pdata)
+[[nodiscard]] static ChannelData* dump_get_plugin_data(proxyPlugin* plugin, proxyData* pdata)
 {
 	WINPR_ASSERT(plugin);
 	WINPR_ASSERT(pdata);
@@ -228,7 +228,8 @@ static ChannelData* dump_get_plugin_data(proxyPlugin* plugin, proxyData* pdata)
 	return static_cast<ChannelData*>(mgr->GetPluginData(mgr, plugin_name, pdata));
 }
 
-static BOOL dump_set_plugin_data(proxyPlugin* plugin, proxyData* pdata, ChannelData* data)
+[[nodiscard]] static BOOL dump_set_plugin_data(proxyPlugin* plugin, proxyData* pdata,
+                                               ChannelData* data)
 {
 	WINPR_ASSERT(plugin);
 	WINPR_ASSERT(pdata);
@@ -246,7 +247,8 @@ static BOOL dump_set_plugin_data(proxyPlugin* plugin, proxyData* pdata, ChannelD
 	return mgr->SetPluginData(mgr, plugin_name, pdata, data);
 }
 
-static bool dump_channel_enabled(proxyPlugin* plugin, proxyData* pdata, const std::string& name)
+[[nodiscard]] static bool dump_channel_enabled(proxyPlugin* plugin, proxyData* pdata,
+                                               const std::string& name)
 {
 	auto config = dump_get_plugin_data(plugin, pdata);
 	if (!config)
@@ -257,7 +259,8 @@ static bool dump_channel_enabled(proxyPlugin* plugin, proxyData* pdata, const st
 	return config->dump_enabled(name);
 }
 
-static BOOL dump_dyn_channel_intercept_list(proxyPlugin* plugin, proxyData* pdata, void* arg)
+[[nodiscard]] static BOOL dump_dyn_channel_intercept_list(proxyPlugin* plugin, proxyData* pdata,
+                                                          void* arg)
 {
 	auto data = static_cast<proxyChannelToInterceptData*>(arg);
 
@@ -285,7 +288,9 @@ static BOOL dump_dyn_channel_intercept_list(proxyPlugin* plugin, proxyData* pdat
 	return TRUE;
 }
 
-static BOOL dump_static_channel_intercept_list(proxyPlugin* plugin, proxyData* pdata, void* arg)
+[[nodiscard]] static BOOL dump_static_channel_intercept_list([[maybe_unused]] proxyPlugin* plugin,
+                                                             [[maybe_unused]] proxyData* pdata,
+                                                             void* arg)
 {
 	auto data = static_cast<proxyChannelToInterceptData*>(arg);
 
@@ -304,7 +309,8 @@ static BOOL dump_static_channel_intercept_list(proxyPlugin* plugin, proxyData* p
 	return TRUE;
 }
 
-static BOOL dump_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, void* arg)
+[[nodiscard]] static BOOL dump_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata,
+                                                     void* arg)
 {
 	auto data = static_cast<proxyDynChannelInterceptData*>(arg);
 
@@ -351,7 +357,8 @@ static BOOL dump_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, vo
 	return TRUE;
 }
 
-static std::vector<std::string> split(const std::string& input, const std::string& regex)
+[[nodiscard]] static std::vector<std::string> split(const std::string& input,
+                                                    const std::string& regex)
 {
 	// passing -1 as the submatch index parameter performs splitting
 	std::regex re(regex);
@@ -360,7 +367,8 @@ static std::vector<std::string> split(const std::string& input, const std::strin
 	return { first, last };
 }
 
-static BOOL dump_session_started(proxyPlugin* plugin, proxyData* pdata, void* /*unused*/)
+[[nodiscard]] static BOOL dump_session_started(proxyPlugin* plugin, proxyData* pdata,
+                                               void* /*unused*/)
 {
 	WINPR_ASSERT(plugin);
 	WINPR_ASSERT(pdata);
@@ -396,13 +404,14 @@ static BOOL dump_session_started(proxyPlugin* plugin, proxyData* pdata, void* /*
 		return FALSE;
 	}
 
-	dump_set_plugin_data(plugin, pdata, cfg);
+	if (!dump_set_plugin_data(plugin, pdata, cfg))
+		return FALSE;
 
 	WLog_DBG(TAG, "starting session dump %" PRIu64, cfg->session());
 	return TRUE;
 }
 
-static BOOL dump_session_end(proxyPlugin* plugin, proxyData* pdata, void* /*unused*/)
+[[nodiscard]] static BOOL dump_session_end(proxyPlugin* plugin, proxyData* pdata, void* /*unused*/)
 {
 	WINPR_ASSERT(plugin);
 	WINPR_ASSERT(pdata);
@@ -410,11 +419,10 @@ static BOOL dump_session_end(proxyPlugin* plugin, proxyData* pdata, void* /*unus
 	auto cfg = dump_get_plugin_data(plugin, pdata);
 	if (cfg)
 		WLog_DBG(TAG, "ending session dump %" PRIu64, cfg->session());
-	dump_set_plugin_data(plugin, pdata, nullptr);
-	return TRUE;
+	return dump_set_plugin_data(plugin, pdata, nullptr);
 }
 
-static BOOL dump_unload(proxyPlugin* plugin)
+[[nodiscard]] static BOOL dump_unload(proxyPlugin* plugin)
 {
 	if (!plugin)
 		return TRUE;
@@ -422,10 +430,8 @@ static BOOL dump_unload(proxyPlugin* plugin)
 	return TRUE;
 }
 
-extern "C" FREERDP_API BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager,
-                                                     void* userdata);
-
-BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userdata)
+[[nodiscard]] static BOOL int_proxy_module_entry_point(proxyPluginsManager* plugins_manager,
+                                                       void* userdata)
 {
 	proxyPlugin plugin = {};
 
@@ -447,3 +453,28 @@ BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userda
 
 	return plugins_manager->RegisterPlugin(plugins_manager, &plugin);
 }
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+#if defined(BUILD_SHARED_LIBS)
+	[[nodiscard]]
+	FREERDP_API BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userdata);
+
+	BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userdata)
+	{
+		return int_proxy_module_entry_point(plugins_manager, userdata);
+	}
+#else
+[[nodiscard]]
+FREERDP_API BOOL dyn_channel_dump_proxy_module_entry_point(proxyPluginsManager* plugins_manager,
+                                                           void* userdata);
+BOOL dyn_channel_dump_proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userdata)
+{
+	return int_proxy_module_entry_point(plugins_manager, userdata);
+}
+#endif
+#ifdef __cplusplus
+}
+#endif

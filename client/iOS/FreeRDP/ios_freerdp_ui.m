@@ -19,9 +19,34 @@
 #pragma mark Certificate authentication
 
 static void ios_resize_display_buffer(mfInfo *mfi);
-static BOOL ios_ui_authenticate_raw(freerdp *instance, char **username, char **password,
-                                    char **domain, const char *title)
+
+BOOL ios_ui_authenticate_ex(freerdp *instance, char **username, char **password, char **domain,
+                            rdp_auth_reason reason)
 {
+	const char *target = freerdp_settings_get_server_name(instance->context->settings);
+	switch (reason)
+	{
+		case AUTH_RDSTLS:
+		case AUTH_NLA:
+			break;
+
+		case AUTH_TLS:
+		case AUTH_RDP:
+		case AUTH_SMARTCARD_PIN: /* in this case password is pin code */
+		case AUTH_FIDO_PIN:
+			if ((*username) && (*password))
+				return TRUE;
+			break;
+		case GW_AUTH_HTTP:
+		case GW_AUTH_RDG:
+		case GW_AUTH_RPC:
+			target =
+			    freerdp_settings_get_string(instance->context->settings, FreeRDP_GatewayHostname);
+			break;
+		default:
+			break;
+	}
+
 	mfInfo *mfi = MFI_FROM_INSTANCE(instance);
 	NSMutableDictionary *params = [NSMutableDictionary
 	    dictionaryWithObjectsAndKeys:(*username) ? [NSString stringWithUTF8String:*username] : @"",
@@ -29,10 +54,7 @@ static BOOL ios_ui_authenticate_raw(freerdp *instance, char **username, char **p
 	                                 (*password) ? [NSString stringWithUTF8String:*password] : @"",
 	                                 @"password",
 	                                 (*domain) ? [NSString stringWithUTF8String:*domain] : @"",
-	                                 @"domain",
-	                                 [NSString stringWithUTF8String:freerdp_settings_get_string(
-	                                                                    instance->context->settings,
-	                                                                    FreeRDP_ServerHostname)],
+	                                 @"domain", [NSString stringWithUTF8String:target],
 	                                 @"hostname", // used for the auth prompt message; not changed
 	                                 nil];
 	// request auth UI
@@ -68,16 +90,6 @@ static BOOL ios_ui_authenticate_raw(freerdp *instance, char **username, char **p
 	}
 
 	return TRUE;
-}
-
-BOOL ios_ui_authenticate(freerdp *instance, char **username, char **password, char **domain)
-{
-	return ios_ui_authenticate_raw(instance, username, password, domain, "");
-}
-
-BOOL ios_ui_gw_authenticate(freerdp *instance, char **username, char **password, char **domain)
-{
-	return ios_ui_authenticate_raw(instance, username, password, domain, "gateway");
 }
 
 DWORD ios_ui_verify_certificate_ex(freerdp *instance, const char *host, UINT16 port,
@@ -129,20 +141,50 @@ DWORD ios_ui_verify_changed_certificate_ex(freerdp *instance, const char *host, 
 
 BOOL ios_ui_begin_paint(rdpContext *context)
 {
+	WINPR_ASSERT(context);
+
 	rdpGdi *gdi = context->gdi;
-	gdi->primary->hdc->hwnd->invalid->null = TRUE;
+	WINPR_ASSERT(gdi);
+	WINPR_ASSERT(gdi->primary);
+
+	HGDI_DC hdc = gdi->primary->hdc;
+	WINPR_ASSERT(hdc);
+	if (!hdc->hwnd)
+		return TRUE;
+
+	HGDI_WND hwnd = hdc->hwnd;
+	if (!hwnd->invalid)
+		return TRUE;
+	hwnd->invalid->null = TRUE;
 	return TRUE;
 }
 
 BOOL ios_ui_end_paint(rdpContext *context)
 {
-	mfInfo *mfi = MFI_FROM_INSTANCE(context->instance);
-	rdpGdi *gdi = context->gdi;
-	CGRect dirty_rect =
-	    CGRectMake(gdi->primary->hdc->hwnd->invalid->x, gdi->primary->hdc->hwnd->invalid->y,
-	               gdi->primary->hdc->hwnd->invalid->w, gdi->primary->hdc->hwnd->invalid->h);
+	WINPR_ASSERT(context);
 
-	if (!gdi->primary->hdc->hwnd->invalid->null)
+	mfInfo *mfi = MFI_FROM_INSTANCE(context->instance);
+	WINPR_ASSERT(mfi);
+
+	rdpGdi *gdi = context->gdi;
+	WINPR_ASSERT(gdi);
+	WINPR_ASSERT(gdi->primary);
+
+	HGDI_DC hdc = gdi->primary->hdc;
+	WINPR_ASSERT(hdc);
+	if (!hdc->hwnd)
+		return TRUE;
+
+	HGDI_WND hwnd = hdc->hwnd;
+	WINPR_ASSERT(hwnd->invalid || (hwnd->ninvalid == 0));
+
+	if (hwnd->invalid->null)
+		return TRUE;
+
+	CGRect dirty_rect =
+	    CGRectMake(hwnd->invalid->x, hwnd->invalid->y, hwnd->invalid->w, hwnd->invalid->h);
+
+	if (!hwnd->invalid->null)
 		[mfi->session performSelectorOnMainThread:@selector(setNeedsDisplayInRectAsValue:)
 		                               withObject:[NSValue valueWithCGRect:dirty_rect]
 		                            waitUntilDone:NO];
@@ -204,7 +246,7 @@ void ios_resize_display_buffer(mfInfo *mfi)
 {
 	// Release the old context in a thread-safe manner
 	CGContextRef old_context = mfi->bitmap_context;
-	mfi->bitmap_context = NULL;
+	mfi->bitmap_context = nullptr;
 	CGContextRelease(old_context);
 	// Create the new context
 	ios_create_bitmap_context(mfi);

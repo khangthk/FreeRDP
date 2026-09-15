@@ -23,9 +23,12 @@
 #define FREERDP_SERVER_PROXY_PFCLIENT_H
 
 #include <freerdp/freerdp.h>
+#include <freerdp/server/proxy/proxy_context.h>
 #include <winpr/wtypes.h>
 
+#include <freerdp/private/proxy_client.h>
+
 int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
-DWORD WINAPI pf_client_start(LPVOID arg);
+WINPR_ATTR_NODISCARD DWORD WINAPI pf_client_start(LPVOID arg);
 
 #endif /* FREERDP_SERVER_PROXY_PFCLIENT_H */

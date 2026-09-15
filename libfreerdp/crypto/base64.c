@@ -302,28 +302,27 @@ static const signed char dec_base64[] = {
 	-1, /* 127        177	7F	01111111	DEL	&#127;	 	Delete */
 };
 
-static INLINE char* base64_encode_ex(const BYTE* WINPR_RESTRICT alphabet,
+static inline char* base64_encode_ex(const BYTE* WINPR_RESTRICT alphabet,
+                                     WINPR_ATTR_UNUSED size_t alphabetCount,
                                      const BYTE* WINPR_RESTRICT data, size_t length, BOOL pad,
                                      BOOL crLf, size_t lineSize)
 {
-	int c = 0;
-	const BYTE* q = NULL;
-	char* p = NULL;
-	char* ret = NULL;
-	int blocks = 0;
+	size_t blocks = 0;
 	size_t outLen = (length + 3) * 4 / 3;
 	size_t extra = 0;
 	if (crLf)
 	{
 		size_t nCrLf = (outLen + lineSize - 1) / lineSize;
-		extra = nCrLf * 2;
+		extra = nCrLf * 2ull;
 	}
 	size_t outCounter = 0;
 
-	q = data;
-	p = ret = (char*)malloc(outLen + extra + 1ull);
+	const BYTE* q = data;
+	BYTE* p = malloc(outLen + extra + 1ull);
 	if (!p)
-		return NULL;
+		return nullptr;
+
+	char* ret = (char*)p;
 
 	/* b1, b2, b3 are input bytes
 	 *
@@ -339,14 +338,23 @@ static INLINE char* base64_encode_ex(const BYTE* WINPR_RESTRICT alphabet,
 
 	/* first treat complete blocks */
 	blocks = length - (length % 3);
-	for (int i = 0; i < blocks; i += 3, q += 3)
+	for (size_t i = 0; i < blocks; i += 3, q += 3)
 	{
-		c = (q[0] << 16) + (q[1] << 8) + q[2];
+		const unsigned c = ((unsigned)q[0] << 16) + ((unsigned)q[1] << 8) + q[2];
+		const unsigned idx0 = (c & 0x00FC0000) >> 18;
+		const unsigned idx1 = (c & 0x0003F000) >> 12;
+		const unsigned idx2 = (c & 0x00000FC0) >> 6;
+		const unsigned idx3 = c & 0x0000003F;
 
-		*p++ = alphabet[(c & 0x00FC0000) >> 18];
-		*p++ = alphabet[(c & 0x0003F000) >> 12];
-		*p++ = alphabet[(c & 0x00000FC0) >> 6];
-		*p++ = alphabet[c & 0x0000003F];
+		WINPR_ASSERT(idx0 < alphabetCount);
+		WINPR_ASSERT(idx1 < alphabetCount);
+		WINPR_ASSERT(idx2 < alphabetCount);
+		WINPR_ASSERT(idx3 < alphabetCount);
+
+		*p++ = alphabet[idx0];
+		*p++ = alphabet[idx1];
+		*p++ = alphabet[idx2];
+		*p++ = alphabet[idx3];
 
 		outCounter += 4;
 		if (crLf && (outCounter % lineSize == 0))
@@ -362,22 +370,42 @@ static INLINE char* base64_encode_ex(const BYTE* WINPR_RESTRICT alphabet,
 		case 0:
 			break;
 		case 1:
-			c = (q[0] << 16);
-			*p++ = alphabet[(c & 0x00FC0000) >> 18];
-			*p++ = alphabet[(c & 0x0003F000) >> 12];
+		{
+			const unsigned c = ((unsigned)q[0] << 16);
+			const unsigned idx0 = (c & 0x00FC0000) >> 18;
+			const unsigned idx1 = (c & 0x0003F000) >> 12;
+
+			WINPR_ASSERT(idx0 < alphabetCount);
+			WINPR_ASSERT(idx1 < alphabetCount);
+
+			*p++ = alphabet[idx0];
+			*p++ = alphabet[idx1];
 			if (pad)
 			{
 				*p++ = '=';
 				*p++ = '=';
 			}
-			break;
+		}
+		break;
 		case 2:
-			c = (q[0] << 16) + (q[1] << 8);
-			*p++ = alphabet[(c & 0x00FC0000) >> 18];
-			*p++ = alphabet[(c & 0x0003F000) >> 12];
-			*p++ = alphabet[(c & 0x00000FC0) >> 6];
+		{
+			const unsigned c = ((unsigned)q[0] << 16) + ((unsigned)q[1] << 8);
+			const unsigned idx0 = (c & 0x00FC0000) >> 18;
+			const unsigned idx1 = (c & 0x0003F000) >> 12;
+			const unsigned idx2 = (c & 0x00000FC0) >> 6;
+
+			WINPR_ASSERT(idx0 < alphabetCount);
+			WINPR_ASSERT(idx1 < alphabetCount);
+			WINPR_ASSERT(idx2 < alphabetCount);
+
+			*p++ = alphabet[idx0];
+			*p++ = alphabet[idx1];
+			*p++ = alphabet[idx2];
 			if (pad)
 				*p++ = '=';
+		}
+		break;
+		default:
 			break;
 	}
 
@@ -391,77 +419,77 @@ static INLINE char* base64_encode_ex(const BYTE* WINPR_RESTRICT alphabet,
 	return ret;
 }
 
-static INLINE char* base64_encode(const BYTE* WINPR_RESTRICT alphabet,
+static inline char* base64_encode(const BYTE* WINPR_RESTRICT alphabet, size_t alphabetCount,
                                   const BYTE* WINPR_RESTRICT data, size_t length, BOOL pad)
 {
-	return base64_encode_ex(alphabet, data, length, pad, FALSE, 64);
+	return base64_encode_ex(alphabet, alphabetCount, data, length, pad, FALSE, 64);
 }
 
-static INLINE int base64_decode_char(const signed char* WINPR_RESTRICT alphabet, char c)
+static inline int base64_decode_char(const signed char* WINPR_RESTRICT alphabet,
+                                     size_t alphabetCount, char c)
 {
-	if (c <= '\0')
+	/* ensure char is signed for this check */
+	const int ic = (int)c;
+	if ((ic <= 0) || ((size_t)ic >= alphabetCount))
 		return -1;
 
 	return alphabet[(size_t)c];
 }
 
-static INLINE void* base64_decode(const signed char* WINPR_RESTRICT alphabet,
+static inline void* base64_decode(const signed char* WINPR_RESTRICT alphabet, size_t alphabetCount,
                                   const char* WINPR_RESTRICT s, size_t length,
                                   size_t* WINPR_RESTRICT data_len, BOOL pad)
 {
-	int n[4];
-	BYTE* q = NULL;
-	BYTE* data = NULL;
-	size_t nBlocks = 0;
-	size_t outputLen = 0;
-	int remainder = length % 4;
+	int n[4] = WINPR_C_ARRAY_INIT;
+	BYTE* data = nullptr;
+	const size_t remainder = length % 4;
 
 	if ((pad && remainder > 0) || (remainder == 1))
-		return NULL;
+		return nullptr;
 
 	if (!pad && remainder)
 		length += 4 - remainder;
 
-	q = data = (BYTE*)malloc(length / 4 * 3 + 1);
+	BYTE* q = data = (BYTE*)malloc(length / 4 * 3 + 1);
 	if (!q)
-		return NULL;
+		return nullptr;
 
 	/* first treat complete blocks */
-	nBlocks = (length / 4);
-	outputLen = 0;
+	const size_t nBlocks = (length / 4);
+	size_t outputLen = 0;
 
 	if (nBlocks < 1)
 	{
 		free(data);
-		return NULL;
+		return nullptr;
 	}
 
 	for (size_t i = 0; i < nBlocks - 1; i++, q += 3)
 	{
-		n[0] = base64_decode_char(alphabet, *s++);
-		n[1] = base64_decode_char(alphabet, *s++);
-		n[2] = base64_decode_char(alphabet, *s++);
-		n[3] = base64_decode_char(alphabet, *s++);
+		n[0] = base64_decode_char(alphabet, alphabetCount, *s++);
+		n[1] = base64_decode_char(alphabet, alphabetCount, *s++);
+		n[2] = base64_decode_char(alphabet, alphabetCount, *s++);
+		n[3] = base64_decode_char(alphabet, alphabetCount, *s++);
 
 		if ((n[0] == -1) || (n[1] == -1) || (n[2] == -1) || (n[3] == -1))
 			goto out_free;
 
-		q[0] = (n[0] << 2) + (n[1] >> 4);
-		q[1] = ((n[1] & 15) << 4) + (n[2] >> 2);
-		q[2] = ((n[2] & 3) << 6) + n[3];
+		q[0] = (BYTE)((n[0] << 2) + (n[1] >> 4));
+		q[1] = (BYTE)(((n[1] & 15) << 4) + (n[2] >> 2));
+		q[2] = (BYTE)(((n[2] & 3) << 6) + n[3]);
 		outputLen += 3;
 	}
 
 	/* treat last block */
-	n[0] = base64_decode_char(alphabet, *s++);
-	n[1] = base64_decode_char(alphabet, *s++);
+	n[0] = base64_decode_char(alphabet, alphabetCount, *s++);
+	n[1] = base64_decode_char(alphabet, alphabetCount, *s++);
 	if ((n[0] == -1) || (n[1] == -1))
 		goto out_free;
 
-	n[2] = remainder == 2 ? -1 : base64_decode_char(alphabet, *s++);
-	n[3] = remainder >= 2 ? -1 : base64_decode_char(alphabet, *s++);
+	n[2] = remainder == 2 ? -1 : base64_decode_char(alphabet, alphabetCount, *s++);
+	n[3] = remainder >= 2 ? -1 : base64_decode_char(alphabet, alphabetCount, *s++);
 
-	q[0] = (n[0] << 2) + (n[1] >> 4);
+	q[0] = (BYTE)((n[0] << 2) + (n[1] >> 4));
 	if (n[2] == -1)
 	{
 		/* XX== */
@@ -469,22 +497,22 @@ static INLINE void* base64_decode(const signed char* WINPR_RESTRICT alphabet,
 		if (n[3] != -1)
 			goto out_free;
 
-		q[1] = ((n[1] & 15) << 4);
+		q[1] = (BYTE)((n[1] & 15) << 4);
 	}
 	else if (n[3] == -1)
 	{
 		/* yyy= */
 		outputLen += 2;
-		q[1] = ((n[1] & 15) << 4) + (n[2] >> 2);
-		q[2] = ((n[2] & 3) << 6);
+		q[1] = (BYTE)(((n[1] & 15) << 4) + (n[2] >> 2));
+		q[2] = (BYTE)((n[2] & 3) << 6);
 	}
 	else
 	{
 		/* XXXX */
 		outputLen += 3;
-		q[0] = (n[0] << 2) + (n[1] >> 4);
-		q[1] = ((n[1] & 15) << 4) + (n[2] >> 2);
-		q[2] = ((n[2] & 3) << 6) + n[3];
+		q[0] = (BYTE)((n[0] << 2) + (n[1] >> 4));
+		q[1] = (BYTE)(((n[1] & 15) << 4) + (n[2] >> 2));
+		q[2] = (BYTE)(((n[2] & 3) << 6) + n[3]);
 	}
 
 	if (data_len)
@@ -494,32 +522,34 @@ static INLINE void* base64_decode(const signed char* WINPR_RESTRICT alphabet,
 	return data;
 out_free:
 	free(data);
-	return NULL;
+	return nullptr;
 }
 
 char* crypto_base64_encode_ex(const BYTE* WINPR_RESTRICT data, size_t length, BOOL withCrLf)
 {
-	return base64_encode_ex(enc_base64, data, length, TRUE, withCrLf, 64);
+	return base64_encode_ex(enc_base64, ARRAYSIZE(enc_base64), data, length, TRUE, withCrLf, 64);
 }
 
 char* crypto_base64_encode(const BYTE* WINPR_RESTRICT data, size_t length)
 {
-	return base64_encode(enc_base64, data, length, TRUE);
+	return base64_encode(enc_base64, ARRAYSIZE(enc_base64), data, length, TRUE);
 }
 
 void crypto_base64_decode(const char* WINPR_RESTRICT enc_data, size_t length,
                           BYTE** WINPR_RESTRICT dec_data, size_t* WINPR_RESTRICT res_length)
 {
-	*dec_data = base64_decode(dec_base64, enc_data, length, res_length, TRUE);
+	*dec_data =
+	    base64_decode(dec_base64, ARRAYSIZE(dec_base64), enc_data, length, res_length, TRUE);
 }
 
 char* crypto_base64url_encode(const BYTE* WINPR_RESTRICT data, size_t length)
 {
-	return base64_encode(enc_base64url, data, length, FALSE);
+	return base64_encode(enc_base64url, ARRAYSIZE(enc_base64url), data, length, FALSE);
 }
 
 void crypto_base64url_decode(const char* WINPR_RESTRICT enc_data, size_t length,
                              BYTE** WINPR_RESTRICT dec_data, size_t* WINPR_RESTRICT res_length)
 {
-	*dec_data = base64_decode(dec_base64url, enc_data, length, res_length, FALSE);
+	*dec_data =
+	    base64_decode(dec_base64url, ARRAYSIZE(dec_base64url), enc_data, length, res_length, FALSE);
 }

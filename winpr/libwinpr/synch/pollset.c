@@ -7,6 +7,10 @@
 #include <winpr/assert.h>
 #include "../log.h"
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #define TAG WINPR_TAG("sync.pollset")
 
 #ifdef WINPR_HAVE_POLL_H
@@ -85,7 +89,7 @@ BOOL pollset_add(WINPR_POLL_SET* set, int fd, ULONG mode)
 {
 	WINPR_ASSERT(set);
 #ifdef WINPR_HAVE_POLL_H
-	struct pollfd* item = NULL;
+	struct pollfd* item = nullptr;
 	if (set->fillIndex == set->size)
 		return FALSE;
 
@@ -140,9 +144,25 @@ int pollset_poll(WINPR_POLL_SET* set, DWORD dwMilliseconds)
 		else
 			timeout = (int)(dueTime - now);
 
-		ret = poll(set->pollset, set->fillIndex, timeout);
+		ret = poll(set->pollset, WINPR_ASSERTING_INT_CAST(nfds_t, set->fillIndex), timeout);
 		if (ret >= 0)
+		{
+#if defined(__EMSCRIPTEN__)
+			/* If we have tried 10 times unsuccessfully we will yield in emscripten so pending event
+			 * handlers might be run */
+			if (ret == 0)
+			{
+				if (++set->yieldCounter > 10)
+				{
+					emscripten_sleep(0);
+					set->yieldCounter = 0;
+				}
+			}
+			else
+				set->yieldCounter = 0;
+#endif
 			return ret;
+		}
 
 		if (errno != EINTR)
 			return -1;
@@ -156,12 +176,12 @@ int pollset_poll(WINPR_POLL_SET* set, DWORD dwMilliseconds)
 		struct timeval staticTimeout;
 		struct timeval* timeout;
 
-		fd_set* rset = NULL;
-		fd_set* wset = NULL;
+		fd_set* rset = nullptr;
+		fd_set* wset = nullptr;
 
 		if (dwMilliseconds == INFINITE)
 		{
-			timeout = NULL;
+			timeout = nullptr;
 		}
 		else
 		{
@@ -184,7 +204,7 @@ int pollset_poll(WINPR_POLL_SET* set, DWORD dwMilliseconds)
 			memcpy(wset, &set->wset_base, sizeof(*wset));
 		}
 
-		ret = select(set->maxFd + 1, rset, wset, NULL, timeout);
+		ret = select(set->maxFd + 1, rset, wset, nullptr, timeout);
 		if (ret >= 0)
 			return ret;
 
@@ -208,7 +228,7 @@ BOOL pollset_isSignaled(WINPR_POLL_SET* set, size_t idx)
 
 	if (idx > set->fillIndex)
 	{
-		WLog_ERR(TAG, "index=%d out of pollset(fillIndex=%" PRIuz ")", idx, set->fillIndex);
+		WLog_ERR(TAG, "index=%" PRIuz " out of pollset(fillIndex=%" PRIuz ")", idx, set->fillIndex);
 		return FALSE;
 	}
 
@@ -235,7 +255,7 @@ BOOL pollset_isReadSignaled(WINPR_POLL_SET* set, size_t idx)
 
 	if (idx > set->fillIndex)
 	{
-		WLog_ERR(TAG, "index=%d out of pollset(fillIndex=%" PRIuz ")", idx, set->fillIndex);
+		WLog_ERR(TAG, "index=%" PRIuz " out of pollset(fillIndex=%" PRIuz ")", idx, set->fillIndex);
 		return FALSE;
 	}
 
@@ -256,7 +276,7 @@ BOOL pollset_isWriteSignaled(WINPR_POLL_SET* set, size_t idx)
 
 	if (idx > set->fillIndex)
 	{
-		WLog_ERR(TAG, "index=%d out of pollset(fillIndex=%" PRIuz ")", idx, set->fillIndex);
+		WLog_ERR(TAG, "index=%" PRIuz " out of pollset(fillIndex=%" PRIuz ")", idx, set->fillIndex);
 		return FALSE;
 	}
 

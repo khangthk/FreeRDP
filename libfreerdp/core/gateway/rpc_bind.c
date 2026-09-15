@@ -23,6 +23,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 
 #include <freerdp/log.h>
 
@@ -110,21 +111,17 @@ const p_uuid_t BTFN_UUID = {
 
 static int rpc_bind_setup(rdpRpc* rpc)
 {
-	int rc = -1;
-	rdpContext* context = NULL;
-	rdpSettings* settings = NULL;
-	freerdp* instance = NULL;
-	SEC_WINNT_AUTH_IDENTITY identity = { 0 };
+	SEC_WINNT_AUTH_IDENTITY identity = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(rpc);
 
-	context = transport_get_context(rpc->transport);
+	rdpContext* context = transport_get_context(rpc->transport);
 	WINPR_ASSERT(context);
 
-	settings = context->settings;
+	rdpSettings* settings = context->settings;
 	WINPR_ASSERT(settings);
 
-	instance = context->instance;
+	freerdp* instance = context->instance;
 	WINPR_ASSERT(instance);
 
 	credssp_auth_free(rpc->auth);
@@ -132,7 +129,7 @@ static int rpc_bind_setup(rdpRpc* rpc)
 	if (!rpc->auth)
 		return -1;
 
-	rc = utils_authenticate_gateway(instance, GW_AUTH_RPC);
+	auth_status rc = utils_authenticate_gateway(instance, GW_AUTH_RPC);
 	switch (rc)
 	{
 		case AUTH_SUCCESS:
@@ -142,22 +139,25 @@ static int rpc_bind_setup(rdpRpc* rpc)
 			freerdp_set_last_error_log(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
 			return -1;
 		case AUTH_NO_CREDENTIALS:
-			WLog_INFO(TAG, "No credentials provided - using NULL identity");
+			WLog_INFO(TAG, "No credentials provided - using nullptr identity");
 			break;
 		case AUTH_FAILED:
 		default:
 			return -1;
 	}
 
-	if (!credssp_auth_init(rpc->auth, AUTH_PKG, NULL))
+	if (!credssp_auth_init(rpc->auth, AUTH_PKG, nullptr))
 		return -1;
 
 	if (!identity_set_from_settings(&identity, settings, FreeRDP_GatewayUsername,
 	                                FreeRDP_GatewayDomain, FreeRDP_GatewayPassword))
 		return -1;
 
-	SEC_WINNT_AUTH_IDENTITY* identityArg = (settings->GatewayUsername ? &identity : NULL);
-	if (!credssp_auth_setup_client(rpc->auth, NULL, settings->GatewayHostname, identityArg, NULL))
+	const char* GatewayHostname = freerdp_settings_get_string(settings, FreeRDP_GatewayHostname);
+	const char* GatewayUsername = freerdp_settings_get_string(settings, FreeRDP_GatewayUsername);
+
+	SEC_WINNT_AUTH_IDENTITY* identityArg = (GatewayUsername ? &identity : nullptr);
+	if (!credssp_auth_setup_client(rpc->auth, nullptr, GatewayHostname, identityArg, nullptr))
 	{
 		sspi_FreeAuthIdentity(&identity);
 		return -1;
@@ -176,14 +176,14 @@ static int rpc_bind_setup(rdpRpc* rpc)
 int rpc_send_bind_pdu(rdpRpc* rpc, BOOL initial)
 {
 	int status = -1;
-	wStream* buffer = NULL;
+	wStream* buffer = nullptr;
 	UINT32 offset = 0;
-	RpcClientCall* clientCall = NULL;
-	p_cont_elem_t* p_cont_elem = NULL;
-	rpcconn_bind_hdr_t bind_pdu = { 0 };
-	RpcVirtualConnection* connection = NULL;
-	RpcInChannel* inChannel = NULL;
-	const SecBuffer* sbuffer = NULL;
+	RpcClientCall* clientCall = nullptr;
+	p_cont_elem_t* p_cont_elem = nullptr;
+	rpcconn_bind_hdr_t bind_pdu = WINPR_C_ARRAY_INIT;
+	RpcVirtualConnection* connection = nullptr;
+	RpcInChannel* inChannel = nullptr;
+	const SecBuffer* sbuffer = nullptr;
 
 	WINPR_ASSERT(rpc);
 
@@ -256,9 +256,11 @@ int rpc_send_bind_pdu(rdpRpc* rpc, BOOL initial)
 	bind_pdu.auth_verifier.auth_reserved = 0x00;
 	bind_pdu.auth_verifier.auth_context_id = 0x00000000;
 	offset += (8 + bind_pdu.header.auth_length);
-	bind_pdu.header.frag_length = offset;
 
-	buffer = Stream_New(NULL, bind_pdu.header.frag_length);
+	WINPR_ASSERT(offset <= UINT16_MAX);
+	bind_pdu.header.frag_length = (UINT16)offset;
+
+	buffer = Stream_New(nullptr, bind_pdu.header.frag_length);
 
 	if (!buffer)
 		goto fail;
@@ -288,7 +290,7 @@ fail:
 	}
 
 	free(bind_pdu.p_context_elem.p_cont_elem);
-	bind_pdu.p_context_elem.p_cont_elem = NULL;
+	bind_pdu.p_context_elem.p_cont_elem = nullptr;
 
 	Stream_Free(buffer, TRUE);
 	return (status > 0) ? 1 : -1;
@@ -323,11 +325,11 @@ fail:
 BOOL rpc_recv_bind_ack_pdu(rdpRpc* rpc, wStream* s)
 {
 	BOOL rc = FALSE;
-	const BYTE* auth_data = NULL;
+	const BYTE* auth_data = nullptr;
 	size_t pos = 0;
 	size_t end = 0;
-	rpcconn_hdr_t header = { 0 };
-	SecBuffer buffer = { 0 };
+	rpcconn_hdr_t header = WINPR_C_ARRAY_INIT;
+	SecBuffer buffer = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(rpc);
 	WINPR_ASSERT(rpc->auth);
@@ -340,15 +342,28 @@ BOOL rpc_recv_bind_ack_pdu(rdpRpc* rpc, wStream* s)
 	WLog_DBG(TAG, header.common.ptype == PTYPE_BIND_ACK ? "Receiving BindAck PDU"
 	                                                    : "Receiving AlterContextResp PDU");
 
+	const UINT16 MAX_VALID_FRAG = 0x0FF8;
+	if ((header.bind_ack.max_xmit_frag > MAX_VALID_FRAG) ||
+	    (header.bind_ack.max_recv_frag > MAX_VALID_FRAG))
+	{
+		WLog_ERR(TAG,
+		         "bind_ack: invalid fragment size: max_xmit_frag=%" PRIu16
+		         ", max_recv_frag=%" PRIu16 ", maximum=%" PRIu16,
+		         header.bind_ack.max_xmit_frag, header.bind_ack.max_recv_frag, MAX_VALID_FRAG);
+		goto fail;
+	}
+
 	rpc->max_recv_frag = header.bind_ack.max_xmit_frag;
 	rpc->max_xmit_frag = header.bind_ack.max_recv_frag;
 
 	/* Get the correct offset in the input data and pass that on as input buffer.
 	 * rts_read_pdu_header did already do consistency checks */
 	end = Stream_GetPosition(s);
-	Stream_SetPosition(s, pos + header.common.frag_length - header.common.auth_length);
+	if (!Stream_SetPosition(s, pos + header.common.frag_length - header.common.auth_length))
+		goto fail;
 	auth_data = Stream_ConstPointer(s);
-	Stream_SetPosition(s, end);
+	if (!Stream_SetPosition(s, end))
+		goto fail;
 
 	buffer.cbBuffer = header.common.auth_length;
 	buffer.pvBuffer = malloc(buffer.cbBuffer);
@@ -376,13 +391,13 @@ fail:
 int rpc_send_rpc_auth_3_pdu(rdpRpc* rpc)
 {
 	int status = -1;
-	wStream* buffer = NULL;
+	wStream* buffer = nullptr;
 	size_t offset = 0;
-	const SecBuffer* sbuffer = NULL;
-	RpcClientCall* clientCall = NULL;
-	rpcconn_rpc_auth_3_hdr_t auth_3_pdu = { 0 };
-	RpcVirtualConnection* connection = NULL;
-	RpcInChannel* inChannel = NULL;
+	const SecBuffer* sbuffer = nullptr;
+	RpcClientCall* clientCall = nullptr;
+	rpcconn_rpc_auth_3_hdr_t auth_3_pdu = WINPR_C_ARRAY_INIT;
+	RpcVirtualConnection* connection = nullptr;
+	RpcInChannel* inChannel = nullptr;
 
 	WINPR_ASSERT(rpc);
 
@@ -408,16 +423,21 @@ int rpc_send_rpc_auth_3_pdu(rdpRpc* rpc)
 	auth_3_pdu.max_xmit_frag = rpc->max_xmit_frag;
 	auth_3_pdu.max_recv_frag = rpc->max_recv_frag;
 	offset = 20;
-	auth_3_pdu.auth_verifier.auth_pad_length = rpc_offset_align(&offset, 4);
+
+	const size_t align = rpc_offset_align(&offset, 4);
+	WINPR_ASSERT(align <= UINT8_MAX);
+	auth_3_pdu.auth_verifier.auth_pad_length = (BYTE)align;
 	auth_3_pdu.auth_verifier.auth_type =
 	    rpc_auth_pkg_to_security_provider(credssp_auth_pkg_name(rpc->auth));
 	auth_3_pdu.auth_verifier.auth_level = RPC_C_AUTHN_LEVEL_PKT_INTEGRITY;
 	auth_3_pdu.auth_verifier.auth_reserved = 0x00;
 	auth_3_pdu.auth_verifier.auth_context_id = 0x00000000;
 	offset += (8 + auth_3_pdu.header.auth_length);
-	auth_3_pdu.header.frag_length = offset;
 
-	buffer = Stream_New(NULL, auth_3_pdu.header.frag_length);
+	WINPR_ASSERT(offset <= UINT16_MAX);
+	auth_3_pdu.header.frag_length = (UINT16)offset;
+
+	buffer = Stream_New(nullptr, auth_3_pdu.header.frag_length);
 
 	if (!buffer)
 		return -1;

@@ -94,6 +94,11 @@
 
 #define ERRCONNECT_ACTIVATION_TIMEOUT_STRING "Timeout waiting for activation."
 
+#define ERRCONNECT_TARGET_BOOTING_STRING "Starting your VM. It may take up to 5 minutes."
+
+#define ERRCONNECT_HYBRID_REQUIRED_BY_SERVER_STRING \
+	"The server requires Network Level Authentication, but it is not enabled."
+
 /* Special codes */
 #define ERRCONNECT_SUCCESS_STRING "Success."
 #define ERRCONNECT_NONE_STRING ""
@@ -129,13 +134,15 @@ static const ERRINFO ERRCONNECT_CODES[] = {
 	ERRCONNECT_DEFINE(LOGON_TYPE_NOT_GRANTED, CAT_ADMIN),
 	ERRCONNECT_DEFINE(NO_OR_MISSING_CREDENTIALS, CAT_USE),
 	ERRCONNECT_DEFINE(ACTIVATION_TIMEOUT, CAT_PROTOCOL),
+	ERRCONNECT_DEFINE(TARGET_BOOTING, CAT_ADMIN),
+	ERRCONNECT_DEFINE(HYBRID_REQUIRED_BY_SERVER, CAT_CONFIG),
 
 	ERRCONNECT_DEFINE(NONE, CAT_NONE)
 };
 
 const char* freerdp_get_error_connect_string(UINT32 code)
 {
-	const ERRINFO* errInfo = NULL;
+	const ERRINFO* errInfo = nullptr;
 	errInfo = &ERRCONNECT_CODES[0];
 
 	while (errInfo->code != ERRCONNECT_NONE)
@@ -153,7 +160,7 @@ const char* freerdp_get_error_connect_string(UINT32 code)
 
 const char* freerdp_get_error_connect_category(UINT32 code)
 {
-	const ERRINFO* errInfo = NULL;
+	const ERRINFO* errInfo = nullptr;
 	errInfo = &ERRCONNECT_CODES[0];
 
 	while (errInfo->code != ERRCONNECT_NONE)
@@ -171,7 +178,7 @@ const char* freerdp_get_error_connect_category(UINT32 code)
 
 const char* freerdp_get_error_connect_name(UINT32 code)
 {
-	const ERRINFO* errInfo = NULL;
+	const ERRINFO* errInfo = nullptr;
 	errInfo = &ERRCONNECT_CODES[0];
 
 	while (errInfo->code != ERRCONNECT_NONE)

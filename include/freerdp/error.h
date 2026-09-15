@@ -173,8 +173,13 @@ extern "C"
 #define ERRINFO_SUCCESS 0x00000000
 #define ERRINFO_NONE 0xFFFFFFFF
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_info_string(UINT32 code);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_info_name(UINT32 code);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_info_category(UINT32 code);
 
 	/**
@@ -199,8 +204,13 @@ extern "C"
 #define ERRBASE_SUCCESS ERRINFO_SUCCESS
 #define ERRBASE_NONE ERRINFO_NONE
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_base_string(UINT32 code);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_base_name(UINT32 code);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_base_category(UINT32 code);
 
 #define FREERDP_ERROR_SUCCESS ERRINFO_SUCCESS
@@ -270,12 +280,19 @@ extern "C"
 #define ERRCONNECT_LOGON_TYPE_NOT_GRANTED 0x0000001A
 #define ERRCONNECT_NO_OR_MISSING_CREDENTIALS 0x0000001B
 #define ERRCONNECT_ACTIVATION_TIMEOUT 0x0000001C
+#define ERRCONNECT_TARGET_BOOTING 0x0000001D
+#define ERRCONNECT_HYBRID_REQUIRED_BY_SERVER 0x0000001E /**< @since version 3.31.0 */
 
 #define ERRCONNECT_SUCCESS ERRINFO_SUCCESS
 #define ERRCONNECT_NONE ERRINFO_NONE
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_connect_string(UINT32 code);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_connect_name(UINT32 code);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* freerdp_get_error_connect_category(UINT32 code);
 
 #define FREERDP_ERROR_CONNECT_CLASS (FREERDP_ERROR_BASE + 2)
@@ -352,6 +369,10 @@ extern "C"
 
 #define FREERDP_ERROR_CONNECT_ACTIVATION_TIMEOUT \
 	MAKE_FREERDP_ERROR(CONNECT, ERRCONNECT_ACTIVATION_TIMEOUT)
+#define FREERDP_ERROR_CONNECT_TARGET_BOOTING MAKE_FREERDP_ERROR(CONNECT, ERRCONNECT_TARGET_BOOTING)
+#define FREERDP_ERROR_CONNECT_HYBRID_REQUIRED_BY_SERVER                                          \
+	MAKE_FREERDP_ERROR(CONNECT, ERRCONNECT_HYBRID_REQUIRED_BY_SERVER) /**< @since version 3.31.0 \
+	                                                                   */
 
 #ifdef __cplusplus
 }

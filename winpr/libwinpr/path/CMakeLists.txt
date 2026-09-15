@@ -17,16 +17,22 @@
 
 winpr_module_add(path.c shell.c)
 
-option(WINPR_USE_VENDOR_PRODUCT_CONFIG_DIR "use a configuration <base>/<product>/<vendor>/ subdirectory instead of </base>/winpr" OFF)
+include(FetchContentCWalk)
 
-if (MSVC OR MINGW)
-    winpr_library_add_public(shlwapi)
+if(WITH_CWALK)
+  winpr_library_add_compile_options(-DWITH_CWALK)
+  winpr_library_add_private(cwalk)
 endif()
 
-if (IOS)
-	winpr_module_add(shell_ios.m)
-endif (IOS)
+if(MSVC OR MINGW)
+  winpr_library_add_public(shlwapi)
+  winpr_library_add_public(pathcch)
+endif()
 
-if(BUILD_TESTING)
-	add_subdirectory(test)
+if(IOS)
+  winpr_module_add(shell_ios.m)
+endif(IOS)
+
+if(BUILD_TESTING_INTERNAL OR BUILD_TESTING)
+  add_subdirectory(test)
 endif()

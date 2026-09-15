@@ -31,7 +31,7 @@ static char kerberosPackageName[] = {
 };
 static char ntlmPackageName[] = { 'N', 0, 'T', 0, 'L', 0, 'M', 0 };
 
-RdpEarPackageType rdpear_packageType_from_name(WinPrAsn1_OctetString* package)
+RdpEarPackageType rdpear_packageType_from_name(const WinPrAsn1_OctetString* package)
 {
 	if (package->len == sizeof(kerberosPackageName) &&
 	    memcmp(package->data, kerberosPackageName, package->len) == 0)
@@ -44,12 +44,12 @@ RdpEarPackageType rdpear_packageType_from_name(WinPrAsn1_OctetString* package)
 	return RDPEAR_PACKAGE_UNKNOWN;
 }
 
-wStream* rdpear_encodePayload(RdpEarPackageType packageType, wStream* payload)
+wStream* rdpear_encodePayload(BOOL isKerb, wStream* payload)
 {
-	wStream* ret = NULL;
+	wStream* ret = nullptr;
 	WinPrAsn1Encoder* enc = WinPrAsn1Encoder_New(WINPR_ASN1_DER);
 	if (!enc)
-		return NULL;
+		return nullptr;
 
 	/* TSRemoteGuardInnerPacket ::= SEQUENCE { */
 	if (!WinPrAsn1EncSeqContainer(enc))
@@ -57,18 +57,15 @@ wStream* rdpear_encodePayload(RdpEarPackageType packageType, wStream* payload)
 
 	/* packageName [1] OCTET STRING */
 	WinPrAsn1_OctetString packageOctetString;
-	switch (packageType)
+	if (isKerb)
 	{
-		case RDPEAR_PACKAGE_KERBEROS:
-			packageOctetString.data = (BYTE*)kerberosPackageName;
-			packageOctetString.len = sizeof(kerberosPackageName);
-			break;
-		case RDPEAR_PACKAGE_NTLM:
-			packageOctetString.data = (BYTE*)ntlmPackageName;
-			packageOctetString.len = sizeof(ntlmPackageName);
-			break;
-		default:
-			goto out;
+		packageOctetString.data = (BYTE*)kerberosPackageName;
+		packageOctetString.len = sizeof(kerberosPackageName);
+	}
+	else
+	{
+		packageOctetString.data = (BYTE*)ntlmPackageName;
+		packageOctetString.len = sizeof(ntlmPackageName);
 	}
 
 	if (!WinPrAsn1EncContextualOctetString(enc, 1, &packageOctetString))
@@ -84,14 +81,14 @@ wStream* rdpear_encodePayload(RdpEarPackageType packageType, wStream* payload)
 	if (!WinPrAsn1EncEndContainer(enc))
 		goto out;
 
-	ret = Stream_New(NULL, 100);
+	ret = Stream_New(nullptr, 100);
 	if (!ret)
 		goto out;
 
 	if (!WinPrAsn1EncToStream(enc, ret))
 	{
 		Stream_Free(ret, TRUE);
-		ret = NULL;
+		ret = nullptr;
 		goto out;
 	}
 out:
@@ -182,7 +179,7 @@ BOOL ndr_read_RPC_UNICODE_STRING(NdrContext* context, wStream* s, const void* hi
                                  RPC_UNICODE_STRING* res)
 {
 	NdrDeferredEntry bufferDesc = { NDR_PTR_NULL, "RPC_UNICODE_STRING.Buffer", &res->lenHints,
-		                            &res->Buffer, ndr_uint16VaryingArray_descr() };
+		                            (void*)&res->Buffer, ndr_uint16VaryingArray_descr() };
 	UINT16 Length = 0;
 	UINT16 MaximumLength = 0;
 
@@ -204,22 +201,32 @@ static BOOL ndr_descr_read_RPC_UNICODE_STRING(NdrContext* context, wStream* s, c
 	return ndr_read_RPC_UNICODE_STRING(context, s, hints, res);
 }
 
-#if 0
-BOOL ndr_write_RPC_UNICODE_STRING(NdrContext* context, wStream* s, const void* hints,
+BOOL ndr_write_RPC_UNICODE_STRING(NdrContext* context, wStream* s,
+                                  WINPR_ATTR_UNUSED const void* hints,
                                   const RPC_UNICODE_STRING* res)
 {
-	return ndr_write_uint32(context, s, res->lenHints.length) &&
-	       ndr_write_uint32(context, s, res->lenHints.maxLength) /*&&
-	       ndr_write_BYTE_ptr(context, s, (BYTE*)res->Buffer, res->Length)*/
-	    ;
+	WINPR_ASSERT(res);
+	if (!ndr_write_uint32(context, s, res->lenHints.length))
+		return FALSE;
+
+	if (!ndr_write_uint32(context, s, res->lenHints.maxLength))
+		return FALSE;
+
+	return ndr_write_data(context, s, res->Buffer, res->strLength);
 }
-#endif
+
+static BOOL ndr_write_RPC_UNICODE_STRING_(NdrContext* context, wStream* s, const void* hints,
+                                          const void* pvres)
+{
+	const RPC_UNICODE_STRING* res = pvres;
+	return ndr_write_RPC_UNICODE_STRING(context, s, hints, res);
+}
 
 void ndr_dump_RPC_UNICODE_STRING(wLog* logger, UINT32 lvl, size_t indentLevel,
                                  const RPC_UNICODE_STRING* obj)
 {
 	WINPR_UNUSED(indentLevel);
-	WLog_Print(logger, lvl, "\tLength=%d MaximumLength=%d", obj->lenHints.length,
+	WLog_Print(logger, lvl, "\tLength=%u MaximumLength=%u", obj->lenHints.length,
 	           obj->lenHints.maxLength);
 	winpr_HexLogDump(logger, lvl, obj->Buffer, obj->lenHints.length);
 }
@@ -237,7 +244,7 @@ void ndr_destroy_RPC_UNICODE_STRING(NdrContext* context, const void* hints, RPC_
 	if (!obj)
 		return;
 	free(obj->Buffer);
-	obj->Buffer = NULL;
+	obj->Buffer = nullptr;
 }
 
 static void ndr_descr_destroy_RPC_UNICODE_STRING(NdrContext* context, const void* hints, void* obj)
@@ -248,7 +255,7 @@ static void ndr_descr_destroy_RPC_UNICODE_STRING(NdrContext* context, const void
 static const NdrMessageDescr RPC_UNICODE_STRING_descr_s = { NDR_ARITY_SIMPLE,
 	                                                        sizeof(RPC_UNICODE_STRING),
 	                                                        ndr_descr_read_RPC_UNICODE_STRING,
-	                                                        /*ndr_write_RPC_UNICODE_STRING*/ NULL,
+	                                                        ndr_write_RPC_UNICODE_STRING_,
 	                                                        ndr_descr_destroy_RPC_UNICODE_STRING,
 	                                                        ndr_descr_dump_RPC_UNICODE_STRING };
 
@@ -285,8 +292,8 @@ static const NdrMessageDescr RPC_UNICODE_STRING_Array_descr_s = {
 	sizeof(RPC_UNICODE_STRING),
 	ndr_read_RPC_UNICODE_STRING_Array,
 	ndr_write_RPC_UNICODE_STRING_Array,
-	NULL,
-	NULL
+	nullptr,
+	nullptr
 };
 
 static NdrMessageType ndr_RPC_UNICODE_STRING_Array_descr(void)
@@ -309,7 +316,6 @@ BOOL ndr_read_KERB_RPC_INTERNAL_NAME(NdrContext* context, wStream* s, const void
 	cnv.ppstr = &res->Names;
 	NdrDeferredEntry names = { NDR_PTR_NULL, "KERB_RPC_INTERNAL_NAME.Names", &res->nameHints,
 		                       cnv.pv, ndr_RPC_UNICODE_STRING_Array_descr() };
-
 	UINT16 nameCount = 0;
 	WINPR_UNUSED(hints);
 
@@ -359,11 +365,15 @@ void ndr_destroy_KERB_RPC_INTERNAL_NAME(NdrContext* context, const void* hints,
 	if (!obj)
 		return;
 
-	for (UINT32 i = 0; i < obj->nameHints.count; i++)
-		ndr_destroy_RPC_UNICODE_STRING(context, NULL, &obj->Names[i]);
+	if (obj->Names)
+	{
+		for (UINT32 i = 0; i < obj->nameHints.count; i++)
+			ndr_destroy_RPC_UNICODE_STRING(context, nullptr, &obj->Names[i]);
+	}
 
 	free(obj->Names);
-	obj->Names = NULL;
+	obj->Names = nullptr;
+	obj->nameHints.count = 0;
 }
 
 static void ndr_descr_destroy_KERB_RPC_INTERNAL_NAME(NdrContext* context, const void* hints,
@@ -375,7 +385,7 @@ static void ndr_descr_destroy_KERB_RPC_INTERNAL_NAME(NdrContext* context, const 
 static NdrMessageDescr KERB_RPC_INTERNAL_NAME_descr_s = { NDR_ARITY_SIMPLE,
 	                                                      sizeof(KERB_RPC_INTERNAL_NAME),
 	                                                      ndr_descr_read_KERB_RPC_INTERNAL_NAME,
-	                                                      NULL,
+	                                                      nullptr,
 	                                                      ndr_descr_destroy_KERB_RPC_INTERNAL_NAME,
 	                                                      ndr_descr_dump_KERB_RPC_INTERNAL_NAME };
 

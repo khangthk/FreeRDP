@@ -29,7 +29,7 @@ typedef struct
 	SdlContext* sdl;
 } sdl_rdp_context;
 
-static inline SdlContext* get_context(void* ctx)
+[[nodiscard]] static inline SdlContext* get_context(void* ctx)
 {
 	if (!ctx)
 		return nullptr;
@@ -37,10 +37,17 @@ static inline SdlContext* get_context(void* ctx)
 	return sdl->sdl;
 }
 
-static inline SdlContext* get_context(rdpContext* ctx)
+[[nodiscard]] static inline SdlContext* get_context(rdpContext* ctx)
 {
 	if (!ctx)
 		return nullptr;
 	auto sdl = reinterpret_cast<sdl_rdp_context*>(ctx);
 	return sdl->sdl;
+}
+
+[[nodiscard]] static inline SdlContext* get_context(freerdp* instance)
+{
+	if (!instance)
+		return nullptr;
+	return get_context(instance->context);
 }

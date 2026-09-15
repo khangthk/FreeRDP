@@ -26,10 +26,8 @@
 
 #include <pthread.h>
 
-static BOOL NoneHandleCloseHandle(HANDLE handle)
+static BOOL NoneHandleCloseHandle(WINPR_ATTR_UNUSED HANDLE handle)
 {
-	WINPR_NONE_HANDLE* none = (WINPR_NONE_HANDLE*)handle;
-	free(none);
 	return TRUE;
 }
 
@@ -49,34 +47,47 @@ static int NoneHandleGetFd(HANDLE handle)
 static HANDLE_OPS ops = { NoneHandleIsHandle,
 	                      NoneHandleCloseHandle,
 	                      NoneHandleGetFd,
-	                      NULL, /* CleanupHandle */
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL,
-	                      NULL };
+	                      nullptr, /* CleanupHandle */
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr,
+	                      nullptr };
 
 HANDLE CreateNoneHandle(void)
 {
 	WINPR_NONE_HANDLE* none = (WINPR_NONE_HANDLE*)calloc(1, sizeof(WINPR_NONE_HANDLE));
 
 	if (!none)
-		return NULL;
+		return nullptr;
 
 	none->common.ops = &ops;
+	none->common.refCount = 1;
 	return (HANDLE)none;
+}
+
+void winpr_Handle_ConvertToNone(HANDLE handle)
+{
+	WINPR_HANDLE* hdl = (WINPR_HANDLE*)handle;
+
+	if (!hdl)
+		return;
+
+	hdl->Type = HANDLE_TYPE_NONE;
+	hdl->Mode = 0;
+	hdl->ops = &ops;
 }
 
 #endif

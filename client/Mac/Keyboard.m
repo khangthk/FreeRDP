@@ -24,6 +24,8 @@
 #include <IOKit/IOKitLib.h>
 #include <IOKit/hid/IOHIDManager.h>
 
+#include <winpr/platform.h>
+
 typedef struct
 {
 	uint32_t ProductId;
@@ -158,9 +160,9 @@ static enum APPLE_KEYBOARD_TYPE mac_identify_keyboard_type(uint32_t vendorID, ui
 
 enum APPLE_KEYBOARD_TYPE mac_detect_keyboard_type(void)
 {
-	CFSetRef deviceCFSetRef = NULL;
-	IOHIDDeviceRef inIOHIDDeviceRef = NULL;
-	IOHIDManagerRef tIOHIDManagerRef = NULL;
+	CFSetRef deviceCFSetRef = nullptr;
+	IOHIDDeviceRef inIOHIDDeviceRef = nullptr;
+	IOHIDManagerRef tIOHIDManagerRef = nullptr;
 	IOHIDDeviceRef *tIOHIDDeviceRefs = nil;
 	enum APPLE_KEYBOARD_TYPE type = APPLE_KEYBOARD_TYPE_ANSI;
 	tIOHIDManagerRef = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
@@ -168,7 +170,7 @@ enum APPLE_KEYBOARD_TYPE mac_detect_keyboard_type(void)
 	if (!tIOHIDManagerRef)
 		return type;
 
-	IOHIDManagerSetDeviceMatching(tIOHIDManagerRef, NULL);
+	IOHIDManagerSetDeviceMatching(tIOHIDManagerRef, nullptr);
 	IOReturn tIOReturn = IOHIDManagerOpen(tIOHIDManagerRef, kIOHIDOptionsTypeNone);
 
 	if (noErr != tIOReturn)
@@ -187,7 +189,7 @@ enum APPLE_KEYBOARD_TYPE mac_detect_keyboard_type(void)
 
 	CFSetGetValues(deviceCFSetRef, (const void **)tIOHIDDeviceRefs);
 	CFRelease(deviceCFSetRef);
-	deviceCFSetRef = NULL;
+	deviceCFSetRef = nullptr;
 
 	for (deviceIndex = 0; deviceIndex < deviceCount; deviceIndex++)
 	{
@@ -230,7 +232,7 @@ enum APPLE_KEYBOARD_TYPE mac_detect_keyboard_type(void)
 	if (deviceCFSetRef)
 	{
 		CFRelease(deviceCFSetRef);
-		deviceCFSetRef = NULL;
+		deviceCFSetRef = nullptr;
 	}
 
 	if (tIOHIDManagerRef)

@@ -57,7 +57,7 @@ bool SDLConnectionDialog::visible() const
 
 bool SDLConnectionDialog::setTitle(const char* fmt, ...)
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	va_list ap = {};
 	va_start(ap, fmt);
 	_title = print(fmt, ap);
@@ -97,25 +97,25 @@ bool SDLConnectionDialog::showError(const char* fmt, ...)
 
 bool SDLConnectionDialog::show()
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	return show(_type_active);
 }
 
 bool SDLConnectionDialog::hide()
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	return show(MSG_DISCARD);
 }
 
 bool SDLConnectionDialog::running() const
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	return _running;
 }
 
 bool SDLConnectionDialog::update()
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	switch (_type)
 	{
 		case MSG_INFO:
@@ -169,7 +169,7 @@ bool SDLConnectionDialog::clearWindow(SDL_Renderer* renderer)
 
 bool SDLConnectionDialog::update(SDL_Renderer* renderer)
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	if (!renderer)
 		return false;
 
@@ -233,7 +233,7 @@ bool SDLConnectionDialog::handle(const SDL_Event& event)
 					case SDLK_KP_ENTER:
 						if (event.type == SDL_KEYUP)
 						{
-							freerdp_abort_event(_context);
+							freerdp_abort_connect_context(_context);
 							sdl_push_quit();
 						}
 						break;
@@ -269,7 +269,7 @@ bool SDLConnectionDialog::handle(const SDL_Event& event)
 				{
 					if (event.type == SDL_MOUSEBUTTONUP)
 					{
-						freerdp_abort_event(_context);
+						freerdp_abort_connect_context(_context);
 						sdl_push_quit();
 					}
 				}
@@ -306,7 +306,7 @@ bool SDLConnectionDialog::handle(const SDL_Event& event)
 				case SDL_WINDOWEVENT_CLOSE:
 					if (windowID == ev.windowID)
 					{
-						freerdp_abort_event(_context);
+						freerdp_abort_connect_context(_context);
 						sdl_push_quit();
 					}
 					break;
@@ -327,11 +327,12 @@ bool SDLConnectionDialog::createWindow()
 {
 	destroyWindow();
 
-	const size_t widget_height = 50;
-	const size_t widget_width = 600;
-	const size_t total_height = 300;
+	const int widget_height = 50;
+	const int widget_width = 600;
+	const int total_height = 300;
 
-	auto flags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_INPUT_FOCUS;
+	auto flags = WINPR_ASSERTING_INT_CAST(
+	    uint32_t, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_INPUT_FOCUS);
 	auto rc = SDL_CreateWindowAndRenderer(widget_width, total_height, flags, &_window, &_renderer);
 	if (rc != 0)
 	{
@@ -432,7 +433,7 @@ void SDLConnectionDialog::destroyWindow()
 
 bool SDLConnectionDialog::show(MsgType type, const char* fmt, va_list ap)
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	_msg = print(fmt, ap);
 	return show(type);
 }
@@ -452,9 +453,9 @@ std::string SDLConnectionDialog::print(const char* fmt, va_list ap)
 	{
 		res.resize(128);
 		if (size > 0)
-			res.resize(size);
+			res.resize(WINPR_ASSERTING_INT_CAST(size_t, size));
 
-		va_list copy;
+		va_list copy = {};
 		va_copy(copy, ap);
 		WINPR_PRAGMA_DIAG_PUSH
 		WINPR_PRAGMA_DIAG_IGNORED_FORMAT_NONLITERAL
@@ -469,7 +470,7 @@ std::string SDLConnectionDialog::print(const char* fmt, va_list ap)
 
 bool SDLConnectionDialog::setTimer(Uint32 timeoutMS)
 {
-	std::lock_guard lock(_mux);
+	std::scoped_lock lock(_mux);
 	resetTimer();
 
 	_timer = SDL_AddTimer(timeoutMS, &SDLConnectionDialog::timeout, this);
@@ -484,11 +485,11 @@ void SDLConnectionDialog::resetTimer()
 	_running = false;
 }
 
-Uint32 SDLConnectionDialog::timeout(Uint32 intervalMS, void* pvthis)
+Uint32 SDLConnectionDialog::timeout([[maybe_unused]] Uint32 intervalMS, void* pvthis)
 {
-	auto ths = static_cast<SDLConnectionDialog*>(pvthis);
-	ths->hide();
-	ths->_running = false;
+	auto self = static_cast<SDLConnectionDialog*>(pvthis);
+	self->hide();
+	self->_running = false;
 	return 0;
 }
 

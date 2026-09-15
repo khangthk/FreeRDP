@@ -62,25 +62,25 @@ extern "C"
 		/**
 		 * Open the echo channel.
 		 */
-		psEchoServerOpen Open;
+		WINPR_ATTR_NODISCARD psEchoServerOpen Open;
 		/**
 		 * Close the echo channel.
 		 */
-		psEchoServerClose Close;
+		WINPR_ATTR_NODISCARD psEchoServerClose Close;
 		/**
 		 * Send echo request PDU.
 		 */
-		psEchoServerRequest Request;
+		WINPR_ATTR_NODISCARD psEchoServerRequest Request;
 
 		/*** Callbacks registered by the server. ***/
 		/**
 		 * Indicate whether the channel is opened successfully.
 		 */
-		psEchoServerOpenResult OpenResult;
+		WINPR_ATTR_NODISCARD psEchoServerOpenResult OpenResult;
 		/**
 		 * Receive echo response PDU.
 		 */
-		psEchoServerResponse Response;
+		WINPR_ATTR_NODISCARD psEchoServerResponse Response;
 
 		rdpContext* rdpcontext;
 
@@ -93,6 +93,7 @@ extern "C"
 	FREERDP_API void echo_server_context_free(echo_server_context* context);
 
 	WINPR_ATTR_MALLOC(echo_server_context_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API echo_server_context* echo_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus

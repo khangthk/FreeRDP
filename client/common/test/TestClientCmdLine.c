@@ -7,6 +7,7 @@
 #include <winpr/collections.h>
 
 typedef BOOL (*validate_settings_pr)(rdpSettings* settings);
+typedef void (*setup_settings_pr)(rdpSettings* settings);
 
 #define printref() printf("%s:%d: in function %-40s:", __FILE__, __LINE__, __func__)
 
@@ -40,8 +41,9 @@ static void print_test_title(int argc, char** argv)
 	printf("\n");
 }
 
-static INLINE BOOL testcase(const char* name, char** argv, size_t argc, int expected_return,
-                            validate_settings_pr validate_settings)
+static inline BOOL testcase(const char* name, char** argv, size_t argc, int expected_return,
+                            validate_settings_pr validate_settings,
+                            setup_settings_pr setup_settings)
 {
 	int status = 0;
 	BOOL valid_settings = TRUE;
@@ -56,6 +58,9 @@ static INLINE BOOL testcase(const char* name, char** argv, size_t argc, int expe
 		TEST_ERROR("Test %s could not allocate settings!\n", name);
 		return FALSE;
 	}
+
+	if (setup_settings)
+		setup_settings(settings);
 
 	status = freerdp_client_settings_parse_command_line(settings, (int)argc, argv, FALSE);
 
@@ -88,6 +93,30 @@ static INLINE BOOL testcase(const char* name, char** argv, size_t argc, int expe
 #define DRIVE_REDIRECT_PATH "/tmp"
 #endif
 
+static BOOL check_settings_gateway_response_timeout(rdpSettings* settings, UINT32 expected)
+{
+	const UINT32 val = freerdp_settings_get_uint32(settings, FreeRDP_GatewayResponseTimeout);
+
+	if (val != expected)
+	{
+		TEST_FAILURE("Expected GatewayResponseTimeout = %" PRIu32 ", but got %" PRIu32 "!\n",
+		             expected, val);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static BOOL check_settings_gateway_response_timeout_default(rdpSettings* settings)
+{
+	return check_settings_gateway_response_timeout(settings, 15000);
+}
+
+static BOOL check_settings_gateway_response_timeout_custom(rdpSettings* settings)
+{
+	return check_settings_gateway_response_timeout(settings, 120000);
+}
+
 static BOOL check_settings_smartcard_no_redirection(rdpSettings* settings)
 {
 	BOOL result = TRUE;
@@ -107,6 +136,126 @@ static BOOL check_settings_smartcard_no_redirection(rdpSettings* settings)
 	return result;
 }
 
+#ifndef TEST_SOURCE_DIR
+#error "TEST_SOURCE_DIR must be defined to the test source directory"
+#endif
+#define DISABLED_DISPLAY_OPTIONS_RDP TEST_SOURCE_DIR "/rdp-cmdline/disabled-display-options.rdp"
+
+static BOOL check_settings_multimon_disabled(rdpSettings* settings)
+{
+	BOOL result = TRUE;
+
+	if (freerdp_settings_get_bool(settings, FreeRDP_UseMultimon))
+	{
+		TEST_FAILURE("Expected UseMultimon = FALSE, but UseMultimon = TRUE!\n");
+		result = FALSE;
+	}
+
+	if (freerdp_settings_get_bool(settings, FreeRDP_ForceMultimon))
+	{
+		TEST_FAILURE("Expected ForceMultimon = FALSE, but ForceMultimon = TRUE!\n");
+		result = FALSE;
+	}
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_SmartSizing))
+	{
+		TEST_FAILURE("Expected SmartSizing = TRUE, but SmartSizing = FALSE!\n");
+		result = FALSE;
+	}
+
+	return result;
+}
+
+static BOOL check_settings_smart_sizing_disabled(rdpSettings* settings)
+{
+	BOOL result = TRUE;
+
+	if (freerdp_settings_get_bool(settings, FreeRDP_SmartSizing))
+	{
+		TEST_FAILURE("Expected SmartSizing = FALSE, but SmartSizing = TRUE!\n");
+		result = FALSE;
+	}
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate))
+	{
+		TEST_FAILURE(
+		    "Expected DynamicResolutionUpdate = TRUE, but DynamicResolutionUpdate = FALSE!\n");
+		result = FALSE;
+	}
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_UseMultimon))
+	{
+		TEST_FAILURE("Expected UseMultimon = TRUE, but UseMultimon = FALSE!\n");
+		result = FALSE;
+	}
+
+	return result;
+}
+
+static BOOL check_settings_multimon_enabled(rdpSettings* settings)
+{
+	BOOL result = TRUE;
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_UseMultimon))
+	{
+		TEST_FAILURE("Expected UseMultimon = TRUE, but UseMultimon = FALSE!\n");
+		result = FALSE;
+	}
+
+	return result;
+}
+
+static void setup_settings_multimon_force(rdpSettings* settings)
+{
+	(void)freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
+}
+
+static BOOL check_settings_multimon_force(rdpSettings* settings)
+{
+	BOOL result = TRUE;
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_UseMultimon))
+	{
+		TEST_FAILURE("Expected UseMultimon = TRUE, but UseMultimon = FALSE!\n");
+		result = FALSE;
+	}
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_ForceMultimon))
+	{
+		TEST_FAILURE("Expected ForceMultimon = TRUE, but ForceMultimon = FALSE!\n");
+		result = FALSE;
+	}
+
+	return result;
+}
+
+static BOOL check_settings_smart_sizing_size(rdpSettings* settings)
+{
+	BOOL result = TRUE;
+
+	if (!freerdp_settings_get_bool(settings, FreeRDP_SmartSizing))
+	{
+		TEST_FAILURE("Expected SmartSizing = TRUE, but SmartSizing = FALSE!\n");
+		result = FALSE;
+	}
+
+	if (freerdp_settings_get_uint32(settings, FreeRDP_SmartSizingWidth) != 1024)
+	{
+		TEST_FAILURE("Expected SmartSizingWidth = 1024, but SmartSizingWidth = %u!\n",
+		             (unsigned)freerdp_settings_get_uint32(settings, FreeRDP_SmartSizingWidth));
+		result = FALSE;
+	}
+
+	if (freerdp_settings_get_uint32(settings, FreeRDP_SmartSizingHeight) != 768)
+	{
+		TEST_FAILURE("Expected SmartSizingHeight = 768, but SmartSizingHeight = %u!\n",
+		             (unsigned)freerdp_settings_get_uint32(settings, FreeRDP_SmartSizingHeight));
+		result = FALSE;
+	}
+
+	return result;
+}
+
 typedef struct
 {
 	int expected_status;
@@ -117,106 +266,171 @@ typedef struct
 		int index;
 		const char* expected_value;
 	} modified_arguments[8];
+	setup_settings_pr setup_settings;
 } test;
 
 // NOLINTBEGIN(bugprone-suspicious-missing-comma)
 static const test tests[] = {
 	{ COMMAND_LINE_STATUS_PRINT_HELP,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "--help", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "--help", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT_HELP,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/help", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/help", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT_HELP,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "-help", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "-help", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT_VERSION,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "--version", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "--version", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT_VERSION,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/version", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/version", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT_VERSION,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "-version", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "-version", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "-v", "test.freerdp.com", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "-v", "test.freerdp.com", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "--v", "test.freerdp.com", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "--v", "test.freerdp.com", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/v:test.freerdp.com", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/v:test.freerdp.com", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/sound", "/drive:media," DRIVE_REDIRECT_PATH, "/v:test.freerdp.com", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/sound", "/drive:media," DRIVE_REDIRECT_PATH, "/v:test.freerdp.com",
+	    nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "-u", "test", "-p", "test", "-v", "test.freerdp.com", 0 },
-	  { { 4, "****" }, { 0 } } },
+	  { "testfreerdp", "-u", "test", "-p", "test", "-v", "test.freerdp.com", nullptr },
+	  { { 4, "****" }, WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/u:test", "/p:test", "/v:test.freerdp.com", 0 },
-	  { { 2, "/p:****" }, { 0 } } },
+	  { "testfreerdp", "/u:test", "/p:test", "/v:test.freerdp.com", nullptr },
+	  { { 2, "/p:****" }, WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_ERROR_NO_KEYWORD,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "-invalid", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "-invalid", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_ERROR_NO_KEYWORD,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "--invalid", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "--invalid", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 #if defined(WITH_FREERDP_DEPRECATED_CMDLINE)
 	{ COMMAND_LINE_STATUS_PRINT,
 	  check_settings_smartcard_no_redirection,
 	  { "testfreerdp", "/kbd-list", 0 },
-	  { { 0 } } },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT,
 	  check_settings_smartcard_no_redirection,
 	  { "testfreerdp", "/monitor-list", 0 },
-	  { { 0 } } },
+	  { WINPR_C_ARRAY_INIT } },
 #endif
 	{ COMMAND_LINE_STATUS_PRINT,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/list:kbd", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/list:kbd", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ COMMAND_LINE_STATUS_PRINT,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/list:monitor", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/list:monitor", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/sound", "/drive:media:" DRIVE_REDIRECT_PATH, "/v:test.freerdp.com", 0 },
-	  { { 0 } } },
+	  { "testfreerdp", "/sound", "/drive:media:" DRIVE_REDIRECT_PATH, "/v:test.freerdp.com",
+	    nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 	{ 0,
 	  check_settings_smartcard_no_redirection,
-	  { "testfreerdp", "/sound", "/drive:media,/foo/bar/blabla", "/v:test.freerdp.com", 0 },
-	  { { 0 } } },
-
-#if 0
-	{
-		COMMAND_LINE_STATUS_PRINT, check_settings_smartcard_no_redirection,
-		{"testfreerdp", "-z", "--plugin", "cliprdr", "--plugin", "rdpsnd", "--data", "alsa", "latency:100", "--", "--plugin", "rdpdr", "--data", "disk:w7share:/home/w7share", "--", "--plugin", "drdynvc", "--data", "tsmf:decoder:gstreamer", "--", "-u", "test", "host.example.com", 0},
-		{{0}}
-	},
-#endif
+	  { "testfreerdp", "/sound", "/drive:media,/foo/bar/blabla", "/v:test.freerdp.com", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_gateway_response_timeout_default,
+	  { "testfreerdp", "/gateway:type:arm,g:gw.contoso.com", "/v:test.freerdp.com", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_gateway_response_timeout_custom,
+	  { "testfreerdp", "/gateway:type:arm,g:gw.contoso.com,timeout:120000", "/v:test.freerdp.com",
+	    nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_gateway_response_timeout_custom,
+	  { "testfreerdp", "/gateway:type:http,g:gw.contoso.com,timeout:120000", "/v:test.freerdp.com",
+	    nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ COMMAND_LINE_ERROR,
+	  check_settings_gateway_response_timeout_default,
+	  { "testfreerdp", "/gateway:type:arm,g:gw.contoso.com,timeout:0", "/v:test.freerdp.com",
+	    nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ COMMAND_LINE_ERROR,
+	  check_settings_gateway_response_timeout_default,
+	  { "testfreerdp", "/gateway:type:arm,g:gw.contoso.com,timeout:abc", "/v:test.freerdp.com",
+	    nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_multimon_disabled,
+	  { "testfreerdp", DISABLED_DISPLAY_OPTIONS_RDP, "/multimon:off", nullptr },
+	  { WINPR_C_ARRAY_INIT },
+	  setup_settings_multimon_force },
+	{ 0,
+	  check_settings_multimon_disabled,
+	  { "testfreerdp", DISABLED_DISPLAY_OPTIONS_RDP, "-multimon", nullptr },
+	  { WINPR_C_ARRAY_INIT },
+	  setup_settings_multimon_force },
+	{ 0,
+	  check_settings_smart_sizing_disabled,
+	  { "testfreerdp", DISABLED_DISPLAY_OPTIONS_RDP, "-smart-sizing", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_smart_sizing_disabled,
+	  { "testfreerdp", DISABLED_DISPLAY_OPTIONS_RDP, "/smart-sizing:off", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_multimon_force,
+	  { "testfreerdp", "--multimon", "force", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_smart_sizing_size,
+	  { "testfreerdp", "--smart-sizing", "1024x768", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ COMMAND_LINE_ERROR_UNEXPECTED_VALUE,
+	  check_settings_smartcard_no_redirection,
+	  { "testfreerdp", "/multimon:garbage", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ COMMAND_LINE_ERROR_UNEXPECTED_VALUE,
+	  check_settings_smartcard_no_redirection,
+	  { "testfreerdp", "/smart-sizing:garbage", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ COMMAND_LINE_ERROR_UNEXPECTED_VALUE,
+	  check_settings_smartcard_no_redirection,
+	  { "testfreerdp", "/multimon:", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ COMMAND_LINE_ERROR_UNEXPECTED_VALUE,
+	  check_settings_smartcard_no_redirection,
+	  { "testfreerdp", "/smart-sizing:", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
+	{ 0,
+	  check_settings_multimon_enabled,
+	  { "testfreerdp", "+multimon", nullptr },
+	  { WINPR_C_ARRAY_INIT } },
 };
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 static void check_modified_arguments(const test* test, char** command_line, int* rc)
 {
-	const char* expected_argument = NULL;
+	const char* expected_argument = nullptr;
 
 	for (int k = 0; (expected_argument = test->modified_arguments[k].expected_value); k++)
 	{
@@ -240,14 +454,16 @@ int TestClientCmdLine(int argc, char* argv[])
 
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
-	for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++)
+	for (size_t i = 0; i < ARRAYSIZE(tests); i++)
 	{
 		const test* current = &tests[i];
 		int failure = 0;
 		char** command_line = string_list_copy(current->command_line);
 
-		if (!testcase(__func__, command_line, string_list_length((const char* const*)command_line),
-		              current->expected_status, current->validate_settings))
+		const int len = string_list_length((const char* const*)command_line);
+		if (!testcase(__func__, command_line, WINPR_ASSERTING_INT_CAST(size_t, len),
+		              current->expected_status, current->validate_settings,
+		              current->setup_settings))
 		{
 			TEST_FAILURE("parsing arguments.\n");
 			failure = 1;

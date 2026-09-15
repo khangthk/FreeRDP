@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <winpr/crypto.h>
+#include <freerdp/config.h>
 #include <freerdp/locale/keyboard.h>
 
 static BOOL test_scancode_name(void)
@@ -212,17 +213,10 @@ static BOOL test_layouts(DWORD types)
 			              " elements, failed:\n",
 			              types, count);
 			(void)fprintf(stderr,
-			              "[%" PRIuz "]: freerdp_keyboard_get_layouts(%" PRIu32 ") -> NULL\n", x,
+			              "[%" PRIuz "]: freerdp_keyboard_get_layouts(%" PRIu32 ") -> nullptr\n", x,
 			              cur->code);
 			goto fail;
 		}
-#if 0 // TODO: Should these always match?
-       if (strcmp(name, cur->name) != 0) {
-           (void)fprintf(stderr, "freerdp_keyboard_get_layouts(type: %" PRIu32 ") -> %" PRIuz " elements, failed:\n", types, count);
-           (void)fprintf(stderr, "[%" PRIuz "]: freerdp_keyboard_get_layouts(%"  PRIu32 ") -> %s != %s\n", x, cur->code, name, cur->name);
-           goto fail;
-       }
-#endif
 
 		const DWORD id = freerdp_keyboard_get_layout_id_from_name(cur->name);
 		// if (id != cur->code) {
@@ -249,12 +243,18 @@ fail:
 static DWORD get_random(DWORD offset)
 {
 	DWORD x = 0;
-	winpr_RAND(&x, sizeof(x));
+	if (winpr_RAND(&x, sizeof(x)) < 0)
+	{
+		(void)fprintf(stderr, "winpr_RAND failed, retry...\n");
+		// NOLINTNEXTLINE(concurrency-mt-unsafe)
+		exit(-1);
+	}
 	x = x % UINT32_MAX - offset;
 	x += offset;
 	return x;
 }
 
+#if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
 static BOOL test_scancode_cnv(void)
 {
 	for (DWORD x = 0; x < UINT8_MAX; x++)
@@ -267,7 +267,7 @@ static BOOL test_scancode_cnv(void)
 			(void)fprintf(stderr,
 			              "[%" PRIu32 "]: keycode->scancode->keycode failed: %" PRIu32
 			              " -> %" PRIu32 " -> %" PRIu32 "\n",
-			              x, sc, kk);
+			              x, sc, ex, kk);
 			return FALSE;
 		}
 	}
@@ -290,6 +290,7 @@ static BOOL test_scancode_cnv(void)
 	}
 	return TRUE;
 }
+#endif
 
 static BOOL test_codepages(void)
 {
@@ -297,11 +298,11 @@ static BOOL test_codepages(void)
 	for (DWORD column = 0; column < 4; column++)
 	{
 		size_t count = 0;
-		RDP_CODEPAGE* cp = freerdp_keyboard_get_matching_codepages(column, NULL, &count);
+		RDP_CODEPAGE* cp = freerdp_keyboard_get_matching_codepages(column, nullptr, &count);
 		if (!cp || (count == 0))
 		{
 			(void)fprintf(stderr,
-			              "freerdp_keyboard_get_matching_codepages(%" PRIu32 ", NULL) failed!\n",
+			              "freerdp_keyboard_get_matching_codepages(%" PRIu32 ", nullptr) failed!\n",
 			              column);
 			return FALSE;
 		}
@@ -312,13 +313,13 @@ static BOOL test_codepages(void)
 	{
 		DWORD column = get_random(4);
 		size_t count = 0;
-		RDP_CODEPAGE* cp = freerdp_keyboard_get_matching_codepages(column, NULL, &count);
+		RDP_CODEPAGE* cp = freerdp_keyboard_get_matching_codepages(column, nullptr, &count);
 		freerdp_codepages_free(cp);
 		if (cp || (count != 0))
 		{
 			(void)fprintf(stderr,
 			              "freerdp_keyboard_get_matching_codepages(%" PRIu32
-			              ", NULL) returned not NULL!\n",
+			              ", nullptr) returned not nullptr!\n",
 			              column);
 			return FALSE;
 		}
@@ -332,6 +333,7 @@ static BOOL test_codepages(void)
 
 static BOOL test_init(void)
 {
+#if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
 	const DWORD kbd = freerdp_keyboard_init(0);
 	if (kbd == 0)
 	{
@@ -339,10 +341,10 @@ static BOOL test_init(void)
 		return FALSE;
 	}
 
-	const DWORD kbdex = freerdp_keyboard_init_ex(0, NULL);
+	const DWORD kbdex = freerdp_keyboard_init_ex(0, nullptr);
 	if (kbd == 0)
 	{
-		(void)fprintf(stderr, "freerdp_keyboard_init_ex(0, NULL) returned invalid layout 0\n");
+		(void)fprintf(stderr, "freerdp_keyboard_init_ex(0, nullptr) returned invalid layout 0\n");
 		return FALSE;
 	}
 
@@ -350,7 +352,7 @@ static BOOL test_init(void)
 	{
 		(void)fprintf(
 		    stderr,
-		    "freerdp_keyboard_init(0) != freerdp_keyboard_init_ex(0, NULL): returned %" PRIu32
+		    "freerdp_keyboard_init(0) != freerdp_keyboard_init_ex(0, nullptr): returned %" PRIu32
 		    " vs %" PRIu32 "\n",
 		    kbd, kbdex);
 		return FALSE;
@@ -359,6 +361,7 @@ static BOOL test_init(void)
 	// TODO: Test with valid remap list
 	// TODO: Test with invalid remap list
 	// TODO: Test with defaults != 0
+#endif
 	return TRUE;
 }
 
@@ -389,8 +392,10 @@ int TestLocaleKeyboard(int argc, char* argv[])
 	                 ~(RDP_KEYBOARD_LAYOUT_TYPE_STANDARD | RDP_KEYBOARD_LAYOUT_TYPE_VARIANT |
 	                   RDP_KEYBOARD_LAYOUT_TYPE_IME)))
 		return -1;
+#if !defined(WITHOUT_FREERDP_3x_DEPRECATED)
 	if (!test_scancode_cnv())
 		return -1;
+#endif
 	if (!test_codepages())
 		return -1;
 	if (!test_init())

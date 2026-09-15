@@ -25,6 +25,7 @@
 #include <freerdp/config.h>
 
 #include <winpr/crt.h>
+#include <winpr/cast.h>
 
 #include <freerdp/channels/log.h>
 #include <freerdp/freerdp.h>
@@ -40,8 +41,7 @@ static BOOL rail_is_feature_supported(const rdpContext* context, UINT32 featureM
  */
 UINT rail_send_pdu(railPlugin* rail, wStream* s, UINT16 orderType)
 {
-	char buffer[128] = { 0 };
-	UINT16 orderLength = 0;
+	char buffer[128] = WINPR_C_ARRAY_INIT;
 
 	if (!rail || !s)
 	{
@@ -49,13 +49,19 @@ UINT rail_send_pdu(railPlugin* rail, wStream* s, UINT16 orderType)
 		return ERROR_INVALID_PARAMETER;
 	}
 
-	orderLength = (UINT16)Stream_GetPosition(s);
-	Stream_SetPosition(s, 0);
-	rail_write_pdu_header(s, orderType, orderLength);
-	Stream_SetPosition(s, orderLength);
+	const UINT16 orderLength = (UINT16)Stream_GetPosition(s);
+	Stream_ResetPosition(s);
+	if (!rail_write_pdu_header(s, orderType, orderLength))
+		goto fail;
+	if (!Stream_SetPosition(s, orderLength))
+		goto fail;
 	WLog_Print(rail->log, WLOG_DEBUG, "Sending %s PDU, length: %" PRIu16 "",
 	           rail_get_order_type_string_full(orderType, buffer, sizeof(buffer)), orderLength);
 	return rail_send_channel_data(rail, s);
+
+fail:
+	Stream_Free(s, TRUE);
+	return ERROR_INVALID_DATA;
 }
 
 /**
@@ -123,7 +129,7 @@ static UINT rail_read_server_localmovesize_order(wStream* s,
 
 	Stream_Read_UINT32(s, localMoveSize->windowId); /* windowId (4 bytes) */
 	Stream_Read_UINT16(s, isMoveSizeStart);         /* isMoveSizeStart (2 bytes) */
-	localMoveSize->isMoveSizeStart = (isMoveSizeStart != 0) ? TRUE : FALSE;
+	localMoveSize->isMoveSizeStart = (isMoveSizeStart != 0);
 	Stream_Read_UINT16(s, localMoveSize->moveSizeType); /* moveSizeType (2 bytes) */
 	Stream_Read_INT16(s, localMoveSize->posX);          /* posX (2 bytes) */
 	Stream_Read_INT16(s, localMoveSize->posY);          /* posY (2 bytes) */
@@ -145,9 +151,10 @@ static UINT rail_read_server_get_appid_resp_order(wStream* s,
 		return ERROR_INVALID_DATA;
 
 	Stream_Read_UINT32(s, getAppidResp->windowId); /* windowId (4 bytes) */
-	Stream_Read_UTF16_String(
-	    s, getAppidResp->applicationId,
-	    ARRAYSIZE(getAppidResp->applicationId)); /* applicationId (260 UNICODE chars) */
+	if (!Stream_Read_UTF16_String(
+	        s, getAppidResp->applicationId,
+	        ARRAYSIZE(getAppidResp->applicationId))) /* applicationId (260 UNICODE chars) */
+		return ERROR_INVALID_DATA;
 	return CHANNEL_RC_OK;
 }
 
@@ -315,7 +322,7 @@ static UINT rail_write_languageime_info_order(wStream* s,
 		return ERROR_INVALID_PARAMETER;
 
 	Stream_Write_UINT32(s, langImeInfo->ProfileType);
-	Stream_Write_UINT16(s, langImeInfo->LanguageID);
+	Stream_Write_UINT16(s, WINPR_ASSERTING_INT_CAST(UINT16, langImeInfo->LanguageID));
 	Stream_Write(s, &langImeInfo->LanguageProfileCLSID, sizeof(langImeInfo->LanguageProfileCLSID));
 	Stream_Write(s, &langImeInfo->ProfileGUID, sizeof(langImeInfo->ProfileGUID));
 	Stream_Write_UINT32(s, langImeInfo->KeyboardLayout);
@@ -343,7 +350,7 @@ static UINT rail_write_compartment_info_order(wStream* s,
 static UINT rail_recv_handshake_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_HANDSHAKE_ORDER serverHandshake = { 0 };
+	RAIL_HANDSHAKE_ORDER serverHandshake = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context || !s)
@@ -356,16 +363,6 @@ static UINT rail_recv_handshake_order(railPlugin* rail, wStream* s)
 	}
 
 	rail->channelBuildNumber = serverHandshake.buildNumber;
-
-	if (rail->sendHandshake)
-	{
-		RAIL_HANDSHAKE_ORDER clientHandshake = { 0 };
-		clientHandshake.buildNumber = 0x00001DB0;
-		error = context->ClientHandshake(context, &clientHandshake);
-	}
-
-	if (error != CHANNEL_RC_OK)
-		return error;
 
 	if (context->custom)
 	{
@@ -394,7 +391,7 @@ static UINT rail_read_compartment_info_order(wStream* s,
 static UINT rail_recv_compartmentinfo_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_COMPARTMENT_INFO_ORDER pdu = { 0 };
+	RAIL_COMPARTMENT_INFO_ORDER pdu = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context || !s)
@@ -434,8 +431,8 @@ BOOL rail_is_feature_supported(const rdpContext* context, UINT32 featureMask)
 
 	if (masked != featureMask)
 	{
-		char maskstr[256] = { 0 };
-		char actualstr[256] = { 0 };
+		char maskstr[256] = WINPR_C_ARRAY_INIT;
+		char actualstr[256] = WINPR_C_ARRAY_INIT;
 
 		WLog_WARN(TAG, "have %s, require %s",
 		          freerdp_rail_support_flags_to_string(supported, actualstr, sizeof(actualstr)),
@@ -454,7 +451,7 @@ BOOL rail_is_feature_supported(const rdpContext* context, UINT32 featureMask)
 static UINT rail_recv_handshake_ex_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_HANDSHAKE_EX_ORDER serverHandshake = { 0 };
+	RAIL_HANDSHAKE_EX_ORDER serverHandshake = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!rail || !context || !s)
@@ -473,23 +470,11 @@ static UINT rail_recv_handshake_ex_order(railPlugin* rail, wStream* s)
 	rail->channelFlags = serverHandshake.railHandshakeFlags;
 
 	{
-		char buffer[192] = { 0 };
+		char buffer[192] = WINPR_C_ARRAY_INIT;
 		WLog_DBG(TAG, "HandshakeFlags=%s [buildNumber=0x%08" PRIx32 "]",
 		         rail_handshake_ex_flags_to_string(rail->channelFlags, buffer, sizeof(buffer)),
 		         rail->channelBuildNumber);
 	}
-
-	if (rail->sendHandshake)
-	{
-		RAIL_HANDSHAKE_ORDER clientHandshake = { 0 };
-		clientHandshake.buildNumber = 0x00001DB0;
-		/* 2.2.2.2.3 HandshakeEx PDU (TS_RAIL_ORDER_HANDSHAKE_EX)
-		 * Client response is really a Handshake PDU */
-		error = context->ClientHandshake(context, &clientHandshake);
-	}
-
-	if (error != CHANNEL_RC_OK)
-		return error;
 
 	if (context->custom)
 	{
@@ -510,7 +495,7 @@ static UINT rail_recv_handshake_ex_order(railPlugin* rail, wStream* s)
 static UINT rail_recv_exec_result_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_EXEC_RESULT_ORDER execResult = { 0 };
+	RAIL_EXEC_RESULT_ORDER execResult = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context || !s)
@@ -531,7 +516,7 @@ static UINT rail_recv_exec_result_order(railPlugin* rail, wStream* s)
 	}
 
 fail:
-	free(execResult.exeOrFile.string);
+	rail_unicode_string_free(&execResult.exeOrFile);
 	return error;
 }
 
@@ -543,18 +528,17 @@ fail:
 static UINT rail_recv_server_sysparam_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_SYSPARAM_ORDER sysparam;
-	UINT error = 0;
-	BOOL extendedSpiSupported = 0;
 
 	if (!context || !s)
 		return ERROR_INVALID_PARAMETER;
 
-	extendedSpiSupported = rail_is_extended_spi_supported(rail->channelFlags);
-	if ((error = rail_read_sysparam_order(s, &sysparam, extendedSpiSupported)))
+	const BOOL extendedSpiSupported = rail_is_extended_spi_supported(rail->channelFlags);
+	RAIL_SYSPARAM_ORDER sysparam = WINPR_C_ARRAY_INIT;
+	UINT error = rail_read_sysparam_order(s, &sysparam, extendedSpiSupported);
+	if (error)
 	{
 		WLog_ERR(TAG, "rail_read_sysparam_order failed with error %" PRIu32 "!", error);
-		return error;
+		goto fail;
 	}
 
 	if (context->custom)
@@ -564,6 +548,8 @@ static UINT rail_recv_server_sysparam_order(railPlugin* rail, wStream* s)
 		if (error)
 			WLog_ERR(TAG, "context.ServerSystemParam failed with error %" PRIu32 "", error);
 	}
+fail:
+	rail_unicode_string_free(&sysparam.highContrast.colorScheme);
 
 	return error;
 }
@@ -576,7 +562,7 @@ static UINT rail_recv_server_sysparam_order(railPlugin* rail, wStream* s)
 static UINT rail_recv_server_minmaxinfo_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_MINMAXINFO_ORDER minMaxInfo = { 0 };
+	RAIL_MINMAXINFO_ORDER minMaxInfo = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context || !s)
@@ -607,7 +593,7 @@ static UINT rail_recv_server_minmaxinfo_order(railPlugin* rail, wStream* s)
 static UINT rail_recv_server_localmovesize_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_LOCALMOVESIZE_ORDER localMoveSize = { 0 };
+	RAIL_LOCALMOVESIZE_ORDER localMoveSize = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context || !s)
@@ -638,7 +624,7 @@ static UINT rail_recv_server_localmovesize_order(railPlugin* rail, wStream* s)
 static UINT rail_recv_server_get_appid_resp_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_GET_APPID_RESP_ORDER getAppIdResp = { 0 };
+	RAIL_GET_APPID_RESP_ORDER getAppIdResp = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context || !s)
@@ -670,7 +656,7 @@ static UINT rail_recv_server_get_appid_resp_order(railPlugin* rail, wStream* s)
 static UINT rail_recv_langbar_info_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_LANGBAR_INFO_ORDER langBarInfo = { 0 };
+	RAIL_LANGBAR_INFO_ORDER langBarInfo = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context)
@@ -713,7 +699,7 @@ static UINT rail_read_taskbar_info_order(wStream* s, RAIL_TASKBAR_INFO_ORDER* ta
 static UINT rail_recv_taskbar_info_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_TASKBAR_INFO_ORDER taskBarInfo = { 0 };
+	RAIL_TASKBAR_INFO_ORDER taskBarInfo = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context)
@@ -756,14 +742,14 @@ static UINT rail_read_zorder_sync_order(wStream* s, RAIL_ZORDER_SYNC* zorder)
 static UINT rail_recv_zorder_sync_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_ZORDER_SYNC zorder = { 0 };
+	RAIL_ZORDER_SYNC zorder = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context)
 		return ERROR_INVALID_PARAMETER;
 
 	if ((rail->clientStatus.flags & TS_RAIL_CLIENTSTATUS_ZORDER_SYNC) == 0)
-		return ERROR_INVALID_DATA;
+		return ERROR_BAD_CONFIGURATION;
 
 	if ((error = rail_read_zorder_sync_order(s, &zorder)))
 	{
@@ -791,14 +777,14 @@ static UINT rail_read_cloak_order(wStream* s, RAIL_CLOAK* cloak)
 
 	Stream_Read_UINT32(s, cloak->windowId); /* WindowId (4 bytes) */
 	Stream_Read_UINT8(s, cloaked);          /* Cloaked (1 byte) */
-	cloak->cloak = (cloaked != 0) ? TRUE : FALSE;
+	cloak->cloak = (cloaked != 0);
 	return CHANNEL_RC_OK;
 }
 
 static UINT rail_recv_cloak_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_CLOAK cloak = { 0 };
+	RAIL_CLOAK cloak = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context)
@@ -844,7 +830,7 @@ static UINT rail_read_power_display_request_order(wStream* s, RAIL_POWER_DISPLAY
 static UINT rail_recv_power_display_request_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_POWER_DISPLAY_REQUEST power = { 0 };
+	RAIL_POWER_DISPLAY_REQUEST power = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context)
@@ -853,7 +839,7 @@ static UINT rail_recv_power_display_request_order(railPlugin* rail, wStream* s)
 	/* 2.2.2.13.1 Power Display Request PDU(TS_RAIL_ORDER_POWER_DISPLAY_REQUEST)
 	 */
 	if ((rail->clientStatus.flags & TS_RAIL_CLIENTSTATUS_POWER_DISPLAY_REQUEST_SUPPORTED) == 0)
-		return ERROR_INVALID_DATA;
+		return ERROR_BAD_CONFIGURATION;
 
 	if ((error = rail_read_power_display_request_order(s, &power)))
 	{
@@ -897,7 +883,7 @@ static UINT rail_read_get_application_id_extended_response_order(wStream* s,
 	if (!Stream_Read_UTF16_String(s, id->processImageName, ARRAYSIZE(id->processImageName)))
 		return ERROR_INVALID_DATA;
 
-	if (_wcsnlen(id->applicationID, ARRAYSIZE(id->processImageName)) >=
+	if (_wcsnlen(id->processImageName, ARRAYSIZE(id->processImageName)) >=
 	    ARRAYSIZE(id->processImageName))
 		return ERROR_INVALID_DATA;
 
@@ -907,7 +893,7 @@ static UINT rail_read_get_application_id_extended_response_order(wStream* s,
 static UINT rail_recv_get_application_id_extended_response_order(railPlugin* rail, wStream* s)
 {
 	RailClientContext* context = rail_get_client_interface(rail);
-	RAIL_GET_APPID_RESP_EX id = { 0 };
+	RAIL_GET_APPID_RESP_EX id = WINPR_C_ARRAY_INIT;
 	UINT error = 0;
 
 	if (!context)
@@ -1008,19 +994,23 @@ static UINT rail_recv_caretblinkinfo_order(railPlugin* rail, wStream* s)
  */
 UINT rail_order_recv(LPVOID userdata, wStream* s)
 {
-	char buffer[128] = { 0 };
+	char buffer[128] = WINPR_C_ARRAY_INIT;
 	railPlugin* rail = userdata;
 	UINT16 orderType = 0;
 	UINT16 orderLength = 0;
 	UINT error = CHANNEL_RC_OK;
 
 	if (!rail || !s)
-		return ERROR_INVALID_PARAMETER;
+	{
+		error = ERROR_INVALID_PARAMETER;
+		goto fail;
+	}
 
 	if ((error = rail_read_pdu_header(s, &orderType, &orderLength)))
 	{
 		WLog_ERR(TAG, "rail_read_pdu_header failed with error %" PRIu32 "!", error);
-		return error;
+		error = ERROR_INVALID_DATA;
+		goto fail;
 	}
 
 	WLog_Print(rail->log, WLOG_DEBUG, "Received %s PDU, length:%" PRIu16 "",
@@ -1098,14 +1088,26 @@ UINT rail_order_recv(LPVOID userdata, wStream* s)
 			return ERROR_INVALID_DATA;
 	}
 
+	if (error == ERROR_BAD_CONFIGURATION)
+	{
+		char ebuffer[128] = WINPR_C_ARRAY_INIT;
+		WLog_Print(rail->log, WLOG_WARN,
+		           "%s - SERVER BUG: The support for this feature was not announced!",
+		           rail_get_order_type_string_full(orderType, ebuffer, sizeof(ebuffer)));
+
+		if (freerdp_settings_get_bool(rail->rdpcontext->settings,
+		                              FreeRDP_AllowUnanouncedOrdersFromServer))
+			error = CHANNEL_RC_OK;
+	}
 	if (error != CHANNEL_RC_OK)
 	{
-		char ebuffer[128] = { 0 };
+		char ebuffer[128] = WINPR_C_ARRAY_INIT;
 		WLog_Print(rail->log, WLOG_ERROR, "Failed to process rail %s PDU, length:%" PRIu16 "",
 		           rail_get_order_type_string_full(orderType, ebuffer, sizeof(ebuffer)),
 		           orderLength);
 	}
 
+fail:
 	Stream_Free(s, TRUE);
 	return error;
 }
@@ -1161,7 +1163,7 @@ UINT rail_send_handshake_ex_order(railPlugin* rail, const RAIL_HANDSHAKE_EX_ORDE
  */
 UINT rail_send_client_status_order(railPlugin* rail, const RAIL_CLIENT_STATUS_ORDER* clientStatus)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !clientStatus)
@@ -1198,7 +1200,7 @@ UINT rail_send_client_exec_order(railPlugin* rail, UINT16 flags,
                                  const RAIL_UNICODE_STRING* workingDir,
                                  const RAIL_UNICODE_STRING* arguments)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 	size_t length = 0;
 
@@ -1234,7 +1236,7 @@ out:
  */
 UINT rail_send_client_activate_order(railPlugin* rail, const RAIL_ACTIVATE_ORDER* activate)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !activate)
@@ -1267,7 +1269,7 @@ UINT rail_send_client_activate_order(railPlugin* rail, const RAIL_ACTIVATE_ORDER
  */
 UINT rail_send_client_sysmenu_order(railPlugin* rail, const RAIL_SYSMENU_ORDER* sysmenu)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !sysmenu)
@@ -1300,7 +1302,7 @@ UINT rail_send_client_sysmenu_order(railPlugin* rail, const RAIL_SYSMENU_ORDER* 
  */
 UINT rail_send_client_syscommand_order(railPlugin* rail, const RAIL_SYSCOMMAND_ORDER* syscommand)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !syscommand)
@@ -1334,7 +1336,7 @@ UINT rail_send_client_syscommand_order(railPlugin* rail, const RAIL_SYSCOMMAND_O
 UINT rail_send_client_notify_event_order(railPlugin* rail,
                                          const RAIL_NOTIFY_EVENT_ORDER* notifyEvent)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !notifyEvent)
@@ -1367,7 +1369,7 @@ UINT rail_send_client_notify_event_order(railPlugin* rail,
  */
 UINT rail_send_client_window_move_order(railPlugin* rail, const RAIL_WINDOW_MOVE_ORDER* windowMove)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !windowMove)
@@ -1401,7 +1403,7 @@ UINT rail_send_client_window_move_order(railPlugin* rail, const RAIL_WINDOW_MOVE
 UINT rail_send_client_get_appid_req_order(railPlugin* rail,
                                           const RAIL_GET_APPID_REQ_ORDER* getAppIdReq)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !getAppIdReq)
@@ -1434,7 +1436,7 @@ UINT rail_send_client_get_appid_req_order(railPlugin* rail,
 UINT rail_send_client_langbar_info_order(railPlugin* rail,
                                          const RAIL_LANGBAR_INFO_ORDER* langBarInfo)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !langBarInfo)
@@ -1465,7 +1467,7 @@ UINT rail_send_client_langbar_info_order(railPlugin* rail,
 UINT rail_send_client_languageime_info_order(railPlugin* rail,
                                              const RAIL_LANGUAGEIME_INFO_ORDER* langImeInfo)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !langImeInfo)
@@ -1496,7 +1498,7 @@ UINT rail_send_client_languageime_info_order(railPlugin* rail,
 UINT rail_send_client_compartment_info_order(railPlugin* rail,
                                              const RAIL_COMPARTMENT_INFO_ORDER* compartmentInfo)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 	UINT error = 0;
 
 	if (!rail || !compartmentInfo)
@@ -1549,7 +1551,7 @@ UINT rail_send_client_snap_arrange_order(railPlugin* rail, const RAIL_SNAP_ARRAN
 	/* 2.2.2.7.5 Client Window Snap PDU (TS_RAIL_ORDER_SNAP_ARRANGE) */
 	if ((rail->channelFlags & TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_SNAP_ARRANGE_SUPPORTED) == 0)
 	{
-		RAIL_WINDOW_MOVE_ORDER move = { 0 };
+		RAIL_WINDOW_MOVE_ORDER move = WINPR_C_ARRAY_INIT;
 		move.top = snap->top;
 		move.left = snap->left;
 		move.right = snap->right;

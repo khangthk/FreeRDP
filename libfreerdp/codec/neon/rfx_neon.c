@@ -22,15 +22,12 @@
 #include <freerdp/log.h>
 
 #include "../rfx_types.h"
+#include "../rfx_quantization.h"
 #include "rfx_neon.h"
 
-#if defined(WITH_NEON)
-#if defined(_M_ARM64) || defined(_M_ARM)
-#define NEON_ENABLED
-#endif
-#endif
+#include "../../core/simd.h"
 
-#if defined(NEON_ENABLED)
+#if defined(NEON_INTRINSICS_ENABLED)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,12 +37,12 @@
 
 /* rfx_decode_YCbCr_to_RGB_NEON code now resides in the primitives library. */
 
-static __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+static inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 rfx_quantization_decode_block_NEON(INT16* buffer, const size_t buffer_size, const UINT32 factor)
 {
 	int16x8_t quantFactors = vdupq_n_s16(factor);
-	int16x8_t* buf = (int16x8_t*)buffer;
-	int16x8_t* buf_end = (int16x8_t*)(buffer + buffer_size);
+	int16x8_t* buf = WINPR_PACKED_ALIGN_CAST(int16x8_t*, buffer);
+	int16x8_t* buf_end = WINPR_PACKED_ALIGN_CAST(int16x8_t*, (buffer + buffer_size));
 
 	do
 	{
@@ -56,10 +53,20 @@ rfx_quantization_decode_block_NEON(INT16* buffer, const size_t buffer_size, cons
 	} while (buf < buf_end);
 }
 
-static void rfx_quantization_decode_NEON(INT16* buffer, const UINT32* WINPR_RESTRICT quantVals)
+WINPR_ATTR_NODISCARD
+static BOOL rfx_quantization_decode_NEON(INT16* buffer, const UINT32* WINPR_RESTRICT quantVals,
+                                         size_t nrQuantVals)
 {
 	WINPR_ASSERT(buffer);
 	WINPR_ASSERT(quantVals);
+	WINPR_ASSERT(nrQuantVals == NR_QUANT_VALUES);
+
+	for (size_t x = 0; x < nrQuantVals; x++)
+	{
+		const UINT32 val = quantVals[x];
+		if (val < 1)
+			return FALSE;
+	}
 
 	rfx_quantization_decode_block_NEON(&buffer[0], 1024, quantVals[8] - 1);    /* HL1 */
 	rfx_quantization_decode_block_NEON(&buffer[1024], 1024, quantVals[7] - 1); /* LH1 */
@@ -71,9 +78,10 @@ static void rfx_quantization_decode_NEON(INT16* buffer, const UINT32* WINPR_REST
 	rfx_quantization_decode_block_NEON(&buffer[3904], 64, quantVals[1] - 1);   /* LH3 */
 	rfx_quantization_decode_block_NEON(&buffer[3968], 64, quantVals[3] - 1);   /* HH3 */
 	rfx_quantization_decode_block_NEON(&buffer[4032], 64, quantVals[0] - 1);   /* LL3 */
+	return TRUE;
 }
 
-static __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+static inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 rfx_dwt_2d_decode_block_horiz_NEON(INT16* WINPR_RESTRICT l, INT16* WINPR_RESTRICT h,
                                    INT16* WINPR_RESTRICT dst, size_t subband_width)
 {
@@ -136,7 +144,7 @@ rfx_dwt_2d_decode_block_horiz_NEON(INT16* WINPR_RESTRICT l, INT16* WINPR_RESTRIC
 	}
 }
 
-static __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+static inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 rfx_dwt_2d_decode_block_vert_NEON(INT16* WINPR_RESTRICT l, INT16* WINPR_RESTRICT h,
                                   INT16* WINPR_RESTRICT dst, size_t subband_width)
 {
@@ -207,7 +215,7 @@ rfx_dwt_2d_decode_block_vert_NEON(INT16* WINPR_RESTRICT l, INT16* WINPR_RESTRICT
 	}
 }
 
-static __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+static inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 rfx_dwt_2d_decode_block_NEON(INT16* WINPR_RESTRICT buffer, INT16* WINPR_RESTRICT idwt,
                              size_t subband_width)
 {
@@ -237,7 +245,7 @@ static void rfx_dwt_2d_decode_NEON(INT16* buffer, INT16* dwt_buffer)
 	rfx_dwt_2d_decode_block_NEON(buffer, dwt_buffer, 32);
 }
 
-static INLINE void rfx_idwt_extrapolate_horiz_neon(INT16* restrict pLowBand, size_t nLowStep,
+static inline void rfx_idwt_extrapolate_horiz_neon(INT16* restrict pLowBand, size_t nLowStep,
                                                    const INT16* restrict pHighBand,
                                                    size_t nHighStep, INT16* restrict pDstBand,
                                                    size_t nDstStep, size_t nLowCount,
@@ -321,7 +329,7 @@ static INLINE void rfx_idwt_extrapolate_horiz_neon(INT16* restrict pLowBand, siz
 	}
 }
 
-static INLINE void rfx_idwt_extrapolate_vert_neon(const INT16* restrict pLowBand, size_t nLowStep,
+static inline void rfx_idwt_extrapolate_vert_neon(const INT16* restrict pLowBand, size_t nLowStep,
                                                   const INT16* restrict pHighBand, size_t nHighStep,
                                                   INT16* restrict pDstBand, size_t nDstStep,
                                                   size_t nLowCount, size_t nHighCount,
@@ -462,20 +470,20 @@ static INLINE void rfx_idwt_extrapolate_vert_neon(const INT16* restrict pLowBand
 	}
 }
 
-static INLINE size_t prfx_get_band_l_count(size_t level)
+static inline size_t prfx_get_band_l_count(size_t level)
 {
 	return (64 >> level) + 1;
 }
 
-static INLINE size_t prfx_get_band_h_count(size_t level)
+static inline size_t prfx_get_band_h_count(size_t level)
 {
 	if (level == 1)
 		return (64 >> 1) - 1;
 	else
-		return (64 + (1 << (level - 1))) >> level;
+		return (64 + (1u << (level - 1))) >> level;
 }
 
-static INLINE void rfx_dwt_2d_decode_extrapolate_block_neon(INT16* buffer, INT16* temp,
+static inline void rfx_dwt_2d_decode_extrapolate_block_neon(INT16* buffer, INT16* temp,
                                                             size_t level)
 {
 	size_t nDstStepX;
@@ -525,23 +533,20 @@ static void rfx_dwt_2d_extrapolate_decode_neon(INT16* buffer, INT16* temp)
 	rfx_dwt_2d_decode_extrapolate_block_neon(&buffer[3007], temp, 2);
 	rfx_dwt_2d_decode_extrapolate_block_neon(&buffer[0], temp, 1);
 }
-#endif // NEON_ENABLED
+#endif // NEON_INTRINSICS_ENABLED
 
-void rfx_init_neon(RFX_CONTEXT* context)
+void rfx_init_neon_int(RFX_CONTEXT* WINPR_RESTRICT context)
 {
-#if defined(NEON_ENABLED)
-	if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE))
-	{
-		DEBUG_RFX("Using NEON optimizations");
-		PROFILER_RENAME(context->priv->prof_rfx_ycbcr_to_rgb, "rfx_decode_YCbCr_to_RGB_NEON");
-		PROFILER_RENAME(context->priv->prof_rfx_quantization_decode,
-		                "rfx_quantization_decode_NEON");
-		PROFILER_RENAME(context->priv->prof_rfx_dwt_2d_decode, "rfx_dwt_2d_decode_NEON");
-		context->quantization_decode = rfx_quantization_decode_NEON;
-		context->dwt_2d_decode = rfx_dwt_2d_decode_NEON;
-		context->dwt_2d_extrapolate_decode = rfx_dwt_2d_extrapolate_decode_neon;
-	}
+#if defined(NEON_INTRINSICS_ENABLED)
+	WLog_VRB(PRIM_TAG, "NEON optimizations");
+	PROFILER_RENAME(context->priv->prof_rfx_ycbcr_to_rgb, "rfx_decode_YCbCr_to_RGB_NEON");
+	PROFILER_RENAME(context->priv->prof_rfx_quantization_decode, "rfx_quantization_decode_NEON");
+	PROFILER_RENAME(context->priv->prof_rfx_dwt_2d_decode, "rfx_dwt_2d_decode_NEON");
+	context->quantization_decode = rfx_quantization_decode_NEON;
+	context->dwt_2d_decode = rfx_dwt_2d_decode_NEON;
+	context->dwt_2d_extrapolate_decode = rfx_dwt_2d_extrapolate_decode_neon;
 #else
+	WLog_VRB(PRIM_TAG, "undefined WITH_SIMD or NEON intrinsics not available");
 	WINPR_UNUSED(context);
 #endif
 }

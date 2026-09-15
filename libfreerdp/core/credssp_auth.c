@@ -40,7 +40,7 @@
 
 #define TAG FREERDP_TAG("core.auth")
 
-#define SERVER_KEY "Software\\" FREERDP_VENDOR_STRING "\\" FREERDP_PRODUCT_STRING "\\Server"
+#define SERVER_KEY "Software\\%s\\Server"
 
 enum AUTH_STATE
 {
@@ -56,8 +56,8 @@ struct rdp_credssp_auth
 	SecurityFunctionTable* table;
 	SecPkgInfo* info;
 	SEC_WINNT_AUTH_IDENTITY identity;
-	SEC_WINPR_NTLM_SETTINGS ntlmSettings;
-	SEC_WINPR_KERBEROS_SETTINGS kerberosSettings;
+	SEC_WINPR_NTLM_SETTINGS_V2* ntlmSettingsV2;
+	SEC_WINPR_KERBEROS_SETTINGS_V2* kerberosSettingsV2;
 	CredHandle credentials;
 	BOOL server;
 	SecPkgContext_Bindings* bindings;
@@ -94,28 +94,69 @@ static BOOL parseKerberosDeltat(const char* value, INT32* dest, const char* mess
 static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth);
 static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* settings);
 
+#define log_status(status, level, ...) \
+	log_status_((status), (level), __FILE__, __func__, __LINE__, __VA_ARGS__)
+
+WINPR_ATTR_FORMAT_ARG(6, 7)
+static BOOL log_status_(SECURITY_STATUS status, DWORD level, const char* file, const char* fkt,
+                        size_t line, WINPR_FORMAT_ARG const char* what, ...)
+{
+	static wLog* log = nullptr;
+	if (!log)
+		log = WLog_Get(TAG);
+
+	if (WLog_IsLevelActive(log, level))
+	{
+		char fwhat[128] = WINPR_C_ARRAY_INIT;
+		va_list ap = WINPR_C_ARRAY_INIT;
+		va_start(ap, what);
+		(void)vsnprintf(fwhat, sizeof(fwhat) - 1, what, ap);
+		va_end(ap);
+
+		WLog_PrintTextMessage(log, level, line, file, fkt, "%s status %s [0x%08" PRIx32 "]", fwhat,
+		                      GetSecurityStatusString(status),
+		                      WINPR_CXX_COMPAT_CAST(uint32_t, status));
+	}
+
+	return FALSE;
+}
+
 static BOOL credssp_auth_update_name_cache(rdpCredsspAuth* auth, TCHAR* name)
 {
 	WINPR_ASSERT(auth);
 
 	free(auth->pkgNameA);
-	auth->pkgNameA = NULL;
+	auth->pkgNameA = nullptr;
 	if (name)
 #if defined(UNICODE)
-		auth->pkgNameA = ConvertWCharToUtf8Alloc(name, NULL);
+		auth->pkgNameA = ConvertWCharToUtf8Alloc(name, nullptr);
 #else
 		auth->pkgNameA = _strdup(name);
 #endif
 	return TRUE;
 }
-rdpCredsspAuth* credssp_auth_new(const rdpContext* rdp_ctx)
+rdpCredsspAuth* credssp_auth_new(const rdpContext* context)
 {
+	WINPR_ASSERT(context);
 	rdpCredsspAuth* auth = calloc(1, sizeof(rdpCredsspAuth));
+	if (!auth)
+		return nullptr;
 
-	if (auth)
-		auth->rdp_ctx = rdp_ctx;
+	auth->ntlmSettingsV2 = sspi_AllocSecNtlmSettings();
+	if (!auth->ntlmSettingsV2)
+		goto fail;
+
+	auth->kerberosSettingsV2 = sspi_AllocSecKerberosSettings();
+	if (!auth->kerberosSettingsV2)
+		goto fail;
+
+	auth->rdp_ctx = context;
 
 	return auth;
+
+fail:
+	credssp_auth_free(auth);
+	return nullptr;
 }
 
 BOOL credssp_auth_init(rdpCredsspAuth* auth, TCHAR* pkg_name, SecPkgContext_Bindings* bindings)
@@ -140,11 +181,8 @@ BOOL credssp_auth_init(rdpCredsspAuth* auth, TCHAR* pkg_name, SecPkgContext_Bind
 	WINPR_ASSERT(auth->table->QuerySecurityPackageInfo);
 	const SECURITY_STATUS status = auth->table->QuerySecurityPackageInfo(pkg_name, &auth->info);
 	if (status != SEC_E_OK)
-	{
-		WLog_ERR(TAG, "QuerySecurityPackageInfo (%s) failed with %s [0x%08X]",
-		         credssp_auth_pkg_name(auth), GetSecurityStatusString(status), status);
-		return FALSE;
-	}
+		return log_status(status, WLOG_ERROR, "QuerySecurityPackageInfo (%s)",
+		                  credssp_auth_pkg_name(auth));
 
 	if (!credssp_auth_update_name_cache(auth, auth->info->Name))
 		return FALSE;
@@ -163,14 +201,12 @@ BOOL credssp_auth_init(rdpCredsspAuth* auth, TCHAR* pkg_name, SecPkgContext_Bind
 
 static BOOL credssp_auth_setup_auth_data(rdpCredsspAuth* auth,
                                          const SEC_WINNT_AUTH_IDENTITY* identity,
-                                         SEC_WINNT_AUTH_IDENTITY_WINPR* pAuthData)
+                                         SEC_WINNT_AUTH_IDENTITY_WINPR_V2* pAuthData)
 {
-	SEC_WINNT_AUTH_IDENTITY_EXW* identityEx = NULL;
-
 	WINPR_ASSERT(pAuthData);
-	ZeroMemory(pAuthData, sizeof(SEC_WINNT_AUTH_IDENTITY_WINPR));
+	ZeroMemory(pAuthData, sizeof(SEC_WINNT_AUTH_IDENTITY_WINPR_V2));
 
-	identityEx = &pAuthData->identity;
+	SEC_WINNT_AUTH_IDENTITY_EXW* identityEx = &pAuthData->identity;
 	identityEx->Version = SEC_WINNT_AUTH_IDENTITY_VERSION;
 	identityEx->Length = sizeof(SEC_WINNT_AUTH_IDENTITY_EX);
 	identityEx->User = identity->User;
@@ -181,16 +217,24 @@ static BOOL credssp_auth_setup_auth_data(rdpCredsspAuth* auth,
 	identityEx->PasswordLength = identity->PasswordLength;
 	identityEx->Flags = identity->Flags;
 	identityEx->Flags |= SEC_WINNT_AUTH_IDENTITY_UNICODE;
-	identityEx->Flags |= SEC_WINNT_AUTH_IDENTITY_EXTENDED;
+	identityEx->Flags |= SEC_WINNT_AUTH_IDENTITY_EXTENDED_v2;
 
 	if (auth->package_list)
 	{
+		const size_t len = _wcslen(auth->package_list);
+		if (len > UINT32_MAX)
+			return FALSE;
+
 		identityEx->PackageList = (UINT16*)auth->package_list;
-		identityEx->PackageListLength = _wcslen(auth->package_list);
+		identityEx->PackageListLength = (UINT32)len;
 	}
 
-	pAuthData->ntlmSettings = &auth->ntlmSettings;
-	pAuthData->kerberosSettings = &auth->kerberosSettings;
+	pAuthData->version = SEC_WINNT_AUTH_IDENTITY_WINPR_V2_REVISION_1;
+	pAuthData->ntlmSettingsV2 = auth->ntlmSettingsV2;
+	WINPR_ASSERT(pAuthData->ntlmSettingsV2);
+
+	pAuthData->kerberosSettingsV2 = auth->kerberosSettingsV2;
+	WINPR_ASSERT(pAuthData->kerberosSettingsV2);
 
 	return TRUE;
 }
@@ -199,28 +243,30 @@ static BOOL credssp_auth_client_init_cred_attributes(rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
 
-	if (!utils_str_is_empty(auth->kerberosSettings.kdcUrl))
+	if (!utils_str_is_empty(auth->kerberosSettingsV2->kdcUrl))
 	{
 		SECURITY_STATUS status = ERROR_INTERNAL_ERROR;
-		SecPkgCredentials_KdcProxySettingsW* secAttr = NULL;
 		SSIZE_T str_size = 0;
-		ULONG buffer_size = 0;
 
-		str_size = ConvertUtf8ToWChar(auth->kerberosSettings.kdcUrl, NULL, 0);
-		if (str_size <= 0)
+		str_size = ConvertUtf8ToWChar(auth->kerberosSettingsV2->kdcUrl, nullptr, 0);
+		if ((str_size <= 0) || (str_size >= UINT16_MAX / 2))
 			return FALSE;
 		str_size++;
 
-		buffer_size = sizeof(SecPkgCredentials_KdcProxySettingsW) + str_size * sizeof(WCHAR);
-		secAttr = calloc(1, buffer_size);
+		const size_t buffer_size =
+		    sizeof(SecPkgCredentials_KdcProxySettingsW) + (size_t)str_size * sizeof(WCHAR);
+		if (buffer_size > UINT32_MAX)
+			return FALSE;
+		SecPkgCredentials_KdcProxySettingsW* secAttr = calloc(1, buffer_size);
 		if (!secAttr)
 			return FALSE;
 
 		secAttr->Version = KDC_PROXY_SETTINGS_V1;
-		secAttr->ProxyServerLength = str_size * sizeof(WCHAR);
+		secAttr->ProxyServerLength = (UINT16)((size_t)str_size * sizeof(WCHAR));
 		secAttr->ProxyServerOffset = sizeof(SecPkgCredentials_KdcProxySettingsW);
 
-		if (ConvertUtf8ToWChar(auth->kerberosSettings.kdcUrl, (WCHAR*)(secAttr + 1), str_size) <= 0)
+		if (ConvertUtf8ToWChar(auth->kerberosSettingsV2->kdcUrl, (WCHAR*)(secAttr + 1),
+		                       (size_t)str_size) <= 0)
 		{
 			free(secAttr);
 			return FALSE;
@@ -230,14 +276,14 @@ static BOOL credssp_auth_client_init_cred_attributes(rdpCredsspAuth* auth)
 		if (auth->table->SetCredentialsAttributesW)
 			status = auth->table->SetCredentialsAttributesW(&auth->credentials,
 			                                                SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS,
-			                                                (void*)secAttr, buffer_size);
+			                                                (void*)secAttr, (UINT32)buffer_size);
 		else
 			status = SEC_E_UNSUPPORTED_FUNCTION;
 #else
 		if (auth->table->SetCredentialsAttributesA)
 			status = auth->table->SetCredentialsAttributesA(&auth->credentials,
 			                                                SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS,
-			                                                (void*)secAttr, buffer_size);
+			                                                (void*)secAttr, (UINT32)buffer_size);
 		else
 			status = SEC_E_UNSUPPORTED_FUNCTION;
 #endif
@@ -245,7 +291,7 @@ static BOOL credssp_auth_client_init_cred_attributes(rdpCredsspAuth* auth)
 		if (status != SEC_E_OK)
 		{
 			WLog_WARN(TAG, "Explicit Kerberos KDC URL (%s) injection is not supported",
-			          auth->kerberosSettings.kdcUrl);
+			          auth->kerberosSettingsV2->kdcUrl);
 		}
 
 		free(secAttr);
@@ -258,8 +304,8 @@ BOOL credssp_auth_setup_client(rdpCredsspAuth* auth, const char* target_service,
                                const char* target_hostname, const SEC_WINNT_AUTH_IDENTITY* identity,
                                const char* pkinit)
 {
-	void* pAuthData = NULL;
-	SEC_WINNT_AUTH_IDENTITY_WINPR winprAuthData = { 0 };
+	void* pAuthData = nullptr;
+	SEC_WINNT_AUTH_IDENTITY_WINPR_V2 winprAuthData = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(auth);
 	WINPR_ASSERT(auth->table);
@@ -277,8 +323,7 @@ BOOL credssp_auth_setup_client(rdpCredsspAuth* auth, const char* target_service,
 
 		if (pkinit)
 		{
-			auth->kerberosSettings.pkinitX509Identity = _strdup(pkinit);
-			if (!auth->kerberosSettings.pkinitX509Identity)
+			if (!sspi_CloneSecSettingsString(&auth->kerberosSettingsV2->pkinitX509Identity, pkinit))
 			{
 				WLog_ERR(TAG, "unable to copy pkinitArgs");
 				return FALSE;
@@ -289,16 +334,12 @@ BOOL credssp_auth_setup_client(rdpCredsspAuth* auth, const char* target_service,
 	}
 
 	WINPR_ASSERT(auth->table->AcquireCredentialsHandle);
-	const SECURITY_STATUS status =
-	    auth->table->AcquireCredentialsHandle(NULL, auth->info->Name, SECPKG_CRED_OUTBOUND, NULL,
-	                                          pAuthData, NULL, NULL, &auth->credentials, NULL);
+	const SECURITY_STATUS status = auth->table->AcquireCredentialsHandle(
+	    nullptr, auth->info->Name, SECPKG_CRED_OUTBOUND, nullptr, pAuthData, nullptr, nullptr,
+	    &auth->credentials, nullptr);
 
 	if (status != SEC_E_OK)
-	{
-		WLog_ERR(TAG, "AcquireCredentialsHandleA failed with %s [0x%08X]",
-		         GetSecurityStatusString(status), status);
-		return FALSE;
-	}
+		return log_status(status, WLOG_ERROR, "AcquireCredentialsHandleA");
 
 	if (!credssp_auth_client_init_cred_attributes(auth))
 	{
@@ -314,31 +355,27 @@ BOOL credssp_auth_setup_client(rdpCredsspAuth* auth, const char* target_service,
 
 BOOL credssp_auth_setup_server(rdpCredsspAuth* auth)
 {
-	void* pAuthData = NULL;
-	SEC_WINNT_AUTH_IDENTITY_WINPR winprAuthData = { 0 };
+	void* pAuthData = nullptr;
+	SEC_WINNT_AUTH_IDENTITY_WINPR_V2 winprAuthData = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(auth);
 	WINPR_ASSERT(auth->table);
 
 	WINPR_ASSERT(auth->state == AUTH_STATE_INITIAL);
 
-	if (auth->ntlmSettings.samFile || auth->ntlmSettings.hashCallback ||
-	    auth->kerberosSettings.keytab)
+	if (auth->ntlmSettingsV2->samFile || auth->ntlmSettingsV2->hashCallback ||
+	    auth->kerberosSettingsV2->keytab)
 	{
 		credssp_auth_setup_auth_data(auth, &auth->identity, &winprAuthData);
 		pAuthData = &winprAuthData;
 	}
 
 	WINPR_ASSERT(auth->table->AcquireCredentialsHandle);
-	const SECURITY_STATUS status =
-	    auth->table->AcquireCredentialsHandle(NULL, auth->info->Name, SECPKG_CRED_INBOUND, NULL,
-	                                          pAuthData, NULL, NULL, &auth->credentials, NULL);
+	const SECURITY_STATUS status = auth->table->AcquireCredentialsHandle(
+	    nullptr, auth->info->Name, SECPKG_CRED_INBOUND, nullptr, pAuthData, nullptr, nullptr,
+	    &auth->credentials, nullptr);
 	if (status != SEC_E_OK)
-	{
-		WLog_ERR(TAG, "AcquireCredentialsHandleA failed with %s [0x%08X]",
-		         GetSecurityStatusString(status), status);
-		return FALSE;
-	}
+		return log_status(status, WLOG_ERROR, "AcquireCredentialsHandleA");
 
 	auth->state = AUTH_STATE_CREDS;
 	WLog_DBG(TAG, "Acquired server credentials");
@@ -392,12 +429,28 @@ void credssp_auth_set_flags(rdpCredsspAuth* auth, ULONG flags)
  *                                           --------------
  */
 
+#define query_logged(auth, ulAttribute, pBuffer) \
+	query_logged_((auth), (ulAttribute), (pBuffer), __FILE__, __func__, __LINE__)
+static SECURITY_STATUS query_logged_(rdpCredsspAuth* auth, ULONG ulAttribute, void* pBuffer,
+                                     const char* file, const char* fkt, size_t line)
+{
+	WINPR_ASSERT(auth);
+	WINPR_ASSERT(auth->table);
+	WINPR_ASSERT(auth->table->QueryContextAttributes);
+
+	SECURITY_STATUS status =
+	    auth->table->QueryContextAttributes(&auth->context, ulAttribute, pBuffer);
+	(void)log_status_(status, WLOG_DEBUG, file, fkt, line,
+	                  "QueryContextAttributes(0x%08" PRIx32 ")", ulAttribute);
+	return status;
+}
+
 int credssp_auth_authenticate(rdpCredsspAuth* auth)
 {
 	SECURITY_STATUS status = ERROR_INTERNAL_ERROR;
-	SecBuffer input_buffers[2] = { 0 };
+	SecBuffer input_buffers[2] = WINPR_C_ARRAY_INIT;
 	SecBufferDesc input_buffer_desc = { SECBUFFER_VERSION, 1, input_buffers };
-	CtxtHandle* context = NULL;
+	CtxtHandle* context = nullptr;
 
 	WINPR_ASSERT(auth);
 	WINPR_ASSERT(auth->table);
@@ -413,13 +466,15 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 		case AUTH_STATE_FINAL:
 			WLog_ERR(TAG, "context in invalid state!");
 			return -1;
+		default:
+			break;
 	}
 
 	/* input buffer will be null on first call,
-	 * context MUST be NULL on first call */
+	 * context MUST be nullptr on first call */
 	context = &auth->context;
 	if (!auth->context.dwLower && !auth->context.dwUpper)
-		context = NULL;
+		context = nullptr;
 
 	input_buffers[0] = auth->input_buffer;
 
@@ -443,14 +498,34 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 		WINPR_ASSERT(auth->table->AcceptSecurityContext);
 		status = auth->table->AcceptSecurityContext(
 		    &auth->credentials, context, &input_buffer_desc, auth->flags, SECURITY_NATIVE_DREP,
-		    &auth->context, &output_buffer_desc, &auth->flags, NULL);
+		    &auth->context, &output_buffer_desc, &auth->flags, nullptr);
 	}
 	else
 	{
 		WINPR_ASSERT(auth->table->InitializeSecurityContext);
 		status = auth->table->InitializeSecurityContext(
 		    &auth->credentials, context, auth->spn, auth->flags, 0, SECURITY_NATIVE_DREP,
-		    &input_buffer_desc, 0, &auth->context, &output_buffer_desc, &auth->flags, NULL);
+		    &input_buffer_desc, 0, &auth->context, &output_buffer_desc, &auth->flags, nullptr);
+
+#if !defined(_WIN32)
+		const rdpSettings* settings = auth->rdp_ctx->settings;
+		WINPR_ASSERT(settings);
+		const char* name = freerdp_settings_get_string(settings, FreeRDP_SspiClientHostname);
+		if (name)
+		{
+			const size_t len = strlen(name);
+			if (len > ULONG_MAX)
+				status = SEC_E_INVALID_PARAMETER;
+			else
+			{
+				const SECURITY_STATUS sca = auth->table->SetContextAttributesA(
+				    &auth->context, SECPKG_ATTR_AUTH_NTLM_HOSTNAME,
+				    WINPR_CAST_CONST_PTR_AWAY(name, char*), WINPR_ASSERTING_INT_CAST(ULONG, len));
+				(void)log_status(sca, WLOG_DEBUG, "SetContextAttributesA(0x%08" PRIx32 ")",
+				                 SECPKG_ATTR_AUTH_NTLM_HOSTNAME);
+			}
+		}
+#endif
 	}
 
 	if (status == SEC_E_OK)
@@ -461,15 +536,42 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 
 		/* Not terrible if this fails, although encryption functions may run into issues down the
 		 * line, still, authentication succeeded */
-		WINPR_ASSERT(auth->table->QueryContextAttributes);
-		status =
-		    auth->table->QueryContextAttributes(&auth->context, SECPKG_ATTR_SIZES, &auth->sizes);
-		WLog_DBG(TAG, "QueryContextAttributes returned %s [0x%08" PRIx32 "]",
-		         GetSecurityStatusString(status), status);
-		WLog_DBG(TAG, "Context sizes: cbMaxSignature=%d, cbSecurityTrailer=%d",
+		(void)query_logged(auth, SECPKG_ATTR_SIZES, &auth->sizes);
+		WLog_DBG(TAG, "Context sizes: cbMaxSignature=%" PRIu32 ", cbSecurityTrailer=%" PRIu32 "",
 		         auth->sizes.cbMaxSignature, auth->sizes.cbSecurityTrailer);
 
-		return 1;
+		int rc = 1;
+#if !defined(_WIN32)
+		rdpSettings* settings = auth->rdp_ctx->settings;
+		if (!freerdp_settings_set_string(settings, FreeRDP_SspiClientHostname, nullptr))
+			return -1;
+
+		ULONG len = 0;
+		SECURITY_STATUS qstatus = query_logged(auth, SECPKG_ATTR_AUTH_NTLM_HOSTNAME_LEN, &len);
+
+		if ((qstatus == SEC_E_OK) && (len > 0))
+		{
+			void* WorkstationName = calloc(len + 1, sizeof(WCHAR));
+			if (!WorkstationName)
+				return -1;
+
+			qstatus = query_logged(auth, SECPKG_ATTR_AUTH_NTLM_HOSTNAME, WorkstationName);
+			if (qstatus == SEC_E_OK)
+			{
+#if defined(UNICODE)
+				if (!freerdp_settings_set_string_from_utf16N(settings, FreeRDP_SspiClientHostname,
+				                                             WorkstationName, len))
+					rc = -1;
+#else
+				if (!freerdp_settings_set_string_len(settings, FreeRDP_SspiClientHostname,
+				                                     WorkstationName, len))
+					rc = -1;
+#endif
+			}
+			free(WorkstationName);
+		}
+#endif
+		return rc;
 	}
 	else if (status == SEC_I_CONTINUE_NEEDED)
 	{
@@ -480,9 +582,8 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 	}
 	else
 	{
-		WLog_ERR(TAG, "%s failed with %s [0x%08X]",
-		         auth->server ? "AcceptSecurityContext" : "InitializeSecurityContext",
-		         GetSecurityStatusString(status), status);
+		(void)log_status(status, WLOG_ERROR,
+		                 auth->server ? "AcceptSecurityContext" : "InitializeSecurityContext");
 		auth->sspi_error = status;
 		return -1;
 	}
@@ -493,9 +594,9 @@ BOOL credssp_auth_encrypt(rdpCredsspAuth* auth, const SecBuffer* plaintext, SecB
                           size_t* signature_length, ULONG sequence)
 {
 	SECURITY_STATUS status = ERROR_INTERNAL_ERROR;
-	SecBuffer buffers[2] = { 0 };
+	SecBuffer buffers[2] = WINPR_C_ARRAY_INIT;
 	SecBufferDesc buffer_desc = { SECBUFFER_VERSION, 2, buffers };
-	BYTE* buf = NULL;
+	BYTE* buf = nullptr;
 
 	WINPR_ASSERT(auth && auth->table);
 	WINPR_ASSERT(plaintext);
@@ -530,10 +631,8 @@ BOOL credssp_auth_encrypt(rdpCredsspAuth* auth, const SecBuffer* plaintext, SecB
 	status = auth->table->EncryptMessage(&auth->context, 0, &buffer_desc, sequence);
 	if (status != SEC_E_OK)
 	{
-		WLog_ERR(TAG, "EncryptMessage failed with %s [0x%08X]", GetSecurityStatusString(status),
-		         status);
 		free(buf);
-		return FALSE;
+		return log_status(status, WLOG_ERROR, "EncryptMessage");
 	}
 
 	if (buffers[0].cbBuffer < auth->sizes.cbSecurityTrailer)
@@ -599,8 +698,8 @@ BOOL credssp_auth_decrypt(rdpCredsspAuth* auth, const SecBuffer* ciphertext, Sec
 	    auth->table->DecryptMessage(&auth->context, &buffer_desc, sequence, &fqop);
 	if (status != SEC_E_OK)
 	{
-		WLog_ERR(TAG, "DecryptMessage failed with %s [0x%08X]", GetSecurityStatusString(status),
-		         status);
+		WLog_ERR(TAG, "DecryptMessage failed with %s [0x%08" PRIx32 "]",
+		         GetSecurityStatusString(status), WINPR_CXX_COMPAT_CAST(uint32_t, status));
 		sspi_SecBufferFree(&buffers[1]);
 		return FALSE;
 	}
@@ -619,8 +718,8 @@ BOOL credssp_auth_impersonate(rdpCredsspAuth* auth)
 
 	if (status != SEC_E_OK)
 	{
-		WLog_ERR(TAG, "ImpersonateSecurityContext failed with %s [0x%08X]",
-		         GetSecurityStatusString(status), status);
+		WLog_ERR(TAG, "ImpersonateSecurityContext failed with %s [0x%08" PRIx32 "]",
+		         GetSecurityStatusString(status), WINPR_CXX_COMPAT_CAST(uint32_t, status));
 		return FALSE;
 	}
 
@@ -636,8 +735,8 @@ BOOL credssp_auth_revert_to_self(rdpCredsspAuth* auth)
 
 	if (status != SEC_E_OK)
 	{
-		WLog_ERR(TAG, "RevertSecurityContext failed with %s [0x%08X]",
-		         GetSecurityStatusString(status), status);
+		WLog_ERR(TAG, "RevertSecurityContext failed with %s [0x%08" PRIx32 "]",
+		         GetSecurityStatusString(status), WINPR_CXX_COMPAT_CAST(uint32_t, status));
 		return FALSE;
 	}
 
@@ -655,11 +754,11 @@ void credssp_auth_take_input_buffer(rdpCredsspAuth* auth, SecBuffer* buffer)
 	auth->input_buffer.BufferType = SECBUFFER_TOKEN;
 
 	/* Invalidate original, rdpCredsspAuth now has ownership of the buffer */
-	SecBuffer empty = { 0 };
+	SecBuffer empty = WINPR_C_ARRAY_INIT;
 	*buffer = empty;
 }
 
-const SecBuffer* credssp_auth_get_output_buffer(rdpCredsspAuth* auth)
+const SecBuffer* credssp_auth_get_output_buffer(const rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
 	return &auth->output_buffer;
@@ -668,31 +767,31 @@ const SecBuffer* credssp_auth_get_output_buffer(rdpCredsspAuth* auth)
 BOOL credssp_auth_have_output_token(rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
-	return auth->output_buffer.cbBuffer ? TRUE : FALSE;
+	return (auth->output_buffer.cbBuffer != 0);
 }
 
-BOOL credssp_auth_is_complete(rdpCredsspAuth* auth)
+BOOL credssp_auth_is_complete(const rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
 	return auth->state == AUTH_STATE_FINAL;
 }
 
-size_t credssp_auth_trailer_size(rdpCredsspAuth* auth)
+size_t credssp_auth_trailer_size(const rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
 	return auth->sizes.cbSecurityTrailer;
 }
 
-const char* credssp_auth_pkg_name(rdpCredsspAuth* auth)
+const char* credssp_auth_pkg_name(const rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth && auth->info);
 	return auth->pkgNameA;
 }
 
-UINT32 credssp_auth_sspi_error(rdpCredsspAuth* auth)
+INT32 credssp_auth_sspi_error(const rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
-	return (UINT32)auth->sspi_error;
+	return auth->sspi_error;
 }
 
 void credssp_auth_tableAndContext(rdpCredsspAuth* auth, SecurityFunctionTable** ptable,
@@ -708,9 +807,6 @@ void credssp_auth_tableAndContext(rdpCredsspAuth* auth, SecurityFunctionTable** 
 
 void credssp_auth_free(rdpCredsspAuth* auth)
 {
-	SEC_WINPR_KERBEROS_SETTINGS* krb_settings = NULL;
-	SEC_WINPR_NTLM_SETTINGS* ntlm_settings = NULL;
-
 	if (!auth)
 		return;
 
@@ -741,40 +837,37 @@ void credssp_auth_free(rdpCredsspAuth* auth)
 	}
 
 	sspi_FreeAuthIdentity(&auth->identity);
-
-	krb_settings = &auth->kerberosSettings;
-	ntlm_settings = &auth->ntlmSettings;
-
-	free(krb_settings->kdcUrl);
-	free(krb_settings->cache);
-	free(krb_settings->keytab);
-	free(krb_settings->armorCache);
-	free(krb_settings->pkinitX509Anchors);
-	free(krb_settings->pkinitX509Identity);
-	free(ntlm_settings->samFile);
+	sspi_FreeSecKerberosSettings(auth->kerberosSettingsV2);
+	sspi_FreeSecNtlmSettings(auth->ntlmSettingsV2);
 
 	free(auth->package_list);
 	free(auth->spn);
 	sspi_SecBufferFree(&auth->input_buffer);
 	sspi_SecBufferFree(&auth->output_buffer);
-	credssp_auth_update_name_cache(auth, NULL);
+	credssp_auth_update_name_cache(auth, nullptr);
 	free(auth);
 }
 
 static void auth_get_sspi_module_from_reg(char** sspi_module)
 {
-	HKEY hKey = NULL;
+	HKEY hKey = nullptr;
 	DWORD dwType = 0;
 	DWORD dwSize = 0;
 
 	WINPR_ASSERT(sspi_module);
-	*sspi_module = NULL;
+	*sspi_module = nullptr;
 
-	if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, SERVER_KEY, 0, KEY_READ | KEY_WOW64_64KEY, &hKey) !=
-	    ERROR_SUCCESS)
+	char* key = freerdp_getApplicatonDetailsRegKey(SERVER_KEY);
+	if (!key)
 		return;
 
-	if (RegQueryValueExA(hKey, "SspiModule", NULL, &dwType, NULL, &dwSize) != ERROR_SUCCESS)
+	const LONG rc = RegOpenKeyExA(HKEY_LOCAL_MACHINE, key, 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	free(key);
+
+	if (rc != ERROR_SUCCESS)
+		return;
+
+	if (RegQueryValueExA(hKey, "SspiModule", nullptr, &dwType, nullptr, &dwSize) != ERROR_SUCCESS)
 	{
 		RegCloseKey(hKey);
 		return;
@@ -787,7 +880,7 @@ static void auth_get_sspi_module_from_reg(char** sspi_module)
 		return;
 	}
 
-	if (RegQueryValueExA(hKey, "SspiModule", NULL, &dwType, (BYTE*)module, &dwSize) !=
+	if (RegQueryValueExA(hKey, "SspiModule", nullptr, &dwType, (BYTE*)module, &dwSize) !=
 	    ERROR_SUCCESS)
 	{
 		RegCloseKey(hKey);
@@ -801,7 +894,7 @@ static void auth_get_sspi_module_from_reg(char** sspi_module)
 
 static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* settings)
 {
-	char* sspi_module = NULL;
+	char* sspi_module = nullptr;
 
 	WINPR_ASSERT(settings);
 
@@ -823,7 +916,7 @@ static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* setting
 		{
 			WLog_ERR(TAG, "Failed to load SSPI module: %s", module_name);
 			free(sspi_module);
-			return FALSE;
+			return nullptr;
 		}
 
 		WLog_INFO(TAG, "Using SSPI Module: %s", module_name);
@@ -834,7 +927,7 @@ static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* setting
 		{
 			WLog_ERR(TAG, "Failed to load SSPI module: %s, no function %s", module_name, proc_name);
 			free(sspi_module);
-			return FALSE;
+			return nullptr;
 		}
 		free(sspi_module);
 		return InitSecurityInterface_ptr();
@@ -845,20 +938,18 @@ static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* setting
 
 static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 {
-	const rdpSettings* settings = NULL;
-	SEC_WINPR_KERBEROS_SETTINGS* krb_settings = NULL;
-	SEC_WINPR_NTLM_SETTINGS* ntlm_settings = NULL;
-	freerdp_peer* peer = NULL;
-
 	WINPR_ASSERT(auth);
 	WINPR_ASSERT(auth->rdp_ctx);
 
-	peer = auth->rdp_ctx->peer;
-	settings = auth->rdp_ctx->settings;
+	freerdp_peer* peer = auth->rdp_ctx->peer;
+	const rdpSettings* settings = auth->rdp_ctx->settings;
 	WINPR_ASSERT(settings);
 
-	krb_settings = &auth->kerberosSettings;
-	ntlm_settings = &auth->ntlmSettings;
+	SEC_WINPR_KERBEROS_SETTINGS_V2* krb_settings = auth->kerberosSettingsV2;
+	WINPR_ASSERT(krb_settings);
+
+	SEC_WINPR_NTLM_SETTINGS_V2* ntlm_settings = auth->ntlmSettingsV2;
+	WINPR_ASSERT(ntlm_settings);
 
 	if (settings->KerberosLifeTime)
 		parseKerberosDeltat(settings->KerberosLifeTime, &krb_settings->lifeTime, "lifetime");
@@ -870,8 +961,7 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 	if (settings->KerberosKdcUrl)
 	{
-		krb_settings->kdcUrl = _strdup(settings->KerberosKdcUrl);
-		if (!krb_settings->kdcUrl)
+		if (!sspi_CloneSecSettingsString(&krb_settings->kdcUrl, settings->KerberosKdcUrl))
 		{
 			WLog_ERR(TAG, "unable to copy kdcUrl");
 			return FALSE;
@@ -880,8 +970,7 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 	if (settings->KerberosCache)
 	{
-		krb_settings->cache = _strdup(settings->KerberosCache);
-		if (!krb_settings->cache)
+		if (!sspi_CloneSecSettingsString(&krb_settings->cache, settings->KerberosCache))
 		{
 			WLog_ERR(TAG, "unable to copy cache name");
 			return FALSE;
@@ -890,18 +979,17 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 	if (settings->KerberosKeytab)
 	{
-		krb_settings->keytab = _strdup(settings->KerberosKeytab);
-		if (!krb_settings->keytab)
-		{
-			WLog_ERR(TAG, "unable to copy keytab name");
-			return FALSE;
-		}
+		if (!sspi_CloneSecSettingsString(&krb_settings->keytab, settings->KerberosKeytab))
+			if (!krb_settings->keytab)
+			{
+				WLog_ERR(TAG, "unable to copy keytab name");
+				return FALSE;
+			}
 	}
 
 	if (settings->KerberosArmor)
 	{
-		krb_settings->armorCache = _strdup(settings->KerberosArmor);
-		if (!krb_settings->armorCache)
+		if (!sspi_CloneSecSettingsString(&krb_settings->armorCache, settings->KerberosArmor))
 		{
 			WLog_ERR(TAG, "unable to copy armorCache");
 			return FALSE;
@@ -910,8 +998,7 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 	if (settings->PkinitAnchors)
 	{
-		krb_settings->pkinitX509Anchors = _strdup(settings->PkinitAnchors);
-		if (!krb_settings->pkinitX509Anchors)
+		if (!sspi_CloneSecSettingsString(&krb_settings->pkinitX509Anchors, settings->PkinitAnchors))
 		{
 			WLog_ERR(TAG, "unable to copy pkinitX509Anchors");
 			return FALSE;
@@ -920,8 +1007,7 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 	if (settings->NtlmSamFile)
 	{
-		ntlm_settings->samFile = _strdup(settings->NtlmSamFile);
-		if (!ntlm_settings->samFile)
+		if (!sspi_CloneSecSettingsString(&ntlm_settings->samFile, settings->NtlmSamFile))
 		{
 			WLog_ERR(TAG, "unable to copy samFile");
 			return FALSE;
@@ -936,13 +1022,13 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 	if (settings->AuthenticationPackageList)
 	{
-		auth->package_list = ConvertUtf8ToWCharAlloc(settings->AuthenticationPackageList, NULL);
+		auth->package_list = ConvertUtf8ToWCharAlloc(settings->AuthenticationPackageList, nullptr);
 		if (!auth->package_list)
 			return FALSE;
 	}
 
 	auth->identity.Flags |= SEC_WINNT_AUTH_IDENTITY_UNICODE;
-	auth->identity.Flags |= SEC_WINNT_AUTH_IDENTITY_EXTENDED;
+	auth->identity.Flags |= SEC_WINNT_AUTH_IDENTITY_EXTENDED_v2;
 
 	return TRUE;
 }
@@ -950,7 +1036,7 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 BOOL credssp_auth_set_spn(rdpCredsspAuth* auth, const char* service, const char* hostname)
 {
 	size_t length = 0;
-	char* spn = NULL;
+	char* spn = nullptr;
 
 	WINPR_ASSERT(auth);
 
@@ -972,7 +1058,7 @@ BOOL credssp_auth_set_spn(rdpCredsspAuth* auth, const char* service, const char*
 		return FALSE;
 
 #if defined(UNICODE)
-	auth->spn = ConvertUtf8ToWCharAlloc(spn, NULL);
+	auth->spn = ConvertUtf8ToWCharAlloc(spn, nullptr);
 	free(spn);
 #else
 	auth->spn = spn;
@@ -987,7 +1073,7 @@ static const char* parseInt(const char* v, INT32* r)
 
 	/* check that we have at least a digit */
 	if (!*v || !((*v >= '0') && (*v <= '9')))
-		return NULL;
+		return nullptr;
 
 	for (; *v && (*v >= '0') && (*v <= '9'); v++)
 	{
@@ -1000,7 +1086,7 @@ static const char* parseInt(const char* v, INT32* r)
 static BOOL parseKerberosDeltat(const char* value, INT32* dest, const char* message)
 {
 	INT32 v = 0;
-	const char* ptr = NULL;
+	const char* ptr = nullptr;
 
 	WINPR_ASSERT(value);
 	WINPR_ASSERT(dest);

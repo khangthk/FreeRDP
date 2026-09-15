@@ -49,7 +49,7 @@ typedef struct
 
 static BOOL audin_sndio_format_supported(IAudinDevice* device, const AUDIO_FORMAT* format)
 {
-	if (device == NULL || format == NULL)
+	if (device == nullptr || format == nullptr)
 		return FALSE;
 
 	return (format->wFormatTag == WAVE_FORMAT_PCM);
@@ -60,12 +60,12 @@ static BOOL audin_sndio_format_supported(IAudinDevice* device, const AUDIO_FORMA
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT audin_sndio_set_format(IAudinDevice* device, AUDIO_FORMAT* format,
+static UINT audin_sndio_set_format(IAudinDevice* device, const AUDIO_FORMAT* format,
                                    UINT32 FramesPerPacket)
 {
 	AudinSndioDevice* sndio = (AudinSndioDevice*)device;
 
-	if (device == NULL || format == NULL)
+	if (device == nullptr || format == nullptr)
 		return ERROR_INVALID_PARAMETER;
 
 	if (format->wFormatTag != WAVE_FORMAT_PCM)
@@ -77,24 +77,22 @@ static UINT audin_sndio_set_format(IAudinDevice* device, AUDIO_FORMAT* format,
 	return CHANNEL_RC_OK;
 }
 
-static void* audin_sndio_thread_func(void* arg)
+static DWORD WINAPI audin_sndio_thread_func(LPVOID arg)
 {
-	struct sio_hdl* hdl;
-	struct sio_par par;
-	BYTE* buffer = NULL;
-	size_t n, nbytes;
+	struct sio_hdl* hdl = nullptr;
+	struct sio_par par = WINPR_C_ARRAY_INIT;
+	BYTE* buffer = nullptr;
 	AudinSndioDevice* sndio = (AudinSndioDevice*)arg;
-	UINT error = 0;
-	DWORD status;
+	UINT error = CHANNEL_RC_OK;
 
-	if (arg == NULL)
+	if (arg == nullptr)
 	{
 		error = ERROR_INVALID_PARAMETER;
 		goto err_out;
 	}
 
 	hdl = sio_open(SIO_DEVANY, SIO_REC, 0);
-	if (hdl == NULL)
+	if (hdl == nullptr)
 	{
 		WLog_ERR(TAG, "could not open audio device");
 		error = ERROR_INTERNAL_ERROR;
@@ -125,11 +123,14 @@ static void* audin_sndio_thread_func(void* arg)
 		goto err_out;
 	}
 
-	nbytes =
-	    (sndio->FramesPerPacket * sndio->format.nChannels * (sndio->format.wBitsPerSample / 8));
+	const size_t nbytes = (1ull * sndio->FramesPerPacket * sndio->format.nChannels *
+	                       (sndio->format.wBitsPerSample / 8));
+	if (nbytes > INT32_MAX)
+		goto err_out;
+
 	buffer = (BYTE*)calloc((nbytes + sizeof(void*)), sizeof(BYTE));
 
-	if (buffer == NULL)
+	if (buffer == nullptr)
 	{
 		error = ERROR_NOT_ENOUGH_MEMORY;
 		goto err_out;
@@ -137,7 +138,7 @@ static void* audin_sndio_thread_func(void* arg)
 
 	while (1)
 	{
-		status = WaitForSingleObject(sndio->stopEvent, 0);
+		const DWORD status = WaitForSingleObject(sndio->stopEvent, 0);
 
 		if (status == WAIT_FAILED)
 		{
@@ -149,7 +150,7 @@ static void* audin_sndio_thread_func(void* arg)
 		if (status == WAIT_OBJECT_0)
 			break;
 
-		n = sio_read(hdl, buffer, nbytes);
+		const size_t n = sio_read(hdl, buffer, nbytes);
 
 		if (n == 0)
 		{
@@ -168,10 +169,10 @@ static void* audin_sndio_thread_func(void* arg)
 	}
 
 err_out:
-	if (error && sndio->rdpcontext)
+	if (error && sndio && sndio->rdpcontext)
 		setChannelError(sndio->rdpcontext, error, "audin_sndio_thread_func reported an error");
 
-	if (hdl != NULL)
+	if (hdl != nullptr)
 	{
 		WLog_INFO(TAG, "sio_close");
 		sio_stop(hdl);
@@ -179,8 +180,7 @@ err_out:
 	}
 
 	free(buffer);
-	ExitThread(0);
-	return NULL;
+	return 0;
 }
 
 /**
@@ -194,18 +194,17 @@ static UINT audin_sndio_open(IAudinDevice* device, AudinReceive receive, void* u
 	sndio->receive = receive;
 	sndio->user_data = user_data;
 
-	if (!(sndio->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+	if (!(sndio->stopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr)))
 	{
 		WLog_ERR(TAG, "CreateEvent failed");
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	if (!(sndio->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)audin_sndio_thread_func,
-	                                   sndio, 0, NULL)))
+	if (!(sndio->thread = CreateThread(nullptr, 0, audin_sndio_thread_func, sndio, 0, nullptr)))
 	{
 		WLog_ERR(TAG, "CreateThread failed");
 		(void)CloseHandle(sndio->stopEvent);
-		sndio->stopEvent = NULL;
+		sndio->stopEvent = nullptr;
 		return ERROR_INTERNAL_ERROR;
 	}
 
@@ -219,31 +218,30 @@ static UINT audin_sndio_open(IAudinDevice* device, AudinReceive receive, void* u
  */
 static UINT audin_sndio_close(IAudinDevice* device)
 {
-	UINT error;
 	AudinSndioDevice* sndio = (AudinSndioDevice*)device;
 
-	if (device == NULL)
+	if (device == nullptr)
 		return ERROR_INVALID_PARAMETER;
 
-	if (sndio->stopEvent != NULL)
+	if (sndio->stopEvent != nullptr)
 	{
 		(void)SetEvent(sndio->stopEvent);
 
 		if (WaitForSingleObject(sndio->thread, INFINITE) == WAIT_FAILED)
 		{
-			error = GetLastError();
+			const UINT error = GetLastError();
 			WLog_ERR(TAG, "WaitForSingleObject failed with error %" PRIu32 "", error);
 			return error;
 		}
 
 		(void)CloseHandle(sndio->stopEvent);
-		sndio->stopEvent = NULL;
+		sndio->stopEvent = nullptr;
 		(void)CloseHandle(sndio->thread);
-		sndio->thread = NULL;
+		sndio->thread = nullptr;
 	}
 
-	sndio->receive = NULL;
-	sndio->user_data = NULL;
+	sndio->receive = nullptr;
+	sndio->user_data = nullptr;
 
 	return CHANNEL_RC_OK;
 }
@@ -256,14 +254,14 @@ static UINT audin_sndio_close(IAudinDevice* device)
 static UINT audin_sndio_free(IAudinDevice* device)
 {
 	AudinSndioDevice* sndio = (AudinSndioDevice*)device;
-	int error;
 
-	if (device == NULL)
+	if (device == nullptr)
 		return ERROR_INVALID_PARAMETER;
 
-	if ((error = audin_sndio_close(device)))
+	const UINT error = audin_sndio_close(device);
+	if (error != CHANNEL_RC_OK)
 	{
-		WLog_ERR(TAG, "audin_sndio_close failed with error code %d", error);
+		WLog_ERR(TAG, "audin_sndio_close failed with error code %" PRIu32, error);
 	}
 
 	free(sndio);
@@ -276,22 +274,21 @@ static UINT audin_sndio_free(IAudinDevice* device)
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT audin_sndio_parse_addin_args(AudinSndioDevice* device, ADDIN_ARGV* args)
+static UINT audin_sndio_parse_addin_args(AudinSndioDevice* sndio, const ADDIN_ARGV* args)
 {
-	int status;
-	DWORD flags;
-	COMMAND_LINE_ARGUMENT_A* arg;
-	AudinSndioDevice* sndio = (AudinSndioDevice*)device;
-	COMMAND_LINE_ARGUMENT_A audin_sndio_args[] = { { NULL, 0, NULL, NULL, NULL, -1, NULL, NULL } };
-	flags =
+	WINPR_ASSERT(sndio);
+
+	COMMAND_LINE_ARGUMENT_A audin_sndio_args[] = { { nullptr, 0, nullptr, nullptr, nullptr, -1,
+		                                             nullptr, nullptr } };
+	const DWORD flags =
 	    COMMAND_LINE_SIGIL_NONE | COMMAND_LINE_SEPARATOR_COLON | COMMAND_LINE_IGN_UNKNOWN_KEYWORD;
-	status = CommandLineParseArgumentsA(args->argc, (const char**)args->argv, audin_sndio_args,
-	                                    flags, sndio, NULL, NULL);
+	const int status = CommandLineParseArgumentsA(args->argc, args->argv, audin_sndio_args, flags,
+	                                              sndio, nullptr, nullptr);
 
 	if (status < 0)
 		return ERROR_INVALID_PARAMETER;
 
-	arg = audin_sndio_args;
+	const COMMAND_LINE_ARGUMENT_A* arg = audin_sndio_args;
 
 	do
 	{
@@ -299,7 +296,7 @@ static UINT audin_sndio_parse_addin_args(AudinSndioDevice* device, ADDIN_ARGV* a
 			continue;
 
 		CommandLineSwitchStart(arg) CommandLineSwitchEnd(arg)
-	} while ((arg = CommandLineFindNextArgumentA(arg)) != NULL);
+	} while ((arg = CommandLineFindNextArgumentA(arg)) != nullptr);
 
 	return CHANNEL_RC_OK;
 }
@@ -312,12 +309,10 @@ static UINT audin_sndio_parse_addin_args(AudinSndioDevice* device, ADDIN_ARGV* a
 FREERDP_ENTRY_POINT(UINT VCAPITYPE sndio_freerdp_audin_client_subsystem_entry(
     PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEntryPoints))
 {
-	ADDIN_ARGV* args;
-	AudinSndioDevice* sndio;
 	UINT ret = CHANNEL_RC_OK;
-	sndio = (AudinSndioDevice*)calloc(1, sizeof(AudinSndioDevice));
+	AudinSndioDevice* sndio = (AudinSndioDevice*)calloc(1, sizeof(AudinSndioDevice));
 
-	if (sndio == NULL)
+	if (sndio == nullptr)
 		return CHANNEL_RC_NO_MEMORY;
 
 	sndio->device.Open = audin_sndio_open;
@@ -326,7 +321,7 @@ FREERDP_ENTRY_POINT(UINT VCAPITYPE sndio_freerdp_audin_client_subsystem_entry(
 	sndio->device.Close = audin_sndio_close;
 	sndio->device.Free = audin_sndio_free;
 	sndio->rdpcontext = pEntryPoints->rdpcontext;
-	args = pEntryPoints->args;
+	const ADDIN_ARGV* args = pEntryPoints->args;
 
 	if (args->argc > 1)
 	{

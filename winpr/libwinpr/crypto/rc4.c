@@ -18,6 +18,7 @@
  * limitations under the License.
  */
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 
 #include "rc4.h"
 
@@ -42,11 +43,11 @@ winpr_int_RC4_CTX* winpr_int_rc4_new(const BYTE* key, size_t keylength)
 {
 	winpr_int_RC4_CTX* ctx = calloc(1, sizeof(winpr_int_RC4_CTX));
 	if (!ctx)
-		return NULL;
+		return nullptr;
 
 	for (size_t i = 0; i < CTX_SIZE; i++)
 	{
-		ctx->s[i] = i;
+		ctx->s[i] = WINPR_ASSERTING_INT_CAST(BYTE, i);
 		ctx->t[i] = key[i % keylength];
 	}
 
@@ -68,8 +69,8 @@ BOOL winpr_int_rc4_update(winpr_int_RC4_CTX* ctx, size_t length, const BYTE* inp
 {
 	WINPR_ASSERT(ctx);
 
-	UINT32 t1 = ctx->i;
-	UINT32 t2 = ctx->j;
+	size_t t1 = ctx->i;
+	size_t t2 = ctx->j;
 	for (size_t i = 0; i < length; i++)
 	{
 		t1 = (t1 + 1) % CTX_SIZE;

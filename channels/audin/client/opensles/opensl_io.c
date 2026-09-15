@@ -54,10 +54,10 @@ struct opensl_stream
 	SLRecordItf recorderRecord;
 	SLAndroidSimpleBufferQueueItf recorderBufferQueue;
 
-	unsigned int inchannels;
-	unsigned int sr;
-	unsigned int buffersize;
-	unsigned int bits_per_sample;
+	size_t inchannels;
+	size_t sr;
+	size_t buffersize;
+	size_t bits_per_sample;
 
 	queue_element* prep;
 	queue_element* next;
@@ -73,7 +73,7 @@ static SLresult openSLCreateEngine(OPENSL_STREAM* p)
 {
 	SLresult result;
 	// create engine
-	result = slCreateEngine(&(p->engineObject), 0, NULL, 0, NULL, NULL);
+	result = slCreateEngine(&(p->engineObject), 0, nullptr, 0, nullptr, nullptr);
 
 	if (result != SL_RESULT_SUCCESS)
 		goto engine_end;
@@ -96,12 +96,11 @@ static SLresult openSLCreateEngine(OPENSL_STREAM* p)
 
 	if (result != SL_RESULT_SUCCESS)
 	{
-		p->deviceVolume = NULL;
+		p->deviceVolume = nullptr;
 		result = SL_RESULT_SUCCESS;
 	}
 
 engine_end:
-	WINPR_ASSERT(SL_RESULT_SUCCESS == result);
 	return result;
 }
 
@@ -109,8 +108,8 @@ engine_end:
 static SLresult openSLRecOpen(OPENSL_STREAM* p)
 {
 	SLresult result;
-	SLuint32 sr = p->sr;
-	SLuint32 channels = p->inchannels;
+	SLuint32 sr = WINPR_ASSERTING_INT_CAST(SLuint32, p->sr);
+	SLuint32 channels = WINPR_ASSERTING_INT_CAST(SLuint32, p->inchannels);
 	WINPR_ASSERT(!p->recorderObject);
 
 	if (channels)
@@ -166,13 +165,14 @@ static SLresult openSLRecOpen(OPENSL_STREAM* p)
 				break;
 
 			default:
+				WLog_ERR(TAG, "Sample rate %" PRIu32 " unsupported", sr);
 				return -1;
 		}
 
 		// configure audio source
 		SLDataLocator_IODevice loc_dev = { SL_DATALOCATOR_IODEVICE, SL_IODEVICE_AUDIOINPUT,
-			                               SL_DEFAULTDEVICEID_AUDIOINPUT, NULL };
-		SLDataSource audioSrc = { &loc_dev, NULL };
+			                               SL_DEFAULTDEVICEID_AUDIOINPUT, nullptr };
+		SLDataSource audioSrc = { &loc_dev, nullptr };
 		// configure audio sink
 		int speakers;
 
@@ -183,7 +183,7 @@ static SLresult openSLRecOpen(OPENSL_STREAM* p)
 
 		SLDataLocator_AndroidSimpleBufferQueue loc_bq = { SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
 			                                              2 };
-		SLDataFormat_PCM format_pcm;
+		SLDataFormat_PCM format_pcm = WINPR_C_ARRAY_INIT;
 		format_pcm.formatType = SL_DATAFORMAT_PCM;
 		format_pcm.numChannels = channels;
 		format_pcm.samplesPerSec = sr;
@@ -201,7 +201,10 @@ static SLresult openSLRecOpen(OPENSL_STREAM* p)
 			format_pcm.containerSize = 8;
 		}
 		else
-			WINPR_ASSERT(0);
+		{
+			WLog_ERR(TAG, "bits_per_sample=%" PRIuz, p->bits_per_sample);
+			return -1;
+		}
 
 		SLDataSink audioSnk = { &loc_bq, &format_pcm };
 		// create audio recorder
@@ -211,42 +214,47 @@ static SLresult openSLRecOpen(OPENSL_STREAM* p)
 		result = (*p->engineEngine)
 		             ->CreateAudioRecorder(p->engineEngine, &(p->recorderObject), &audioSrc,
 		                                   &audioSnk, 1, id, req);
-		WINPR_ASSERT(!result);
-
 		if (SL_RESULT_SUCCESS != result)
+		{
+			WLog_ERR(TAG, "CreateAudioRecorder failed with %d", result);
 			goto end_recopen;
+		}
 
 		// realize the audio recorder
 		result = (*p->recorderObject)->Realize(p->recorderObject, SL_BOOLEAN_FALSE);
-		WINPR_ASSERT(!result);
-
 		if (SL_RESULT_SUCCESS != result)
+		{
+			WLog_ERR(TAG, "recorderObject failed with %d", result);
 			goto end_recopen;
+		}
 
 		// get the record interface
 		result = (*p->recorderObject)
 		             ->GetInterface(p->recorderObject, SL_IID_RECORD, &(p->recorderRecord));
-		WINPR_ASSERT(!result);
-
 		if (SL_RESULT_SUCCESS != result)
+		{
+			WLog_ERR(TAG, "GetInterface(SL_IID_RECORD) failed with %d", result);
 			goto end_recopen;
+		}
 
 		// get the buffer queue interface
 		result = (*p->recorderObject)
 		             ->GetInterface(p->recorderObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
 		                            &(p->recorderBufferQueue));
-		WINPR_ASSERT(!result);
-
 		if (SL_RESULT_SUCCESS != result)
+		{
+			WLog_ERR(TAG, "GetInterface(SL_IID_ANDROIDSIMPLEBUFFERQUEUE) failed with %d", result);
 			goto end_recopen;
+		}
 
 		// register callback on the buffer queue
 		result = (*p->recorderBufferQueue)
 		             ->RegisterCallback(p->recorderBufferQueue, bqRecorderCallback, p);
-		WINPR_ASSERT(!result);
-
 		if (SL_RESULT_SUCCESS != result)
+		{
+			WLog_ERR(TAG, "RegisterCallback failed with %d", result);
 			goto end_recopen;
+		}
 
 	end_recopen:
 		return result;
@@ -259,20 +267,20 @@ static SLresult openSLRecOpen(OPENSL_STREAM* p)
 static void openSLDestroyEngine(OPENSL_STREAM* p)
 {
 	// destroy audio recorder object, and invalidate all associated interfaces
-	if (p->recorderObject != NULL)
+	if (p->recorderObject != nullptr)
 	{
 		(*p->recorderObject)->Destroy(p->recorderObject);
-		p->recorderObject = NULL;
-		p->recorderRecord = NULL;
-		p->recorderBufferQueue = NULL;
+		p->recorderObject = nullptr;
+		p->recorderRecord = nullptr;
+		p->recorderBufferQueue = nullptr;
 	}
 
 	// destroy engine object, and invalidate all associated interfaces
-	if (p->engineObject != NULL)
+	if (p->engineObject != nullptr)
 	{
 		(*p->engineObject)->Destroy(p->engineObject);
-		p->engineObject = NULL;
-		p->engineEngine = NULL;
+		p->engineObject = nullptr;
+		p->engineEngine = nullptr;
 	}
 }
 
@@ -292,7 +300,7 @@ static queue_element* opensles_queue_element_new(size_t size)
 	return q;
 fail:
 	free(q);
-	return NULL;
+	return nullptr;
 }
 
 static void opensles_queue_element_free(void* obj)
@@ -306,24 +314,31 @@ static void opensles_queue_element_free(void* obj)
 }
 
 // open the android audio device for input
-OPENSL_STREAM* android_OpenRecDevice(void* context, opensl_receive_t receive, int sr,
-                                     int inchannels, int bufferframes, int bits_per_sample)
+OPENSL_STREAM* android_OpenRecDevice(void* context, opensl_receive_t receive, size_t sr,
+                                     size_t inchannels, size_t bufferframes, size_t bits_per_sample)
 {
-	OPENSL_STREAM* p;
-
 	if (!context || !receive)
-		return NULL;
+		return nullptr;
 
-	p = (OPENSL_STREAM*)calloc(1, sizeof(OPENSL_STREAM));
+	OPENSL_STREAM* p = (OPENSL_STREAM*)calloc(1, sizeof(OPENSL_STREAM));
 
 	if (!p)
-		return NULL;
+		return nullptr;
 
 	p->context = context;
 	p->receive = receive;
+	if (inchannels > INT32_MAX)
+		goto fail;
 	p->inchannels = inchannels;
+
+	if (sr > INT32_MAX)
+		goto fail;
 	p->sr = sr;
+
+	if (bufferframes > SIZE_MAX / 2)
+		goto fail;
 	p->buffersize = bufferframes;
+
 	p->bits_per_sample = bits_per_sample;
 
 	if ((p->bits_per_sample != 8) && (p->bits_per_sample != 16))
@@ -335,9 +350,14 @@ OPENSL_STREAM* android_OpenRecDevice(void* context, opensl_receive_t receive, in
 	if (openSLRecOpen(p) != SL_RESULT_SUCCESS)
 		goto fail;
 
+	const size_t bytesPerSample = p->bits_per_sample / 8ull;
+	if (p->buffersize >= SIZE_MAX / bytesPerSample)
+		goto fail;
+
+	const size_t queuesize = p->buffersize * bytesPerSample;
 	/* Create receive buffers, prepare them and start recording */
-	p->prep = opensles_queue_element_new(p->buffersize * p->bits_per_sample / 8);
-	p->next = opensles_queue_element_new(p->buffersize * p->bits_per_sample / 8);
+	p->prep = opensles_queue_element_new(queuesize);
+	p->next = opensles_queue_element_new(queuesize);
 
 	if (!p->prep || !p->next)
 		goto fail;
@@ -348,13 +368,13 @@ OPENSL_STREAM* android_OpenRecDevice(void* context, opensl_receive_t receive, in
 	return p;
 fail:
 	android_CloseRecDevice(p);
-	return NULL;
+	return nullptr;
 }
 
 // close the android audio device
 void android_CloseRecDevice(OPENSL_STREAM* p)
 {
-	if (p == NULL)
+	if (p == nullptr)
 		return;
 
 	opensles_queue_element_free(p->next);

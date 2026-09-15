@@ -6,15 +6,7 @@
 #include <winpr/config.h>
 #include <winpr/winpr.h>
 
-#if __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#elif __has_include(<experimental/filesystem>)
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#else
-#error Could not find system header "<filesystem>" or "<experimental/filesystem>"
-#endif
+#include "../filesystem.hpp"
 
 static std::shared_ptr<SdlPref> instance()
 {
@@ -90,18 +82,18 @@ int TestSDLPrefs(int argc, char* argv[])
 	if (array_value.size() != 3)
 		return -1;
 #if defined(WITH_WINPR_JSON)
-	if (array_value[0] != "a")
+	if (array_value.at(0) != "a")
 		return -1;
-	if (array_value[1] != "b")
+	if (array_value.at(1) != "b")
 		return -1;
-	if (array_value[2] != "c")
+	if (array_value.at(2) != "c")
 		return -1;
 #else
-	if (array_value[0] != "c")
+	if (array_value.at(0) != "c")
 		return -1;
-	if (array_value[1] != "b")
+	if (array_value.at(1) != "b")
 		return -1;
-	if (array_value[2] != "a")
+	if (array_value.at(2) != "a")
 		return -1;
 #endif
 
@@ -110,11 +102,11 @@ int TestSDLPrefs(int argc, char* argv[])
 	if (array_value_nonexistent.size() != 3)
 		return -1;
 
-	if (array_value_nonexistent[0] != "c")
+	if (array_value_nonexistent.at(0) != "c")
 		return -1;
-	if (array_value_nonexistent[1] != "b")
+	if (array_value_nonexistent.at(1) != "b")
 		return -1;
-	if (array_value_nonexistent[2] != "a")
+	if (array_value_nonexistent.at(2) != "a")
 		return -1;
 
 	return 0;

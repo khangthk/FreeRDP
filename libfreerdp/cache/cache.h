@@ -53,6 +53,9 @@ extern "C"
 	WINPR_ATTR_MALLOC(cache_free, 1)
 	FREERDP_LOCAL rdpCache* cache_new(rdpContext* context);
 
+	WINPR_ATTR_NODISCARD
+	FREERDP_LOCAL BOOL cache_resize(rdpContext* context);
+
 	FREERDP_LOCAL void free_cache_color_table_order(rdpContext* context,
 	                                                CACHE_COLOR_TABLE_ORDER* order);
 

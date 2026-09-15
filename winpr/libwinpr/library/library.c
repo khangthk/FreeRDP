@@ -62,7 +62,7 @@
  * SizeofResource
  */
 
-#if !defined(_WIN32) || defined(_UWP)
+#if (!defined(_WIN32) && !defined(__CYGWIN__)) || defined(_UWP)
 
 #ifndef _WIN32
 
@@ -81,17 +81,21 @@
 #include <sys/sysctl.h>
 #endif
 
+#if defined(__OpenBSD__)
+#include <errno.h>
 #endif
 
-DLL_DIRECTORY_COOKIE AddDllDirectory(PCWSTR NewDirectory)
+#endif
+
+DLL_DIRECTORY_COOKIE AddDllDirectory(WINPR_ATTR_UNUSED PCWSTR NewDirectory)
 {
 	/* TODO: Implement */
 	WLog_ERR(TAG, "not implemented");
 	SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-	return NULL;
+	return nullptr;
 }
 
-BOOL RemoveDllDirectory(DLL_DIRECTORY_COOKIE Cookie)
+BOOL RemoveDllDirectory(WINPR_ATTR_UNUSED DLL_DIRECTORY_COOKIE Cookie)
 {
 	/* TODO: Implement */
 	WLog_ERR(TAG, "not implemented");
@@ -99,7 +103,7 @@ BOOL RemoveDllDirectory(DLL_DIRECTORY_COOKIE Cookie)
 	return FALSE;
 }
 
-BOOL SetDefaultDllDirectories(DWORD DirectoryFlags)
+BOOL SetDefaultDllDirectories(WINPR_ATTR_UNUSED DWORD DirectoryFlags)
 {
 	/* TODO: Implement */
 	WLog_ERR(TAG, "not implemented");
@@ -109,30 +113,30 @@ BOOL SetDefaultDllDirectories(DWORD DirectoryFlags)
 
 HMODULE LoadLibraryA(LPCSTR lpLibFileName)
 {
+	if (!lpLibFileName)
+		return nullptr;
+
 #if defined(_UWP)
 	int status;
-	HMODULE hModule = NULL;
-	WCHAR* filenameW = NULL;
+	HMODULE hModule = nullptr;
+	WCHAR* filenameW = nullptr;
 
-	if (!lpLibFileName)
-		return NULL;
-
-	filenameW = ConvertUtf8ToWCharAlloc(lpLibFileName, NULL);
+	filenameW = ConvertUtf8ToWCharAlloc(lpLibFileName, nullptr);
 	if (filenameW)
-		return NULL;
+		return nullptr;
 
 	hModule = LoadLibraryW(filenameW);
 	free(filenameW);
 	return hModule;
 #else
-	HMODULE library = NULL;
-	library = dlopen(lpLibFileName, RTLD_LOCAL | RTLD_LAZY);
+	HMODULE library = dlopen(lpLibFileName, RTLD_LOCAL | RTLD_LAZY);
 
 	if (!library)
 	{
+		// NOLINTNEXTLINE(concurrency-mt-unsafe)
 		const char* err = dlerror();
-		WLog_ERR(TAG, "failed with %s", err);
-		return NULL;
+		WLog_VRB(TAG, "failed with %s", err);
+		return nullptr;
 	}
 
 	return library;
@@ -141,17 +145,15 @@ HMODULE LoadLibraryA(LPCSTR lpLibFileName)
 
 HMODULE LoadLibraryW(LPCWSTR lpLibFileName)
 {
-	if (!lpLibFileName)
-		return NULL;
 #if defined(_UWP)
 	return LoadPackagedLibrary(lpLibFileName, 0);
 #else
-	HMODULE module = NULL;
-	char* name = ConvertWCharToUtf8Alloc(lpLibFileName, NULL);
-	if (!name)
-		return NULL;
+	char* name = nullptr;
 
-	module = LoadLibraryA(name);
+	if (lpLibFileName)
+		name = ConvertWCharToUtf8Alloc(lpLibFileName, nullptr);
+
+	HMODULE module = LoadLibraryA(name);
 	free(name);
 	return module;
 #endif
@@ -163,7 +165,7 @@ HMODULE LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 		WLog_WARN(TAG, "does not support dwFlags 0x%08" PRIx32, dwFlags);
 
 	if (hFile)
-		WLog_WARN(TAG, "does not support hFile != NULL");
+		WLog_WARN(TAG, "does not support hFile != nullptr");
 
 	return LoadLibraryA(lpLibFileName);
 }
@@ -174,7 +176,7 @@ HMODULE LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 		WLog_WARN(TAG, "does not support dwFlags 0x%08" PRIx32, dwFlags);
 
 	if (hFile)
-		WLog_WARN(TAG, "does not support hFile != NULL");
+		WLog_WARN(TAG, "does not support hFile != nullptr");
 
 	return LoadLibraryW(lpLibFileName);
 }
@@ -185,13 +187,14 @@ HMODULE LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 
 FARPROC GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
-	FARPROC proc = NULL;
+	FARPROC proc = nullptr;
 	proc = dlsym(hModule, lpProcName);
 
-	if (proc == NULL)
+	if (proc == nullptr)
 	{
+		// NOLINTNEXTLINE(concurrency-mt-unsafe)
 		WLog_ERR(TAG, "GetProcAddress: could not find procedure %s: %s", lpProcName, dlerror());
-		return (FARPROC)NULL;
+		return (FARPROC) nullptr;
 	}
 
 	return proc;
@@ -202,26 +205,22 @@ BOOL FreeLibrary(HMODULE hLibModule)
 	int status = 0;
 	status = dlclose(hLibModule);
 
-	if (status != 0)
-		return FALSE;
-
-	return TRUE;
+	return (status == 0);
 }
 
 HMODULE GetModuleHandleA(LPCSTR lpModuleName)
 {
-	/* TODO: Implement */
-	WLog_ERR(TAG, "not implemented");
-	SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-	return NULL;
+	return dlopen(lpModuleName, RTLD_NOLOAD | RTLD_LOCAL | RTLD_LAZY);
 }
 
 HMODULE GetModuleHandleW(LPCWSTR lpModuleName)
 {
-	/* TODO: Implement */
-	WLog_ERR(TAG, "not implemented");
-	SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-	return NULL;
+	char* name = nullptr;
+	if (lpModuleName)
+		name = ConvertWCharToUtf8Alloc(lpModuleName, nullptr);
+	HANDLE hdl = GetModuleHandleA(name);
+	free(name);
+	return hdl;
 }
 
 /**
@@ -272,7 +271,7 @@ DWORD GetModuleFileNameW(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 #if defined(__linux__) || defined(__NetBSD__) || defined(__DragonFly__)
 static DWORD module_from_proc(const char* proc, LPSTR lpFilename, DWORD nSize)
 {
-	char buffer[8192] = { 0 };
+	char buffer[8192] = WINPR_C_ARRAY_INIT;
 	ssize_t status = readlink(proc, buffer, ARRAYSIZE(buffer) - 1);
 
 	if ((status < 0) || ((size_t)status >= ARRAYSIZE(buffer)))
@@ -297,86 +296,225 @@ static DWORD module_from_proc(const char* proc, LPSTR lpFilename, DWORD nSize)
 }
 #endif
 
-DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
+#if defined(__FreeBSD__)
+WINPR_ATTR_NODISCARD
+static DWORD freebsd_get_module_file_name(char* lpFilename, uint32_t nSize)
 {
-#if defined(__linux__)
-	if (!hModule)
-		return module_from_proc("/proc/self/exe", lpFilename, nSize);
-#elif defined(__FreeBSD__)
 	int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
 	size_t cb = nSize;
 
-	const int rc = sysctl(mib, ARRAYSIZE(mib), lpFilename, &cb, NULL, 0);
-	if ((rc != 0) || (cb > nSize))
+	{
+		const int rc = sysctl(mib, ARRAYSIZE(mib), nullptr, &cb, nullptr, 0);
+		if (rc != 0)
+		{
+			SetLastError(ERROR_INTERNAL_ERROR);
+			return 0;
+		}
+	}
+
+	char* fullname = calloc(cb + 1, sizeof(char));
+	if (!fullname)
 	{
 		SetLastError(ERROR_INTERNAL_ERROR);
 		return 0;
 	}
 
-	return (DWORD)cb;
-#elif defined(__NetBSD__)
-	if (!hModule)
-		return module_from_proc("/proc/curproc/exe", lpFilename, nSize);
-#elif defined(__DragonFly__)
-	if (!hModule)
-		return module_from_proc("/proc/curproc/file", lpFilename, nSize);
-#elif defined(__MACOSX__)
-	int status;
-	size_t length;
-
-	if (!hModule)
 	{
-		char path[4096];
-		char buffer[4096];
-		uint32_t size = sizeof(path);
-		status = _NSGetExecutablePath(path, &size);
-
-		if (status != 0)
+		size_t cb2 = cb;
+		const int rc = sysctl(mib, ARRAYSIZE(mib), fullname, &cb2, nullptr, 0);
+		if ((rc != 0) || (cb2 != cb))
 		{
-			/* path too small */
 			SetLastError(ERROR_INTERNAL_ERROR);
+			free(fullname);
 			return 0;
 		}
+	}
 
-		/*
-		 * _NSGetExecutablePath may not return the canonical path,
-		 * so use realpath to find the absolute, canonical path.
-		 */
-		realpath(path, buffer);
-		length = strnlen(buffer, sizeof(buffer));
-
-		if (length < nSize)
-		{
-			CopyMemory(lpFilename, buffer, length);
-			lpFilename[length] = '\0';
-			return (DWORD)length;
-		}
-
-		CopyMemory(lpFilename, buffer, nSize - 1);
+	if (nSize > 0)
+	{
+		strncpy(lpFilename, fullname, nSize - 1);
 		lpFilename[nSize - 1] = '\0';
+	}
+	free(fullname);
+
+	if (nSize < cb)
+		SetLastError(ERROR_INSUFFICIENT_BUFFER);
+
+	return (DWORD)MIN(nSize, cb);
+}
+#endif
+
+#if defined(__MACOSX__)
+WINPR_ATTR_NODISCARD
+static uint32_t get_required_size(void)
+{
+	char buffer[1] = WINPR_C_ARRAY_INIT;
+	uint32_t size = sizeof(buffer);
+	if (_NSGetExecutablePath(buffer, &size) == 0)
+		return sizeof(buffer);
+	return size;
+}
+
+WINPR_ATTR_NODISCARD
+static DWORD mac_get_module_file_name(char* lpFilename, uint32_t nSize)
+{
+	const uint32_t required = get_required_size();
+	if (required == 0)
+		return 0;
+
+	if (required < nSize)
+	{
+		uint32_t size = nSize;
+		if (_NSGetExecutablePath(lpFilename, &size) == 0)
+			return (DWORD)strnlen(lpFilename, nSize);
 		SetLastError(ERROR_INSUFFICIENT_BUFFER);
 		return nSize;
 	}
 
+	char* buffer = calloc(1ull + required, sizeof(char));
+	if (!buffer)
+	{
+		SetLastError(ERROR_OUTOFMEMORY);
+		return 0;
+	}
+
+	uint32_t size = required;
+	const int status = _NSGetExecutablePath(buffer, &size);
+
+	if (status != 0)
+	{
+		/* path too small */
+		SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		free(buffer);
+		return size;
+	}
+
+	/*
+	 * _NSGetExecutablePath may not return the canonical path,
+	 * so use realpath to find the absolute, canonical path.
+	 */
+	char* real = realpath(buffer, nullptr);
+	free(buffer);
+	if (!real)
+	{
+		SetLastError(ERROR_OUTOFMEMORY);
+		return 0;
+	}
+	const size_t length = strlen(real);
+	if (length < nSize)
+	{
+		strncpy(lpFilename, real, length + 1);
+		free(real);
+		return (DWORD)strnlen(lpFilename, nSize);
+	}
+
+	strncpy(lpFilename, real, nSize - 1);
+	free(real);
+	lpFilename[nSize - 1] = '\0';
+	SetLastError(ERROR_INSUFFICIENT_BUFFER);
+	return nSize;
+}
 #endif
+
+#if defined(__OpenBSD__)
+WINPR_ATTR_NODISCARD
+static DWORD openbsd_get_module_file_name(char* lpFilename, uint32_t nSize)
+{
+#ifdef WITH_GETEXECPATH
+	size_t size = nSize + 1ull;
+	char* path = calloc(1, size);
+
+	if (path == nullptr)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return 0;
+	}
+
+	while (getexecpath(path, size) != 0)
+	{
+		if (errno != ERANGE)
+		{
+			free(path);
+			SetLastError(ERROR_INTERNAL_ERROR);
+			return 0;
+		}
+
+		size += PATH_MAX;
+
+		char* tmp = realloc(path, size);
+
+		if (tmp == nullptr)
+		{
+			free(path);
+			SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+			return 0;
+		}
+
+		path = tmp;
+	}
+
+	const size_t length = strnlen(path, size);
+
+	memset(lpFilename, 0, nSize);
+	memcpy(lpFilename, path, MIN(length, nSize));
+
+	free(path);
+
+	if (length >= nSize)
+	{
+		SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		return nSize;
+	}
+
+	return WINPR_ASSERTING_INT_CAST(DWORD, length);
+#else
 	WLog_ERR(TAG, "is not implemented");
 	SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
 	return 0;
+#endif
+}
+#endif
+
+DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
+{
+	if (hModule)
+	{
+		WLog_ERR(TAG, "is not implemented");
+		SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+		return 0;
+	}
+
+#if defined(__linux__)
+	return module_from_proc("/proc/self/exe", lpFilename, nSize);
+#elif defined(__FreeBSD__)
+	return freebsd_get_module_file_name(lpFilename, nSize);
+#elif defined(__NetBSD__)
+	return module_from_proc("/proc/curproc/exe", lpFilename, nSize);
+#elif defined(__DragonFly__)
+	return module_from_proc("/proc/curproc/file", lpFilename, nSize);
+#elif defined(__MACOSX__)
+	return mac_get_module_file_name(lpFilename, nSize);
+#elif defined(__OpenBSD__)
+	return openbsd_get_module_file_name(lpFilename, nSize);
+#else
+	WLog_ERR(TAG, "is not implemented");
+	SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+	return 0;
+#endif
 }
 
 #endif
 
 HMODULE LoadLibraryX(LPCSTR lpLibFileName)
 {
-	if (!lpLibFileName)
-		return NULL;
-
 #if defined(_WIN32)
-	HMODULE hm = NULL;
-	WCHAR* wstr = ConvertUtf8ToWCharAlloc(lpLibFileName, NULL);
+	HMODULE hm = nullptr;
+	WCHAR* wstr = nullptr;
 
-	if (wstr)
-		hm = LoadLibraryW(wstr);
+	if (lpLibFileName)
+		wstr = ConvertUtf8ToWCharAlloc(lpLibFileName, nullptr);
+
+	hm = LoadLibraryW(wstr);
 	free(wstr);
 	return hm;
 #else
@@ -387,10 +525,10 @@ HMODULE LoadLibraryX(LPCSTR lpLibFileName)
 HMODULE LoadLibraryExX(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 {
 	if (!lpLibFileName)
-		return NULL;
+		return nullptr;
 #if defined(_WIN32)
-	HMODULE hm = NULL;
-	WCHAR* wstr = ConvertUtf8ToWCharAlloc(lpLibFileName, NULL);
+	HMODULE hm = nullptr;
+	WCHAR* wstr = ConvertUtf8ToWCharAlloc(lpLibFileName, nullptr);
 	if (wstr)
 		hm = LoadLibraryExW(wstr, hFile, dwFlags);
 	free(wstr);

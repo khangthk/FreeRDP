@@ -72,10 +72,10 @@ static UINT mouse_cursor_server_initialize(MouseCursorServerContext* context, BO
 
 static UINT mouse_cursor_server_open_channel(mouse_cursor_server* mouse_cursor)
 {
-	MouseCursorServerContext* context = NULL;
+	MouseCursorServerContext* context = nullptr;
 	DWORD Error = ERROR_SUCCESS;
 	DWORD BytesReturned = 0;
-	PULONG pSessionId = NULL;
+	PULONG pSessionId = nullptr;
 	UINT32 channelId = 0;
 	BOOL status = TRUE;
 
@@ -114,20 +114,29 @@ static UINT mouse_cursor_server_open_channel(mouse_cursor_server* mouse_cursor)
 	return Error;
 }
 
+WINPR_ATTR_NODISCARD
 static BOOL read_cap_set(wStream* s, wArrayList* capsSets)
 {
-	RDP_MOUSE_CURSOR_CAPSET* capsSet = NULL;
-	UINT32 signature = 0;
-	RDP_MOUSE_CURSOR_CAPVERSION version = RDP_MOUSE_CURSOR_CAPVERSION_INVALID;
-	UINT32 size = 0;
-	size_t capsDataSize = 0;
+	RDP_MOUSE_CURSOR_CAPSET* capsSet = nullptr;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 12))
 		return FALSE;
 
-	Stream_Read_UINT32(s, signature);
-	Stream_Read_UINT32(s, version);
-	Stream_Read_UINT32(s, size);
+	const UINT32 signature = Stream_Get_UINT32(s);
+
+	RDP_MOUSE_CURSOR_CAPVERSION version = RDP_MOUSE_CURSOR_CAPVERSION_INVALID;
+	const UINT32 val = Stream_Get_UINT32(s);
+	switch (val)
+	{
+		case RDP_MOUSE_CURSOR_CAPVERSION_1:
+			version = RDP_MOUSE_CURSOR_CAPVERSION_1;
+			break;
+		default:
+			WLog_WARN(TAG, "Received caps set with unknown version %" PRIu32, val);
+			break;
+	}
+
+	const UINT32 size = Stream_Get_UINT32(s);
 
 	if (size < 12)
 	{
@@ -135,7 +144,7 @@ static BOOL read_cap_set(wStream* s, wArrayList* capsSets)
 		return FALSE;
 	}
 
-	capsDataSize = size - 12;
+	const size_t capsDataSize = size - 12;
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, capsDataSize))
 		return FALSE;
 
@@ -143,17 +152,21 @@ static BOOL read_cap_set(wStream* s, wArrayList* capsSets)
 	{
 		case RDP_MOUSE_CURSOR_CAPVERSION_1:
 		{
-			RDP_MOUSE_CURSOR_CAPSET_VERSION1* capsSetV1 = NULL;
-
-			capsSetV1 = calloc(1, sizeof(RDP_MOUSE_CURSOR_CAPSET_VERSION1));
+			if (size != 0)
+			{
+				WLog_WARN(TAG, "Unexpected remaining PDU size %" PRIuz ", expected 0! ignoring...",
+				          capsDataSize);
+				Stream_Seek(s, capsDataSize);
+			}
+			RDP_MOUSE_CURSOR_CAPSET_VERSION1* capsSetV1 =
+			    calloc(1, sizeof(RDP_MOUSE_CURSOR_CAPSET_VERSION1));
 			if (!capsSetV1)
 				return FALSE;
 
-			capsSet = (RDP_MOUSE_CURSOR_CAPSET*)capsSetV1;
+			capsSet = &capsSetV1->capsetHeader;
 			break;
 		}
 		default:
-			WLog_WARN(TAG, "Received caps set with unknown version %u", version);
 			Stream_Seek(s, capsDataSize);
 			return TRUE;
 	}
@@ -178,20 +191,21 @@ static UINT mouse_cursor_server_recv_cs_caps_advertise(MouseCursorServerContext*
                                                        wStream* s,
                                                        const RDP_MOUSE_CURSOR_HEADER* header)
 {
-	RDP_MOUSE_CURSOR_CAPS_ADVERTISE_PDU pdu = { 0 };
 	UINT error = CHANNEL_RC_OK;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	pdu.header = *header;
-
 	/* There must be at least one capability set present */
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 12))
 		return ERROR_NO_DATA;
 
-	pdu.capsSets = ArrayList_New(FALSE);
+	RDP_MOUSE_CURSOR_CAPS_ADVERTISE_PDU pdu = {
+		.header = *header,
+		.capsSets = ArrayList_New(FALSE),
+	};
+
 	if (!pdu.capsSets)
 	{
 		WLog_ERR(TAG, "Failed to allocate arraylist");
@@ -225,8 +239,7 @@ static UINT mouse_cursor_process_message(mouse_cursor_server* mouse_cursor)
 	BOOL rc = 0;
 	UINT error = ERROR_INTERNAL_ERROR;
 	ULONG BytesReturned = 0;
-	RDP_MOUSE_CURSOR_HEADER header = { 0 };
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	WINPR_ASSERT(mouse_cursor);
 	WINPR_ASSERT(mouse_cursor->mouse_cursor_channel);
@@ -234,8 +247,8 @@ static UINT mouse_cursor_process_message(mouse_cursor_server* mouse_cursor)
 	s = mouse_cursor->buffer;
 	WINPR_ASSERT(s);
 
-	Stream_SetPosition(s, 0);
-	rc = WTSVirtualChannelRead(mouse_cursor->mouse_cursor_channel, 0, NULL, 0, &BytesReturned);
+	Stream_ResetPosition(s);
+	rc = WTSVirtualChannelRead(mouse_cursor->mouse_cursor_channel, 0, nullptr, 0, &BytesReturned);
 	if (!rc)
 		goto out;
 
@@ -259,23 +272,47 @@ static UINT mouse_cursor_process_message(mouse_cursor_server* mouse_cursor)
 		goto out;
 	}
 
-	Stream_SetLength(s, BytesReturned);
+	if (!Stream_SetLength(s, BytesReturned))
+		goto out;
+
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, RDPEMSC_HEADER_SIZE))
 		return ERROR_NO_DATA;
 
-	Stream_Read_UINT8(s, header.pduType);
-	Stream_Read_UINT8(s, header.updateType);
-	Stream_Read_UINT16(s, header.reserved);
-
-	switch (header.pduType)
 	{
-		case PDUTYPE_CS_CAPS_ADVERTISE:
-			error = mouse_cursor_server_recv_cs_caps_advertise(&mouse_cursor->context, s, &header);
-			break;
-		default:
-			WLog_ERR(TAG, "mouse_cursor_process_message: unknown or invalid pduType %" PRIu8 "",
-			         header.pduType);
-			break;
+		const UINT8 pduType = Stream_Get_UINT8(s);
+		const UINT8 updateType = Stream_Get_UINT8(s);
+		switch (updateType)
+		{
+			case TS_UPDATETYPE_MOUSEPTR_SYSTEM_NULL:
+			case TS_UPDATETYPE_MOUSEPTR_SYSTEM_DEFAULT:
+			case TS_UPDATETYPE_MOUSEPTR_POSITION:
+			case TS_UPDATETYPE_MOUSEPTR_CACHED:
+			case TS_UPDATETYPE_MOUSEPTR_POINTER:
+			case TS_UPDATETYPE_MOUSEPTR_LARGE_POINTER:
+				break;
+			default:
+				WLog_ERR(TAG,
+				         "mouse_cursor_process_message: unknown or invalid updateType %" PRIu8 "",
+				         updateType);
+				return ERROR_INVALID_DATA;
+		}
+
+		RDP_MOUSE_CURSOR_HEADER header = { .updateType = (TS_UPDATETYPE_MOUSEPTR)updateType,
+			                               .reserved = Stream_Get_UINT16(s),
+			                               .pduType = PDUTYPE_EMSC_RESERVED };
+
+		switch (pduType)
+		{
+			case PDUTYPE_CS_CAPS_ADVERTISE:
+				header.pduType = PDUTYPE_CS_CAPS_ADVERTISE;
+				error =
+				    mouse_cursor_server_recv_cs_caps_advertise(&mouse_cursor->context, s, &header);
+				break;
+			default:
+				WLog_ERR(TAG, "mouse_cursor_process_message: unknown or invalid pduType %" PRIu8 "",
+				         pduType);
+				break;
+		}
 	}
 
 out:
@@ -305,6 +342,8 @@ static UINT mouse_cursor_server_context_poll_int(MouseCursorServerContext* conte
 		case MOUSE_CURSOR_OPENED:
 			error = mouse_cursor_process_message(mouse_cursor);
 			break;
+		default:
+			break;
 	}
 
 	return error;
@@ -312,9 +351,9 @@ static UINT mouse_cursor_server_context_poll_int(MouseCursorServerContext* conte
 
 static HANDLE mouse_cursor_server_get_channel_handle(mouse_cursor_server* mouse_cursor)
 {
-	void* buffer = NULL;
+	void* buffer = nullptr;
 	DWORD BytesReturned = 0;
-	HANDLE ChannelEvent = NULL;
+	HANDLE ChannelEvent = nullptr;
 
 	WINPR_ASSERT(mouse_cursor);
 
@@ -322,7 +361,7 @@ static HANDLE mouse_cursor_server_get_channel_handle(mouse_cursor_server* mouse_
 	                           &BytesReturned) == TRUE)
 	{
 		if (BytesReturned == sizeof(HANDLE))
-			CopyMemory(&ChannelEvent, buffer, sizeof(HANDLE));
+			ChannelEvent = *(HANDLE*)buffer;
 
 		WTSFreeMemory(buffer);
 	}
@@ -333,7 +372,7 @@ static HANDLE mouse_cursor_server_get_channel_handle(mouse_cursor_server* mouse_
 static DWORD WINAPI mouse_cursor_server_thread_func(LPVOID arg)
 {
 	DWORD nCount = 0;
-	HANDLE events[2] = { 0 };
+	HANDLE events[2] = WINPR_C_ARRAY_INIT;
 	mouse_cursor_server* mouse_cursor = (mouse_cursor_server*)arg;
 	UINT error = CHANNEL_RC_OK;
 	DWORD status = 0;
@@ -372,11 +411,13 @@ static DWORD WINAPI mouse_cursor_server_thread_func(LPVOID arg)
 						break;
 				}
 				break;
+			default:
+				break;
 		}
 	}
 
 	(void)WTSVirtualChannelClose(mouse_cursor->mouse_cursor_channel);
-	mouse_cursor->mouse_cursor_channel = NULL;
+	mouse_cursor->mouse_cursor_channel = nullptr;
 
 	if (error && mouse_cursor->context.rdpcontext)
 		setChannelError(mouse_cursor->context.rdpcontext, error,
@@ -392,9 +433,9 @@ static UINT mouse_cursor_server_open(MouseCursorServerContext* context)
 
 	WINPR_ASSERT(mouse_cursor);
 
-	if (!mouse_cursor->externalThread && (mouse_cursor->thread == NULL))
+	if (!mouse_cursor->externalThread && (mouse_cursor->thread == nullptr))
 	{
-		mouse_cursor->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+		mouse_cursor->stopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 		if (!mouse_cursor->stopEvent)
 		{
 			WLog_ERR(TAG, "CreateEvent failed!");
@@ -402,12 +443,12 @@ static UINT mouse_cursor_server_open(MouseCursorServerContext* context)
 		}
 
 		mouse_cursor->thread =
-		    CreateThread(NULL, 0, mouse_cursor_server_thread_func, mouse_cursor, 0, NULL);
+		    CreateThread(nullptr, 0, mouse_cursor_server_thread_func, mouse_cursor, 0, nullptr);
 		if (!mouse_cursor->thread)
 		{
 			WLog_ERR(TAG, "CreateThread failed!");
 			(void)CloseHandle(mouse_cursor->stopEvent);
-			mouse_cursor->stopEvent = NULL;
+			mouse_cursor->stopEvent = nullptr;
 			return ERROR_INTERNAL_ERROR;
 		}
 	}
@@ -436,15 +477,15 @@ static UINT mouse_cursor_server_close(MouseCursorServerContext* context)
 
 		(void)CloseHandle(mouse_cursor->thread);
 		(void)CloseHandle(mouse_cursor->stopEvent);
-		mouse_cursor->thread = NULL;
-		mouse_cursor->stopEvent = NULL;
+		mouse_cursor->thread = nullptr;
+		mouse_cursor->stopEvent = nullptr;
 	}
 	if (mouse_cursor->externalThread)
 	{
 		if (mouse_cursor->state != MOUSE_CURSOR_INITIAL)
 		{
 			(void)WTSVirtualChannelClose(mouse_cursor->mouse_cursor_channel);
-			mouse_cursor->mouse_cursor_channel = NULL;
+			mouse_cursor->mouse_cursor_channel = nullptr;
 			mouse_cursor->state = MOUSE_CURSOR_INITIAL;
 		}
 	}
@@ -485,18 +526,21 @@ static BOOL mouse_cursor_server_context_handle(MouseCursorServerContext* context
 static wStream* mouse_cursor_server_packet_new(size_t size, RDP_MOUSE_CURSOR_PDUTYPE pduType,
                                                const RDP_MOUSE_CURSOR_HEADER* header)
 {
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	/* Allocate what we need plus header bytes */
-	s = Stream_New(NULL, size + RDPEMSC_HEADER_SIZE);
+	s = Stream_New(nullptr, size + RDPEMSC_HEADER_SIZE);
 	if (!s)
 	{
 		WLog_ERR(TAG, "Stream_New failed!");
-		return NULL;
+		return nullptr;
 	}
 
-	Stream_Write_UINT8(s, pduType);
-	Stream_Write_UINT8(s, header->updateType);
+	WINPR_ASSERT(pduType <= UINT8_MAX);
+	Stream_Write_UINT8(s, (BYTE)pduType);
+
+	WINPR_ASSERT(header->updateType <= UINT8_MAX);
+	Stream_Write_UINT8(s, (BYTE)header->updateType);
 	Stream_Write_UINT16(s, header->reserved);
 
 	return s;
@@ -512,8 +556,8 @@ static UINT mouse_cursor_server_packet_send(MouseCursorServerContext* context, w
 	WINPR_ASSERT(s);
 
 	const size_t pos = Stream_GetPosition(s);
-	if (pos > UINT32_MAX)
-		return ERROR_OUTOFMEMORY;
+
+	WINPR_ASSERT(pos <= UINT32_MAX);
 	if (!WTSVirtualChannelWrite(mouse_cursor->mouse_cursor_channel, Stream_BufferAs(s, char),
 	                            (ULONG)pos, &written))
 	{
@@ -537,10 +581,10 @@ static UINT
 mouse_cursor_server_send_sc_caps_confirm(MouseCursorServerContext* context,
                                          const RDP_MOUSE_CURSOR_CAPS_CONFIRM_PDU* capsConfirm)
 {
-	RDP_MOUSE_CURSOR_CAPSET* capsetHeader = NULL;
+	RDP_MOUSE_CURSOR_CAPSET* capsetHeader = nullptr;
 	RDP_MOUSE_CURSOR_PDUTYPE pduType = PDUTYPE_EMSC_RESERVED;
 	size_t caps_size = 0;
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(capsConfirm);
@@ -592,12 +636,12 @@ static void write_point16(wStream* s, const TS_POINT16* point16)
 static UINT mouse_cursor_server_send_sc_mouseptr_update(
     MouseCursorServerContext* context, const RDP_MOUSE_CURSOR_MOUSEPTR_UPDATE_PDU* mouseptrUpdate)
 {
-	TS_POINT16* position = NULL;
-	TS_POINTERATTRIBUTE* pointerAttribute = NULL;
-	TS_LARGEPOINTERATTRIBUTE* largePointerAttribute = NULL;
+	TS_POINT16* position = nullptr;
+	TS_POINTERATTRIBUTE* pointerAttribute = nullptr;
+	TS_LARGEPOINTERATTRIBUTE* largePointerAttribute = nullptr;
 	RDP_MOUSE_CURSOR_PDUTYPE pduType = PDUTYPE_EMSC_RESERVED;
 	size_t update_size = 0;
-	wStream* s = NULL;
+	wStream* s = nullptr;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(mouseptrUpdate);
@@ -691,7 +735,7 @@ MouseCursorServerContext* mouse_cursor_server_context_new(HANDLE vcm)
 	    (mouse_cursor_server*)calloc(1, sizeof(mouse_cursor_server));
 
 	if (!mouse_cursor)
-		return NULL;
+		return nullptr;
 
 	mouse_cursor->context.vcm = vcm;
 	mouse_cursor->context.Initialize = mouse_cursor_server_initialize;
@@ -703,7 +747,7 @@ MouseCursorServerContext* mouse_cursor_server_context_new(HANDLE vcm)
 	mouse_cursor->context.CapsConfirm = mouse_cursor_server_send_sc_caps_confirm;
 	mouse_cursor->context.MouseptrUpdate = mouse_cursor_server_send_sc_mouseptr_update;
 
-	mouse_cursor->buffer = Stream_New(NULL, 4096);
+	mouse_cursor->buffer = Stream_New(nullptr, 4096);
 	if (!mouse_cursor->buffer)
 		goto fail;
 
@@ -713,7 +757,7 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	mouse_cursor_server_context_free(&mouse_cursor->context);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void mouse_cursor_server_context_free(MouseCursorServerContext* context)

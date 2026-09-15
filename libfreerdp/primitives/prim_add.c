@@ -27,7 +27,7 @@
 /* ----------------------------------------------------------------------------
  * 16-bit signed add with saturation (under and over).
  */
-static INLINE INT16 add(INT16 a, INT16 b)
+static inline INT16 add(INT16 a, INT16 b)
 {
 	INT32 k = (INT32)a + (INT32)b;
 
@@ -78,5 +78,6 @@ void primitives_init_add(primitives_t* WINPR_RESTRICT prims)
 
 void primitives_init_add_opt(primitives_t* WINPR_RESTRICT prims)
 {
+	primitives_init_add(prims);
 	primitives_init_add_sse3(prims);
 }

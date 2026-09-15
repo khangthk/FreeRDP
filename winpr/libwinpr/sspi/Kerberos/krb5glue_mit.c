@@ -36,10 +36,11 @@
 static char* create_temporary_file(void)
 {
 	BYTE buffer[32];
-	char* hex = NULL;
-	char* path = NULL;
+	char* hex = nullptr;
+	char* path = nullptr;
 
-	winpr_RAND(buffer, sizeof(buffer));
+	if (winpr_RAND(buffer, sizeof(buffer)) < 0)
+		return nullptr;
 	hex = winpr_BinToHexString(buffer, sizeof(buffer), FALSE);
 	path = GetKnownSubPath(KNOWN_PATH_TEMP, hex);
 	free(hex);
@@ -90,7 +91,7 @@ krb5_prompt_type krb5glue_get_prompt_type(krb5_context ctx, krb5_prompt prompts[
 
 krb5_error_code krb5glue_log_error(krb5_context ctx, krb5_data* msg, const char* tag)
 {
-	krb5_error* error = NULL;
+	krb5_error* error = nullptr;
 	krb5_error_code rv = 0;
 
 	WINPR_ASSERT(ctx);
@@ -114,25 +115,25 @@ BOOL krb5glue_authenticator_validate_chksum(krb5glue_authenticator authenticator
 	if (!authenticator || !authenticator->checksum ||
 	    authenticator->checksum->checksum_type != cksumtype || authenticator->checksum->length < 24)
 		return FALSE;
-	Data_Read_UINT32((authenticator->checksum->contents + 20), (*flags));
+	*flags = winpr_Data_Get_UINT32((authenticator->checksum->contents + 20));
 	return TRUE;
 }
 
 krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, krb5_ccache ccache,
                                         krb5_prompter_fct prompter, char* password,
-                                        SEC_WINPR_KERBEROS_SETTINGS* krb_settings)
+                                        SEC_WINPR_KERBEROS_SETTINGS_V2* krb_settings)
 {
 	krb5_error_code rv = 0;
 	krb5_deltat start_time = 0;
-	krb5_get_init_creds_opt* gic_opt = NULL;
-	krb5_init_creds_context creds_ctx = NULL;
+	krb5_get_init_creds_opt* gic_opt = nullptr;
+	krb5_init_creds_context creds_ctx = nullptr;
 	char* tmp_profile_path = create_temporary_file();
-	profile_t profile = NULL;
+	profile_t profile = nullptr;
 	BOOL is_temp_ctx = FALSE;
 
 	WINPR_ASSERT(ctx);
 
-	rv = krb5_get_init_creds_opt_alloc(ctx, &gic_opt);
+	rv = krb_log_exec(krb5_get_init_creds_opt_alloc, ctx, &gic_opt);
 	if (rv)
 		goto cleanup;
 
@@ -149,39 +150,39 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 			krb5_get_init_creds_opt_set_renew_life(gic_opt, krb_settings->renewLifeTime);
 		if (krb_settings->withPac)
 		{
-			rv = krb5_get_init_creds_opt_set_pac_request(ctx, gic_opt, TRUE);
+			rv = krb_log_exec(krb5_get_init_creds_opt_set_pac_request, ctx, gic_opt, TRUE);
 			if (rv)
 				goto cleanup;
 		}
 		if (krb_settings->armorCache)
 		{
-			rv = krb5_get_init_creds_opt_set_fast_ccache_name(ctx, gic_opt,
-			                                                  krb_settings->armorCache);
+			rv = krb_log_exec(krb5_get_init_creds_opt_set_fast_ccache_name, ctx, gic_opt,
+			                  krb_settings->armorCache);
 			if (rv)
 				goto cleanup;
 		}
 		if (krb_settings->pkinitX509Identity)
 		{
-			rv = krb5_get_init_creds_opt_set_pa(ctx, gic_opt, "X509_user_identity",
-			                                    krb_settings->pkinitX509Identity);
+			rv = krb_log_exec(krb5_get_init_creds_opt_set_pa, ctx, gic_opt, "X509_user_identity",
+			                  krb_settings->pkinitX509Identity);
 			if (rv)
 				goto cleanup;
 		}
 		if (krb_settings->pkinitX509Anchors)
 		{
-			rv = krb5_get_init_creds_opt_set_pa(ctx, gic_opt, "X509_anchors",
-			                                    krb_settings->pkinitX509Anchors);
+			rv = krb_log_exec(krb5_get_init_creds_opt_set_pa, ctx, gic_opt, "X509_anchors",
+			                  krb_settings->pkinitX509Anchors);
 			if (rv)
 				goto cleanup;
 		}
 		if (krb_settings->kdcUrl && (strnlen(krb_settings->kdcUrl, 2) > 0))
 		{
-			const char* names[4] = { 0 };
-			char* realm = NULL;
-			char* kdc_url = NULL;
+			const char* names[4] = WINPR_C_ARRAY_INIT;
+			char* realm = nullptr;
+			char* kdc_url = nullptr;
 			size_t size = 0;
 
-			if ((rv = krb5_get_profile(ctx, &profile)))
+			if ((rv = krb_log_exec(krb5_get_profile, ctx, &profile)))
 				goto cleanup;
 
 			rv = ENOMEM;
@@ -213,31 +214,36 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 			free(kdc_url);
 			free(realm);
 
-			if ((rv = profile_flush_to_file(profile, tmp_profile_path)))
+			long lrv = profile_flush_to_file(profile, tmp_profile_path);
+			if (lrv)
 				goto cleanup;
 
 			profile_abandon(profile);
-			profile = NULL;
-			if ((rv = profile_init_path(tmp_profile_path, &profile)))
+			profile = nullptr;
+			lrv = profile_init_path(tmp_profile_path, &profile);
+			if (lrv)
 				goto cleanup;
 
-			if ((rv = krb5_init_context_profile(profile, 0, &ctx)))
+			rv = krb5_init_context_profile(profile, 0, &ctx);
+			if (rv)
 				goto cleanup;
 			is_temp_ctx = TRUE;
 		}
 	}
 
-	if ((rv = krb5_get_init_creds_opt_set_in_ccache(ctx, gic_opt, ccache)))
+	if ((rv = krb_log_exec(krb5_get_init_creds_opt_set_in_ccache, ctx, gic_opt, ccache)))
 		goto cleanup;
 
-	if ((rv = krb5_get_init_creds_opt_set_out_ccache(ctx, gic_opt, ccache)))
+	if ((rv = krb_log_exec(krb5_get_init_creds_opt_set_out_ccache, ctx, gic_opt, ccache)))
 		goto cleanup;
 
-	if ((rv =
-	         krb5_init_creds_init(ctx, princ, prompter, password, start_time, gic_opt, &creds_ctx)))
+	if ((rv = krb_log_exec(krb5_init_creds_init, ctx, princ, prompter, password, start_time,
+	                       gic_opt, &creds_ctx)))
 		goto cleanup;
 
-	if ((rv = krb5_init_creds_get(ctx, creds_ctx)))
+	krb_log_context_encryption(ctx, princ);
+
+	if ((rv = krb_log_exec(krb5_init_creds_get, ctx, creds_ctx)))
 		goto cleanup;
 
 cleanup:

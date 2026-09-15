@@ -22,6 +22,8 @@
 #ifndef FREERDP_LIB_GDI_BRUSH_H
 #define FREERDP_LIB_GDI_BRUSH_H
 
+#include <winpr/cast.h>
+
 #include <freerdp/api.h>
 #include <freerdp/gdi/gdi.h>
 
@@ -30,18 +32,25 @@ extern "C"
 {
 #endif
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_LOCAL const char* gdi_rop_to_string(UINT32 code);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_LOCAL HGDI_BRUSH gdi_CreateSolidBrush(UINT32 crColor);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_LOCAL HGDI_BRUSH gdi_CreatePatternBrush(HGDI_BITMAP hbmp);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_LOCAL HGDI_BRUSH gdi_CreateHatchBrush(HGDI_BITMAP hbmp);
 
-	static INLINE UINT32 gdi_GetBrushStyle(HGDI_DC hdc)
+	WINPR_ATTR_NODISCARD
+	static inline UINT32 gdi_GetBrushStyle(HGDI_DC hdc)
 	{
 		if (!hdc || !hdc->brush)
 			return GDI_BS_NULL;
 
-		return hdc->brush->style;
+		return WINPR_ASSERTING_INT_CAST(UINT32, hdc->brush->style);
 	}
 
 #ifdef __cplusplus

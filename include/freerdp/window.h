@@ -55,7 +55,7 @@
 #define WINDOW_ORDER_FIELD_APPBAR_STATE 0x00000040
 #define WINDOW_ORDER_FIELD_APPBAR_EDGE 0x00000001
 
-/* Window (chached) Icon */
+/* Window (cached) Icon */
 #define WINDOW_ORDER_ICON 0x40000000
 #define WINDOW_ORDER_CACHED_ICON 0x80000000
 #define WINDOW_ORDER_FIELD_ICON_BIG 0x00002000
@@ -277,16 +277,16 @@ extern "C"
 		rdpContext* context;     /* 0 */
 		UINT32 paddingA[16 - 1]; /* 1 */
 
-		pWindowCreate WindowCreate;               /* 16 */
-		pWindowUpdate WindowUpdate;               /* 17 */
-		pWindowIcon WindowIcon;                   /* 18 */
-		pWindowCachedIcon WindowCachedIcon;       /* 19 */
-		pWindowDelete WindowDelete;               /* 20 */
-		pNotifyIconCreate NotifyIconCreate;       /* 21 */
-		pNotifyIconUpdate NotifyIconUpdate;       /* 22 */
-		pNotifyIconDelete NotifyIconDelete;       /* 23 */
-		pMonitoredDesktop MonitoredDesktop;       /* 24 */
-		pNonMonitoredDesktop NonMonitoredDesktop; /* 25 */
+		WINPR_ATTR_NODISCARD pWindowCreate WindowCreate;               /* 16 */
+		WINPR_ATTR_NODISCARD pWindowUpdate WindowUpdate;               /* 17 */
+		WINPR_ATTR_NODISCARD pWindowIcon WindowIcon;                   /* 18 */
+		WINPR_ATTR_NODISCARD pWindowCachedIcon WindowCachedIcon;       /* 19 */
+		WINPR_ATTR_NODISCARD pWindowDelete WindowDelete;               /* 20 */
+		WINPR_ATTR_NODISCARD pNotifyIconCreate NotifyIconCreate;       /* 21 */
+		WINPR_ATTR_NODISCARD pNotifyIconUpdate NotifyIconUpdate;       /* 22 */
+		WINPR_ATTR_NODISCARD pNotifyIconDelete NotifyIconDelete;       /* 23 */
+		WINPR_ATTR_NODISCARD pMonitoredDesktop MonitoredDesktop;       /* 24 */
+		WINPR_ATTR_NODISCARD pNonMonitoredDesktop NonMonitoredDesktop; /* 25 */
 		UINT32 paddingB[32 - 26];                 /* 26 */
 	};
 	typedef struct rdp_window_update rdpWindowUpdate;

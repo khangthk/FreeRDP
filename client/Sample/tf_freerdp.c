@@ -51,7 +51,7 @@
  * It can be used to reset invalidated areas. */
 static BOOL tf_begin_paint(rdpContext* context)
 {
-	rdpGdi* gdi = NULL;
+	rdpGdi* gdi = nullptr;
 
 	WINPR_ASSERT(context);
 
@@ -71,18 +71,23 @@ static BOOL tf_begin_paint(rdpContext* context)
  */
 static BOOL tf_end_paint(rdpContext* context)
 {
-	rdpGdi* gdi = NULL;
+	rdpGdi* gdi = nullptr;
 
 	WINPR_ASSERT(context);
 
 	gdi = context->gdi;
 	WINPR_ASSERT(gdi);
 	WINPR_ASSERT(gdi->primary);
-	WINPR_ASSERT(gdi->primary->hdc);
-	WINPR_ASSERT(gdi->primary->hdc->hwnd);
-	WINPR_ASSERT(gdi->primary->hdc->hwnd->invalid);
 
-	if (gdi->primary->hdc->hwnd->invalid->null)
+	HGDI_DC hdc = gdi->primary->hdc;
+	WINPR_ASSERT(hdc);
+	if (!hdc->hwnd)
+		return TRUE;
+
+	HGDI_WND hwnd = hdc->hwnd;
+	WINPR_ASSERT(hwnd->invalid || (hwnd->ninvalid == 0));
+
+	if (hwnd->invalid->null)
 		return TRUE;
 
 	return TRUE;
@@ -90,8 +95,8 @@ static BOOL tf_end_paint(rdpContext* context)
 
 static BOOL tf_desktop_resize(rdpContext* context)
 {
-	rdpGdi* gdi = NULL;
-	rdpSettings* settings = NULL;
+	rdpGdi* gdi = nullptr;
+	rdpSettings* settings = nullptr;
 
 	WINPR_ASSERT(context);
 
@@ -139,7 +144,7 @@ static BOOL tf_keyboard_set_ime_status(rdpContext* context, UINT16 imeId, UINT32
  * Set all configuration options to support and load channels here. */
 static BOOL tf_pre_connect(freerdp* instance)
 {
-	rdpSettings* settings = NULL;
+	rdpSettings* settings = nullptr;
 
 	WINPR_ASSERT(instance);
 	WINPR_ASSERT(instance->context);
@@ -159,19 +164,22 @@ static BOOL tf_pre_connect(freerdp* instance)
 		return FALSE;
 	/* OrderSupport is initialized at this point.
 	 * Only override it if you plan to implement custom order
-	 * callbacks or deactiveate certain features. */
+	 * callbacks or deactivate certain features. */
 	/* Register the channel listeners.
 	 * They are required to set up / tear down channels if they are loaded. */
-	PubSub_SubscribeChannelConnected(instance->context->pubSub, tf_OnChannelConnectedEventHandler);
-	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
-	                                    tf_OnChannelDisconnectedEventHandler);
+	if (PubSub_SubscribeChannelConnected(instance->context->pubSub,
+	                                     tf_OnChannelConnectedEventHandler) < 0)
+		return FALSE;
+	if (PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
+	                                        tf_OnChannelDisconnectedEventHandler) < 0)
+		return FALSE;
 
 	/* TODO: Any code your client requires */
 	return TRUE;
 }
 
 /* Called after a RDP connection was successfully established.
- * Settings might have changed during negociation of client / server feature
+ * Settings might have changed during negotiation of client / server feature
  * support.
  *
  * Set up local framebuffers and paing callbacks.
@@ -180,7 +188,7 @@ static BOOL tf_pre_connect(freerdp* instance)
  */
 static BOOL tf_post_connect(freerdp* instance)
 {
-	rdpContext* context = NULL;
+	rdpContext* context = nullptr;
 
 	if (!gdi_init(instance, PIXEL_FORMAT_XRGB32))
 		return FALSE;
@@ -210,7 +218,7 @@ static BOOL tf_post_connect(freerdp* instance)
  */
 static void tf_post_disconnect(freerdp* instance)
 {
-	tfContext* context = NULL;
+	tfContext* context = nullptr;
 
 	if (!instance)
 		return;
@@ -237,7 +245,7 @@ static DWORD WINAPI tf_client_thread_proc(LPVOID arg)
 	DWORD nCount = 0;
 	DWORD status = 0;
 	DWORD result = 0;
-	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
+	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = WINPR_C_ARRAY_INIT;
 	BOOL rc = freerdp_connect(instance);
 
 	WINPR_ASSERT(instance->context);
@@ -254,7 +262,7 @@ static DWORD WINAPI tf_client_thread_proc(LPVOID arg)
 	{
 		result = freerdp_get_last_error(instance->context);
 		WLog_ERR(TAG, "connection failure 0x%08" PRIx32, result);
-		return result;
+		goto disconnect;
 	}
 
 	while (!freerdp_shall_disconnect_context(instance->context))
@@ -267,7 +275,7 @@ static DWORD WINAPI tf_client_thread_proc(LPVOID arg)
 			break;
 		}
 
-		status = WaitForMultipleObjects(nCount, handles, FALSE, 100);
+		status = WaitForMultipleObjects(nCount, handles, FALSE, INFINITE);
 
 		if (status == WAIT_FAILED)
 		{
@@ -294,10 +302,7 @@ disconnect:
  * if available. */
 static BOOL tf_client_global_init(void)
 {
-	if (freerdp_handle_signals() != 0)
-		return FALSE;
-
-	return TRUE;
+	return freerdp_handle_signals() == 0;
 }
 
 /* Optional global tear down */
@@ -307,7 +312,7 @@ static void tf_client_global_uninit(void)
 
 static int tf_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)
 {
-	tfContext* tf = NULL;
+	tfContext* tf = nullptr;
 	const char* str_data = freerdp_get_logon_error_info_data(data);
 	const char* str_type = freerdp_get_logon_error_info_type(type);
 
@@ -382,7 +387,7 @@ static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 int main(int argc, char* argv[])
 {
 	int rc = -1;
-	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = { 0 };
+	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = WINPR_C_ARRAY_INIT;
 
 	RdpClientEntry(&clientEntryPoints);
 	rdpContext* context = freerdp_client_context_new(&clientEntryPoints);
@@ -390,13 +395,15 @@ int main(int argc, char* argv[])
 	if (!context)
 		goto fail;
 
-	const int status =
-	    freerdp_client_settings_parse_command_line(context->settings, argc, argv, FALSE);
-	if (status)
 	{
-		rc = freerdp_client_settings_command_line_status_print(context->settings, status, argc,
-		                                                       argv);
-		goto fail;
+		const int status =
+		    freerdp_client_settings_parse_command_line(context->settings, argc, argv, FALSE);
+		if (status)
+		{
+			rc = freerdp_client_settings_command_line_status_print(context->settings, status, argc,
+			                                                       argv);
+			goto fail;
+		}
 	}
 
 	if (!stream_dump_register_handlers(context, CONNECTION_STATE_MCS_CREATE_REQUEST, FALSE))
@@ -405,8 +412,10 @@ int main(int argc, char* argv[])
 	if (freerdp_client_start(context) != 0)
 		goto fail;
 
-	const DWORD res = tf_client_thread_proc(context->instance);
-	rc = (int)res;
+	{
+		const DWORD res = tf_client_thread_proc(context->instance);
+		rc = (int)res;
+	}
 
 	if (freerdp_client_stop(context) != 0)
 		rc = -1;

@@ -43,12 +43,15 @@
 using SDLSurfacePtr = std::unique_ptr<SDL_Surface, decltype(&SDL_FreeSurface)>;
 using SDLPixelFormatPtr = std::unique_ptr<SDL_PixelFormat, decltype(&SDL_FreeFormat)>;
 
+class SdlAadAuthHelper;
+
 class SdlContext
 {
   public:
 	explicit SdlContext(rdpContext* context);
 	SdlContext(const SdlContext& other) = delete;
 	SdlContext(SdlContext&& other) = delete;
+	~SdlContext() = default;
 
 	SdlContext& operator=(const SdlContext& other) = delete;
 	SdlContext& operator=(SdlContext&& other) = delete;
@@ -94,4 +97,9 @@ class SdlContext
 
 	[[nodiscard]] rdpContext* context() const;
 	[[nodiscard]] rdpClientContext* common() const;
+
+	[[nodiscard]] std::shared_ptr<SdlAadAuthHelper>& getAadAuthHelper();
+
+  private:
+	std::shared_ptr<SdlAadAuthHelper> _aadAuthHelper;
 };

@@ -28,13 +28,13 @@ int mac_cliprdr_send_client_format_list(CliprdrClientContext *cliprdr)
 	UINT32 *pFormatIds;
 	const char *formatName;
 	CLIPRDR_FORMAT *formats;
-	CLIPRDR_FORMAT_LIST formatList = { 0 };
+	CLIPRDR_FORMAT_LIST formatList = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(cliprdr);
 	mfContext *mfc = (mfContext *)cliprdr->custom;
 	WINPR_ASSERT(mfc);
 
-	pFormatIds = NULL;
+	pFormatIds = nullptr;
 	numFormats = ClipboardGetFormatIds(mfc->clipboard, &pFormatIds);
 
 	formats = (CLIPRDR_FORMAT *)calloc(numFormats, sizeof(CLIPRDR_FORMAT));
@@ -48,7 +48,7 @@ int mac_cliprdr_send_client_format_list(CliprdrClientContext *cliprdr)
 		formatName = ClipboardGetFormatName(mfc->clipboard, formatId);
 
 		formats[index].formatId = formatId;
-		formats[index].formatName = NULL;
+		formats[index].formatName = nullptr;
 
 		if ((formatId > CF_MAX) && formatName)
 			formats[index].formatName = _strdup(formatName);
@@ -85,11 +85,14 @@ static int mac_cliprdr_send_client_format_list_response(CliprdrClientContext *cl
 	return 1;
 }
 
-static int mac_cliprdr_send_client_format_data_request(CliprdrClientContext *cliprdr,
-                                                       UINT32 formatId)
+static UINT mac_cliprdr_send_client_format_data_request(CliprdrClientContext *cliprdr,
+                                                        UINT32 formatId)
 {
-	CLIPRDR_FORMAT_DATA_REQUEST formatDataRequest = { 0 };
+	CLIPRDR_FORMAT_DATA_REQUEST formatDataRequest = WINPR_C_ARRAY_INIT;
 	WINPR_ASSERT(cliprdr);
+
+	if (formatId == 0)
+		return CHANNEL_RC_OK;
 
 	mfContext *mfc = (mfContext *)cliprdr->custom;
 	WINPR_ASSERT(mfc);
@@ -101,9 +104,7 @@ static int mac_cliprdr_send_client_format_data_request(CliprdrClientContext *cli
 	mfc->requestedFormatId = formatId;
 	(void)ResetEvent(mfc->clipboardRequestEvent);
 
-	cliprdr->ClientFormatDataRequest(cliprdr, &formatDataRequest);
-
-	return 1;
+	return cliprdr->ClientFormatDataRequest(cliprdr, &formatDataRequest);
 }
 
 static int mac_cliprdr_send_client_capabilities(CliprdrClientContext *cliprdr)
@@ -179,8 +180,10 @@ static UINT mac_cliprdr_server_capabilities(CliprdrClientContext *cliprdr,
 static UINT mac_cliprdr_server_format_list(CliprdrClientContext *cliprdr,
                                            const CLIPRDR_FORMAT_LIST *formatList)
 {
-	CLIPRDR_FORMAT *format;
+	WINPR_ASSERT(cliprdr);
+
 	mfContext *mfc = (mfContext *)cliprdr->custom;
+	WINPR_ASSERT(mfc);
 
 	if (mfc->serverFormats)
 	{
@@ -190,7 +193,7 @@ static UINT mac_cliprdr_server_format_list(CliprdrClientContext *cliprdr,
 		}
 
 		free(mfc->serverFormats);
-		mfc->serverFormats = NULL;
+		mfc->serverFormats = nullptr;
 		mfc->numServerFormats = 0;
 	}
 
@@ -206,7 +209,7 @@ static UINT mac_cliprdr_server_format_list(CliprdrClientContext *cliprdr,
 	for (UINT32 index = 0; index < mfc->numServerFormats; index++)
 	{
 		mfc->serverFormats[index].formatId = formatList->formats[index].formatId;
-		mfc->serverFormats[index].formatName = NULL;
+		mfc->serverFormats[index].formatName = nullptr;
 
 		if (formatList->formats[index].formatName)
 			mfc->serverFormats[index].formatName = _strdup(formatList->formats[index].formatName);
@@ -214,28 +217,26 @@ static UINT mac_cliprdr_server_format_list(CliprdrClientContext *cliprdr,
 
 	mac_cliprdr_send_client_format_list_response(cliprdr, TRUE);
 
+	uint32_t formatId = 0;
 	for (UINT32 index = 0; index < mfc->numServerFormats; index++)
 	{
-		format = &(mfc->serverFormats[index]);
+		const CLIPRDR_FORMAT *format = &(mfc->serverFormats[index]);
 
 		if (format->formatId == CF_UNICODETEXT)
-		{
-			mac_cliprdr_send_client_format_data_request(cliprdr, CF_UNICODETEXT);
-			break;
-		}
+			formatId = format->formatId;
 		else if (format->formatId == CF_OEMTEXT)
 		{
-			mac_cliprdr_send_client_format_data_request(cliprdr, CF_OEMTEXT);
-			break;
+			if (formatId == 0)
+				formatId == CF_OEMTEXT;
 		}
 		else if (format->formatId == CF_TEXT)
 		{
-			mac_cliprdr_send_client_format_data_request(cliprdr, CF_TEXT);
-			break;
+			if (formatId == 0)
+				formatId == CF_TEXT;
 		}
 	}
 
-	return CHANNEL_RC_OK;
+	return mac_cliprdr_send_client_format_data_request(cliprdr, formatId);
 }
 
 /**
@@ -286,7 +287,7 @@ mac_cliprdr_server_format_data_request(CliprdrClientContext *cliprdr,
 	BYTE *data;
 	UINT32 size;
 	UINT32 formatId;
-	CLIPRDR_FORMAT_DATA_RESPONSE response = { 0 };
+	CLIPRDR_FORMAT_DATA_RESPONSE response = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(cliprdr);
 
@@ -304,7 +305,7 @@ mac_cliprdr_server_format_data_request(CliprdrClientContext *cliprdr,
 	{
 		response.common.msgFlags = CB_RESPONSE_FAIL;
 		response.common.dataLen = 0;
-		response.requestedFormatData = NULL;
+		response.requestedFormatData = nullptr;
 	}
 
 	cliprdr->ClientFormatDataResponse(cliprdr, &response);
@@ -324,7 +325,7 @@ mac_cliprdr_server_format_data_response(CliprdrClientContext *cliprdr,
                                         const CLIPRDR_FORMAT_DATA_RESPONSE *formatDataResponse)
 {
 	UINT32 formatId;
-	CLIPRDR_FORMAT *format = NULL;
+	CLIPRDR_FORMAT *format = nullptr;
 	mfContext *mfc = (mfContext *)cliprdr->custom;
 	MRDPView *view = (MRDPView *)mfc->view;
 
@@ -408,7 +409,7 @@ void mac_cliprdr_init(mfContext *mfc, CliprdrClientContext *cliprdr)
 	mfc->cliprdr = cliprdr;
 
 	mfc->clipboard = ClipboardCreate();
-	mfc->clipboardRequestEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	mfc->clipboardRequestEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 
 	cliprdr->MonitorReady = mac_cliprdr_monitor_ready;
 	cliprdr->ServerCapabilities = mac_cliprdr_server_capabilities;
@@ -424,8 +425,8 @@ void mac_cliprdr_init(mfContext *mfc, CliprdrClientContext *cliprdr)
 
 void mac_cliprdr_uninit(mfContext *mfc, CliprdrClientContext *cliprdr)
 {
-	cliprdr->custom = NULL;
-	mfc->cliprdr = NULL;
+	cliprdr->custom = nullptr;
+	mfc->cliprdr = nullptr;
 
 	ClipboardDestroy(mfc->clipboard);
 	(void)CloseHandle(mfc->clipboardRequestEvent);

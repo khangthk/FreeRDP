@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <winpr/cast.h>
 #include <winpr/platform.h>
 #include <winpr/winpr.h>
 
@@ -32,6 +33,7 @@
 
 WINPR_PRAGMA_DIAG_PUSH
 WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
+// NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 
 #ifndef _WIN32
 
@@ -50,28 +52,32 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
 #endif /* _strtoi64 */
 
 #ifndef _rotl
-static INLINE UINT32 _rotl(UINT32 value, int shift)
+WINPR_ATTR_NODISCARD
+static inline UINT32 _rotl(UINT32 value, int shift)
 {
 	return (value << shift) | (value >> (32 - shift));
 }
 #endif /* _rotl */
 
 #ifndef _rotl64
-static INLINE UINT64 _rotl64(UINT64 value, int shift)
+WINPR_ATTR_NODISCARD
+static inline UINT64 _rotl64(UINT64 value, int shift)
 {
 	return (value << shift) | (value >> (64 - shift));
 }
 #endif /* _rotl64 */
 
 #ifndef _rotr
-static INLINE UINT32 _rotr(UINT32 value, int shift)
+WINPR_ATTR_NODISCARD
+static inline UINT32 _rotr(UINT32 value, int shift)
 {
 	return (value >> shift) | (value << (32 - shift));
 }
 #endif /* _rotr */
 
 #ifndef _rotr64
-static INLINE UINT64 _rotr64(UINT64 value, int shift)
+WINPR_ATTR_NODISCARD
+static inline UINT64 _rotr64(UINT64 value, int shift)
 {
 	return (value >> shift) | (value << (64 - shift));
 }
@@ -84,13 +90,13 @@ static INLINE UINT64 _rotr64(UINT64 value, int shift)
 
 #else
 
-static INLINE UINT32 _byteswap_ulong(UINT32 _val)
+WINPR_ATTR_NODISCARD static inline UINT32 _byteswap_ulong(UINT32 _val)
 {
 	return (((_val) >> 24) | (((_val)&0x00FF0000) >> 8) | (((_val)&0x0000FF00) << 8) |
 	        ((_val) << 24));
 }
 
-static INLINE UINT64 _byteswap_uint64(UINT64 _val)
+WINPR_ATTR_NODISCARD static inline UINT64 _byteswap_uint64(UINT64 _val)
 {
 	return (((_val) << 56) | (((_val) << 40) & 0xFF000000000000) |
 	        (((_val) << 24) & 0xFF0000000000) | (((_val) << 8) & 0xFF00000000) |
@@ -106,15 +112,10 @@ static INLINE UINT64 _byteswap_uint64(UINT64 _val)
 
 #else
 
-static INLINE UINT16 _byteswap_ushort(UINT16 _val)
+WINPR_ATTR_NODISCARD
+static inline UINT16 _byteswap_ushort(UINT16 _val)
 {
-#ifdef __cplusplus
-#define winpr_byteswap_cast(t, val) static_cast<t>(val)
-#else
-#define winpr_byteswap_cast(t, val) (t)(val)
-#endif
-	return winpr_byteswap_cast(UINT16, ((_val) >> 8U) | ((_val) << 8U));
-#undef winpr_byteswap_cast
+	return WINPR_CXX_COMPAT_CAST(UINT16, ((_val) >> 8U) | ((_val) << 8U));
 }
 
 #endif /* (__GNUC__ > 4) || ... */
@@ -129,7 +130,7 @@ extern "C"
 {
 #endif
 
-	WINPR_API PVOID SecureZeroMemory(PVOID ptr, SIZE_T cnt);
+	WINPR_API PVOID SecureZeroMemory(PVOID ptr, size_t cnt);
 
 #ifdef __cplusplus
 }
@@ -158,11 +159,15 @@ extern "C"
 
 	/* Data Conversion */
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API errno_t _itoa_s(int value, char* buffer, size_t sizeInCharacters, int radix);
 
 	/* Buffer Manipulation */
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API errno_t memmove_s(void* dest, size_t numberOfElements, const void* src, size_t count);
+
+	WINPR_ATTR_NODISCARD
 	WINPR_API errno_t wmemmove_s(WCHAR* dest, size_t numberOfElements, const WCHAR* src,
 	                             size_t count);
 #ifdef __cplusplus
@@ -219,6 +224,7 @@ extern "C"
 	WINPR_API void* winpr_aligned_offset_recalloc(void* memblock, size_t num, size_t size,
 	                                              size_t alignment, size_t offset);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API size_t winpr_aligned_msize(void* memblock, size_t alignment, size_t offset);
 
 #ifdef __cplusplus
@@ -237,9 +243,11 @@ extern "C"
 #endif /* !defined(_WIN32) || (defined(__MINGW32__) ... */
 
 #if defined(_WIN32) && (!defined(__MINGW32__) || defined(_UCRT))
-#define winpr_aligned_calloc(count, size, alignment) _aligned_recalloc(NULL, count, size, alignment)
+#define winpr_aligned_calloc(count, size, alignment) \
+	_aligned_recalloc(nullptr, count, size, alignment)
 #endif /* defined(_WIN32) && (!defined(__MINGW32__) || defined(_UCRT)) */
 
+// NOLINTEND(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 WINPR_PRAGMA_DIAG_POP
 
 #endif /* WINPR_CRT_H */

@@ -18,6 +18,7 @@
  */
 
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 #include <winpr/print.h>
 
 #include <freerdp/config.h>
@@ -30,7 +31,7 @@
  * Read PER length.
  *
  * @param s stream to read from
- * @param length A pointer to return the length read, must not be NULL
+ * @param length A pointer to return the length read, must not be nullptr
  *
  * @return \b TRUE for success, \b FALSE otherwise.
  */
@@ -51,7 +52,7 @@ BOOL per_read_length(wStream* s, UINT16* length)
 			return FALSE;
 
 		byte &= ~(0x80);
-		*length = (byte << 8);
+		*length = WINPR_ASSERTING_INT_CAST(UINT16, byte << 8);
 		Stream_Read_UINT8(s, byte);
 		*length += byte;
 	}
@@ -272,7 +273,7 @@ BOOL per_write_integer(wStream* s, UINT32 integer)
 			return FALSE;
 		if (!Stream_EnsureRemainingCapacity(s, 1))
 			return FALSE;
-		Stream_Write_UINT8(s, integer);
+		Stream_Write_UINT8(s, WINPR_ASSERTING_INT_CAST(UINT8, integer));
 	}
 	else if (integer <= UINT16_MAX)
 	{
@@ -280,7 +281,7 @@ BOOL per_write_integer(wStream* s, UINT32 integer)
 			return FALSE;
 		if (!Stream_EnsureRemainingCapacity(s, 2))
 			return FALSE;
-		Stream_Write_UINT16_BE(s, integer);
+		Stream_Write_UINT16_BE(s, WINPR_ASSERTING_INT_CAST(UINT16, integer));
 	}
 	else if (integer <= UINT32_MAX)
 	{
@@ -297,7 +298,7 @@ BOOL per_write_integer(wStream* s, UINT32 integer)
  * Read PER INTEGER (UINT16).
  *
  * @param s The stream to read from
- * @param integer The integer result variable pointer, must not be NULL
+ * @param integer The integer result variable pointer, must not be nullptr
  * @param min minimum value
  *
  * @return \b TRUE for success, \b FALSE otherwise
@@ -312,8 +313,7 @@ BOOL per_read_integer16(wStream* s, UINT16* integer, UINT16 min)
 
 	if (*integer > UINT16_MAX - min)
 	{
-		WLog_WARN(TAG, "PER uint16 invalid value %" PRIu16 " > %" PRIu16, *integer,
-		          UINT16_MAX - min);
+		WLog_WARN(TAG, "PER uint16 invalid value %" PRIu16 " > %d", *integer, UINT16_MAX - min);
 		return FALSE;
 	}
 
@@ -333,6 +333,8 @@ BOOL per_read_integer16(wStream* s, UINT16* integer, UINT16 min)
 
 BOOL per_write_integer16(wStream* s, UINT16 integer, UINT16 min)
 {
+	if (min > integer)
+		return FALSE;
 	if (!Stream_EnsureRemainingCapacity(s, 2))
 		return FALSE;
 	Stream_Write_UINT16_BE(s, integer - min);
@@ -343,7 +345,7 @@ BOOL per_write_integer16(wStream* s, UINT16 integer, UINT16 min)
  * Read PER ENUMERATED.
  *
  * @param s The stream to read from
- * @param enumerated enumerated result variable, must not be NULL
+ * @param enumerated enumerated result variable, must not be nullptr
  * @param count enumeration count
  *
  * @return \b TRUE for success, \b FALSE otherwise
@@ -377,7 +379,7 @@ BOOL per_read_enumerated(wStream* s, BYTE* enumerated, BYTE count)
  * @return \b TRUE for success, \b FALSE otherwise
  */
 
-BOOL per_write_enumerated(wStream* s, BYTE enumerated, BYTE count)
+BOOL per_write_enumerated(wStream* s, BYTE enumerated, WINPR_ATTR_UNUSED BYTE count)
 {
 	if (!Stream_EnsureRemainingCapacity(s, 1))
 		return FALSE;
@@ -417,7 +419,7 @@ BOOL per_read_object_identifier(wStream* s, const BYTE oid[6])
 {
 	BYTE t12 = 0;
 	UINT16 length = 0;
-	BYTE a_oid[6] = { 0 };
+	BYTE a_oid[6] = WINPR_C_ARRAY_INIT;
 
 	if (!per_read_length(s, &length))
 		return FALSE;
@@ -467,19 +469,6 @@ BOOL per_write_object_identifier(wStream* s, const BYTE oid[6])
 }
 
 /**
- * Write PER string.
- * @param s stream
- * @param str string
- * @param length string length
- */
-
-static void per_write_string(wStream* s, BYTE* str, int length)
-{
-	for (int i = 0; i < length; i++)
-		Stream_Write_UINT8(s, str[i]);
-}
-
-/**
  * Read PER OCTET_STRING.
  *
  * @param s The stream to read from
@@ -499,7 +488,7 @@ BOOL per_read_octet_string(wStream* s, const BYTE* oct_str, UINT16 length, UINT1
 
 	if (mlength + min != length)
 	{
-		WLog_ERR(TAG, "length mismatch: %" PRIu16 "!= %" PRIu16, mlength + min, length);
+		WLog_ERR(TAG, "length mismatch: %d!= %" PRIu16, mlength + min, length);
 		return FALSE;
 	}
 
@@ -594,7 +583,7 @@ BOOL per_write_numeric_string(wStream* s, const BYTE* num_str, UINT16 length, UI
 
 		c1 = (c1 - 0x30) % 10;
 		c2 = (c2 - 0x30) % 10;
-		const BYTE num = (c1 << 4) | c2;
+		const BYTE num = WINPR_ASSERTING_INT_CAST(BYTE, (c1 << 4) | c2);
 
 		Stream_Write_UINT8(s, num); /* string */
 	}

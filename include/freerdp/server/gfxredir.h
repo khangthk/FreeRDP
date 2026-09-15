@@ -67,24 +67,26 @@ extern "C"
 		void* custom;
 		HANDLE vcm;
 
-		psGfxRedirOpen Open;
-		psGfxRedirClose Close;
+		WINPR_ATTR_NODISCARD psGfxRedirOpen Open;
+		WINPR_ATTR_NODISCARD psGfxRedirClose Close;
 
-		psGfxRedirError Error;
+		WINPR_ATTR_NODISCARD psGfxRedirError Error;
 
-		psGfxRedirGraphicsRedirectionLegacyCaps GraphicsRedirectionLegacyCaps;
+		WINPR_ATTR_NODISCARD psGfxRedirGraphicsRedirectionLegacyCaps GraphicsRedirectionLegacyCaps;
 
-		psGfxRedirGraphicsRedirectionCapsAdvertise GraphicsRedirectionCapsAdvertise;
-		psGfxRedirGraphicsRedirectionCapsConfirm GraphicsRedirectionCapsConfirm;
+		WINPR_ATTR_NODISCARD psGfxRedirGraphicsRedirectionCapsAdvertise
+		    GraphicsRedirectionCapsAdvertise;
+		WINPR_ATTR_NODISCARD psGfxRedirGraphicsRedirectionCapsConfirm
+		    GraphicsRedirectionCapsConfirm;
 
-		psGfxRedirOpenPool OpenPool;
-		psGfxRedirClosePool ClosePool;
+		WINPR_ATTR_NODISCARD psGfxRedirOpenPool OpenPool;
+		WINPR_ATTR_NODISCARD psGfxRedirClosePool ClosePool;
 
-		psGfxRedirCreateBuffer CreateBuffer;
-		psGfxRedirDestroyBuffer DestroyBuffer;
+		WINPR_ATTR_NODISCARD psGfxRedirCreateBuffer CreateBuffer;
+		WINPR_ATTR_NODISCARD psGfxRedirDestroyBuffer DestroyBuffer;
 
-		psGfxRedirPresentBuffer PresentBuffer;
-		psGfxRedirPresentBufferAck PresentBufferAck;
+		WINPR_ATTR_NODISCARD psGfxRedirPresentBuffer PresentBuffer;
+		WINPR_ATTR_NODISCARD psGfxRedirPresentBufferAck PresentBufferAck;
 
 		GfxRedirServerPrivate* priv;
 		rdpContext* rdpcontext;
@@ -92,9 +94,11 @@ extern "C"
 		UINT32 confirmedCapsVersion;
 	};
 
-	WINPR_ATTR_MALLOC(gfxredir_server_context_free, 1)
-	FREERDP_API GfxRedirServerContext* gfxredir_server_context_new(HANDLE vcm);
 	FREERDP_API void gfxredir_server_context_free(GfxRedirServerContext* context);
+
+	WINPR_ATTR_MALLOC(gfxredir_server_context_free, 1)
+	WINPR_ATTR_NODISCARD
+	FREERDP_API GfxRedirServerContext* gfxredir_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus
 }

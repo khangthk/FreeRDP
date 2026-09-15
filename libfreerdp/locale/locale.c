@@ -93,7 +93,7 @@ static const SYSTEM_LOCALE SYSTEM_LOCALE_TABLE[] = {
 	{ "en", "AU", ENGLISH_AUSTRALIAN },          /* English (Australia) */
 	{ "en", "BZ", ENGLISH_BELIZE },              /* English (Belize) */
 	{ "en", "CA", ENGLISH_CANADIAN },            /* English (Canada) */
-	{ "en", "CB", ENGLISH_CARIBBEAN },           /* English (Carribean) */
+	{ "en", "CB", ENGLISH_CARIBBEAN },           /* English (Caribbean) */
 	{ "en", "IN", ENGLISH_INDIA },               /* Windows Vista and later: English (India) */
 	{ "en", "IE", ENGLISH_IRELAND },             /* English (Ireland) */
 	{ "en", "JM", ENGLISH_JAMAICA },             /* English (Jamaica) */
@@ -676,10 +676,10 @@ static BOOL freerdp_get_system_language_and_country_codes(char* language, size_t
 		size_t dot = 0;
 		DWORD nSize = 0;
 		size_t underscore = 0;
-		char* env_lang = NULL;
+		char* env_lang = nullptr;
 		LPCSTR lang = "LANG";
 		/* LANG = <language>_<country>.<encoding> */
-		nSize = GetEnvironmentVariableA(lang, NULL, 0);
+		nSize = GetEnvironmentVariableA(lang, nullptr, 0);
 
 		if (!nSize)
 			return FALSE; /* LANG environment variable was not set */
@@ -734,9 +734,9 @@ static BOOL freerdp_get_system_language_and_country_codes(char* language, size_t
 
 static const SYSTEM_LOCALE* freerdp_detect_system_locale(void)
 {
-	char language[LOCALE_LANGUAGE_LEN] = { 0 };
-	char country[LOCALE_COUNTRY_LEN] = { 0 };
-	const SYSTEM_LOCALE* locale = NULL;
+	char language[LOCALE_LANGUAGE_LEN] = WINPR_C_ARRAY_INIT;
+	char country[LOCALE_COUNTRY_LEN] = WINPR_C_ARRAY_INIT;
+	const SYSTEM_LOCALE* locale = nullptr;
 
 	freerdp_get_system_language_and_country_codes(language, ARRAYSIZE(language), country,
 	                                              ARRAYSIZE(country));
@@ -757,10 +757,10 @@ static const SYSTEM_LOCALE* freerdp_detect_system_locale(void)
 
 DWORD freerdp_get_system_locale_id(void)
 {
-	const SYSTEM_LOCALE* locale = NULL;
+	const SYSTEM_LOCALE* locale = nullptr;
 	locale = freerdp_detect_system_locale();
 
-	if (locale != NULL)
+	if (locale != nullptr)
 		return locale->code;
 
 	return 0;
@@ -770,7 +770,7 @@ static const SYSTEM_LOCALE* get_locale_from_str(const char* name)
 {
 	for (size_t i = 0; i < ARRAYSIZE(SYSTEM_LOCALE_TABLE); i++)
 	{
-		char buffer[LOCALE_LANGUAGE_LEN + LOCALE_COUNTRY_LEN + 2] = { 0 };
+		char buffer[LOCALE_LANGUAGE_LEN + LOCALE_COUNTRY_LEN + 2] = WINPR_C_ARRAY_INIT;
 		const SYSTEM_LOCALE* current = &SYSTEM_LOCALE_TABLE[i];
 
 		(void)_snprintf(buffer, sizeof(buffer), "%s_%s", current->language, current->country);
@@ -781,7 +781,7 @@ static const SYSTEM_LOCALE* get_locale_from_str(const char* name)
 		else if ((strcmp(name, current->language) == 0))
 			return current;
 	}
-	return NULL;
+	return nullptr;
 }
 
 static INT64 get_layout_from_locale(const SYSTEM_LOCALE* locale)
@@ -794,7 +794,7 @@ static INT64 get_layout_from_locale(const SYSTEM_LOCALE* locale)
 		if (current->locale == locale->code)
 		{
 			/* Locale found in list of default keyboard layouts */
-			for (size_t j = 0; j < 5; j++)
+			for (size_t j = 0; j < ARRAYSIZE(current->keyboardLayouts); j++)
 			{
 				if (current->keyboardLayouts[j] == ENGLISH_UNITED_STATES)
 				{
@@ -831,7 +831,7 @@ const char* freerdp_get_system_locale_name_from_id(DWORD localeId)
 			return current->name;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 INT64 freerdp_get_locale_id_from_string(const char* locale)
@@ -844,29 +844,35 @@ INT64 freerdp_get_locale_id_from_string(const char* locale)
 
 int freerdp_detect_keyboard_layout_from_system_locale(DWORD* keyboardLayoutId)
 {
-	char language[LOCALE_LANGUAGE_LEN] = { 0 };
-	char country[LOCALE_COUNTRY_LEN] = { 0 };
+	char language[LOCALE_LANGUAGE_LEN] = WINPR_C_ARRAY_INIT;
+	char country[LOCALE_COUNTRY_LEN] = WINPR_C_ARRAY_INIT;
 
 	freerdp_get_system_language_and_country_codes(language, ARRAYSIZE(language), country,
 	                                              ARRAYSIZE(country));
 
-	if ((strcmp(language, "C") == 0) || (strcmp(language, "POSIX") == 0))
-	{
-		*keyboardLayoutId = ENGLISH_UNITED_STATES; /* U.S. Keyboard Layout */
-		return 0;
-	}
+	char locale[LOCALE_COUNTRY_LEN + LOCALE_LANGUAGE_LEN + 2] = WINPR_C_ARRAY_INIT;
+	(void)_snprintf(locale, sizeof(locale), "%s_%s", language, country);
+	const int64_t id = freerdp_detect_keyboard_layout_from_locale(locale);
+	if (id < 0)
+		return -1;
+	*keyboardLayoutId = WINPR_ASSERTING_INT_CAST(uint32_t, id);
+	return 0;
+}
 
-	const SYSTEM_LOCALE* locale = freerdp_detect_system_locale();
+int64_t freerdp_detect_keyboard_layout_from_locale(const char* localestr)
+{
+	WINPR_ASSERT(localestr);
+
+	if ((strcmp(localestr, "C") == 0) || (strcmp(localestr, "POSIX") == 0))
+		return ENGLISH_UNITED_STATES; /* U.S. Keyboard Layout */
+
+	const SYSTEM_LOCALE* locale = get_locale_from_str(localestr);
 
 	if (!locale)
 		return -1;
 
 	DEBUG_KBD("Found locale : %s_%s", locale->language, locale->country);
-	INT64 rc = get_layout_from_locale(locale);
-	if (rc < 0)
-		return -1; /* Could not detect the current keyboard layout from locale */
-	*keyboardLayoutId = (DWORD)rc;
-	return 0;
+	return get_layout_from_locale(locale);
 }
 
 const SYSTEM_LOCALE* freerdp_get_system_locale_list(size_t* count)

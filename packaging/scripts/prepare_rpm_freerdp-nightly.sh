@@ -1,3 +1,8 @@
-#!/bin/bash
+#!/bin/bash -xe
 
-git rev-parse --short HEAD > source_version
+RPMBUILD_BASE="~/rpmbuild/SOURCES"
+if [ $# -gt 0 ]; then
+  RPMBUILD_BASE="$1"
+fi
+
+git rev-parse --short HEAD >source_version

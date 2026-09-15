@@ -18,6 +18,8 @@
  */
 #pragma once
 
+#include <vector>
+
 #include <freerdp/types.h>
 #include <freerdp/event.h>
 #include <freerdp/client/disp.h>
@@ -33,48 +35,44 @@ class sdlDispContext
 	explicit sdlDispContext(SdlContext* sdl);
 	sdlDispContext(const sdlDispContext& other) = delete;
 	sdlDispContext(sdlDispContext&& other) = delete;
-	~sdlDispContext();
+	virtual ~sdlDispContext();
 
 	sdlDispContext& operator=(const sdlDispContext& other) = delete;
 	sdlDispContext& operator=(sdlDispContext&& other) = delete;
 
-	BOOL init(DispClientContext* disp);
-	BOOL uninit(DispClientContext* disp);
+	[[nodiscard]] bool init(DispClientContext* disp);
+	[[nodiscard]] bool uninit(DispClientContext* disp);
 
-	BOOL handle_display_event(const SDL_DisplayEvent* ev);
-
-	BOOL handle_window_event(const SDL_WindowEvent* ev);
+	[[nodiscard]] bool handleEvent(const SDL_DisplayEvent& ev);
+	[[nodiscard]] bool handleEvent(const SDL_WindowEvent& ev);
 
   private:
-	UINT DisplayControlCaps(UINT32 maxNumMonitors, UINT32 maxMonitorAreaFactorA,
-	                        UINT32 maxMonitorAreaFactorB);
-	BOOL set_window_resizable();
+	[[nodiscard]] UINT DisplayControlCaps(UINT32 maxNumMonitors, UINT32 maxMonitorAreaFactorA,
+	                                      UINT32 maxMonitorAreaFactorB);
+	[[nodiscard]] bool setWindowResizeable();
 
-	BOOL sendResize();
-	BOOL settings_changed();
-	BOOL update_last_sent();
-	UINT sendLayout(const rdpMonitor* monitors, size_t nmonitors);
+	[[nodiscard]] bool sendResize();
+	[[nodiscard]] bool settings_changed(const std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT>& layout);
+	[[nodiscard]] bool sendLayout(const rdpMonitor* monitors, size_t nmonitors);
 
-	BOOL addTimer();
+	[[nodiscard]] bool addTimer();
 
-	static UINT DisplayControlCaps(DispClientContext* disp, UINT32 maxNumMonitors,
-	                               UINT32 maxMonitorAreaFactorA, UINT32 maxMonitorAreaFactorB);
+	[[nodiscard]] bool updateMonitor(SDL_WindowID id);
+	[[nodiscard]] bool updateMonitors(SDL_EventType type, SDL_DisplayID displayID);
+
+	[[nodiscard]] static UINT DisplayControlCaps(DispClientContext* disp, UINT32 maxNumMonitors,
+	                                             UINT32 maxMonitorAreaFactorA,
+	                                             UINT32 maxMonitorAreaFactorB);
 	static void OnActivated(void* context, const ActivatedEventArgs* e);
 	static void OnGraphicsReset(void* context, const GraphicsResetEventArgs* e);
-	static Uint32 SDLCALL OnTimer(void* param, SDL_TimerID timerID, Uint32 interval);
+	[[nodiscard]] static Uint32 SDLCALL OnTimer(void* param, SDL_TimerID timerID, Uint32 interval);
 
 	SdlContext* _sdl = nullptr;
 	DispClientContext* _disp = nullptr;
-	int _lastSentWidth = -1;
-	int _lastSentHeight = -1;
 	UINT64 _lastSentDate = 0;
-	int _targetWidth = -1;
-	int _targetHeight = -1;
-	BOOL _activated = FALSE;
-	BOOL _waitingResize = FALSE;
-	UINT16 _lastSentDesktopOrientation = 0;
-	UINT32 _lastSentDesktopScaleFactor = 0;
-	UINT32 _lastSentDeviceScaleFactor = 0;
+	bool _activated = false;
+	bool _waitingResize = false;
 	SDL_TimerID _timer = 0;
 	unsigned _timer_retries = 0;
+	std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> _last_sent_layout;
 };

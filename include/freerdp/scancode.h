@@ -20,6 +20,7 @@
 #ifndef FREERDP_LOCALE_KEYBOARD_RDP_SCANCODE_H
 #define FREERDP_LOCALE_KEYBOARD_RDP_SCANCODE_H
 
+#include <winpr/wtypes.h>
 #include <winpr/input.h>
 
 /* msdn{cc240584} says:
@@ -30,8 +31,8 @@
  * not just a modifier.
  */
 
-#define RDP_SCANCODE_CODE(_rdp_scancode) ((BYTE)(_rdp_scancode & 0xFF))
-#define RDP_SCANCODE_EXTENDED(_rdp_scancode) (((_rdp_scancode)&KBDEXT) ? TRUE : FALSE)
+#define RDP_SCANCODE_CODE(_rdp_scancode) WINPR_CXX_COMPAT_CAST(BYTE, (_rdp_scancode & 0xFF))
+#define RDP_SCANCODE_EXTENDED(_rdp_scancode) (((_rdp_scancode) & KBDEXT) != 0)
 #define MAKE_RDP_SCANCODE(_code, _extended) (((_code)&0xFF) | ((_extended) ? KBDEXT : 0))
 
 /* Defines for known RDP_SCANCODE protocol values.

@@ -28,12 +28,9 @@
 #include <winpr/assert.h>
 #include <winpr/file.h>
 #include "../log.h"
+#include "timezone.h"
 
 #define TAG WINPR_TAG("timezone")
-
-#ifndef MIN
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#endif
 
 #include "TimeZoneNameMap.h"
 #include "TimeZoneIanaAbbrevMap.h"
@@ -55,7 +52,7 @@ static char* winpr_read_unix_timezone_identifier_from_file(FILE* fp)
 
 	char* tzid = malloc(length);
 	if (!tzid)
-		return NULL;
+		return nullptr;
 
 	do
 	{
@@ -69,7 +66,7 @@ static char* winpr_read_unix_timezone_identifier_from_file(FILE* fp)
 		if (read > length - 1UL)
 		{
 			free(tzid);
-			return NULL;
+			return nullptr;
 		}
 
 		length += CHUNK_SIZE;
@@ -77,7 +74,7 @@ static char* winpr_read_unix_timezone_identifier_from_file(FILE* fp)
 		if (!tmp)
 		{
 			free(tzid);
-			return NULL;
+			return nullptr;
 		}
 
 		tzid = tmp;
@@ -86,7 +83,7 @@ static char* winpr_read_unix_timezone_identifier_from_file(FILE* fp)
 	if (ferror(fp))
 	{
 		free(tzid);
-		return NULL;
+		return nullptr;
 	}
 
 	tzid[read] = '\0';
@@ -103,7 +100,7 @@ static char* winpr_get_timezone_from_link(const char* links[], size_t count)
 {
 	const char* _links[] = { "/etc/localtime", "/etc/TZ" };
 
-	if (links == NULL)
+	if (links == nullptr)
 	{
 		links = _links;
 		count = ARRAYSIZE(_links);
@@ -118,9 +115,9 @@ static char* winpr_get_timezone_from_link(const char* links[], size_t count)
 
 	for (size_t x = 0; x < count; x++)
 	{
-		char* tzid = NULL;
+		char* tzid = nullptr;
 		const char* link = links[x];
-		char* buf = realpath(link, NULL);
+		char* buf = realpath(link, nullptr);
 
 		if (buf)
 		{
@@ -164,7 +161,7 @@ static char* winpr_get_timezone_from_link(const char* links[], size_t count)
 			return tzid;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 #if defined(ANDROID)
@@ -172,7 +169,7 @@ static char* winpr_get_timezone_from_link(const char* links[], size_t count)
 
 static char* winpr_get_android_timezone_identifier(void)
 {
-	char* tzid = NULL;
+	char* tzid = nullptr;
 	JNIEnv* jniEnv;
 
 	/* Preferred: Try to get identifier from java TimeZone class */
@@ -184,7 +181,7 @@ static char* winpr_get_android_timezone_identifier(void)
 		jmethodID jDefaultTimezone;
 		jmethodID jTimezoneIdentifier;
 		jstring tzJId;
-		jboolean attached = (*jniVm)->AttachCurrentThread(jniVm, &jniEnv, NULL);
+		jboolean attached = (*jniVm)->AttachCurrentThread(jniVm, &jniEnv, nullptr);
 		jObjClass = (*jniEnv)->FindClass(jniEnv, "java/util/TimeZone");
 
 		if (!jObjClass)
@@ -245,8 +242,8 @@ static char* winpr_get_unix_timezone_identifier_from_file(void)
 #if defined(ANDROID)
 	return winpr_get_android_timezone_identifier();
 #else
-	FILE* fp = NULL;
-	char* tzid = NULL;
+	FILE* fp = nullptr;
+	char* tzid = nullptr;
 #if !defined(WINPR_TIMEZONE_FILE)
 #error \
     "Please define WINPR_TIMEZONE_FILE with the path to your timezone file (e.g. /etc/timezone or similar)"
@@ -254,12 +251,12 @@ static char* winpr_get_unix_timezone_identifier_from_file(void)
 	fp = winpr_fopen(WINPR_TIMEZONE_FILE, "r");
 #endif
 
-	if (NULL == fp)
-		return NULL;
+	if (nullptr == fp)
+		return nullptr;
 
 	tzid = winpr_read_unix_timezone_identifier_from_file(fp);
 	(void)fclose(fp);
-	if (tzid != NULL)
+	if (tzid != nullptr)
 		WLog_DBG(TAG, "tzid: %s", tzid);
 	return tzid;
 #endif
@@ -268,9 +265,9 @@ static char* winpr_get_unix_timezone_identifier_from_file(void)
 static char* winpr_time_zone_from_env(void)
 {
 	LPCSTR tz = "TZ";
-	char* tzid = NULL;
+	char* tzid = nullptr;
 
-	DWORD nSize = GetEnvironmentVariableA(tz, NULL, 0);
+	DWORD nSize = GetEnvironmentVariableA(tz, nullptr, 0);
 	if (nSize > 0)
 	{
 		tzid = (char*)calloc(nSize, sizeof(char));
@@ -289,17 +286,17 @@ static char* winpr_time_zone_from_env(void)
 
 fail:
 	free(tzid);
-	return NULL;
+	return nullptr;
 }
 
 static char* winpr_translate_time_zone(const char* tzid)
 {
 	const char* zipath = "/usr/share/zoneinfo/";
-	char* buf = NULL;
+	char* buf = nullptr;
 	const char* links[] = { buf };
 
 	if (!tzid)
-		return NULL;
+		return nullptr;
 
 	if (tzid[0] == '/')
 	{
@@ -326,7 +323,7 @@ static char* winpr_guess_time_zone(void)
 	tzid = winpr_get_unix_timezone_identifier_from_file();
 	if (tzid)
 		goto end;
-	tzid = winpr_get_timezone_from_link(NULL, 0);
+	tzid = winpr_get_timezone_from_link(nullptr, 0);
 	if (tzid)
 		goto end;
 
@@ -344,11 +341,11 @@ end:
 
 static SYSTEMTIME tm2systemtime(const struct tm* t)
 {
-	SYSTEMTIME st = { 0 };
+	SYSTEMTIME st = WINPR_C_ARRAY_INIT;
 
 	if (t)
 	{
-		st.wYear = (WORD)1900 + t->tm_year;
+		st.wYear = (WORD)(1900 + t->tm_year);
 		st.wMonth = (WORD)t->tm_mon + 1;
 		st.wDay = (WORD)t->tm_mday;
 		st.wDayOfWeek = (WORD)t->tm_wday;
@@ -362,7 +359,7 @@ static SYSTEMTIME tm2systemtime(const struct tm* t)
 
 static struct tm systemtime2tm(const SYSTEMTIME* st)
 {
-	struct tm t = { 0 };
+	struct tm t = WINPR_C_ARRAY_INIT;
 	if (st)
 	{
 		if (st->wYear >= 1900)
@@ -384,6 +381,16 @@ static LONG get_gmtoff_min(const struct tm* t)
 	return -(LONG)(t->tm_gmtoff / 60l);
 }
 
+static struct tm update_tm(const struct tm* start)
+{
+	WINPR_ASSERT(start);
+	struct tm cur = *start;
+	const time_t t = mktime(&cur);
+	struct tm next = WINPR_C_ARRAY_INIT;
+	(void)localtime_r(&t, &next);
+	return next;
+}
+
 static struct tm next_day(const struct tm* start)
 {
 	struct tm cur = *start;
@@ -392,9 +399,7 @@ static struct tm next_day(const struct tm* start)
 	cur.tm_sec = 0;
 	cur.tm_isdst = -1;
 	cur.tm_mday++;
-	const time_t t = mktime(&cur);
-	localtime_r(&t, &cur);
-	return cur;
+	return update_tm(&cur);
 }
 
 static struct tm adjust_time(const struct tm* start, int hour, int minute)
@@ -404,9 +409,7 @@ static struct tm adjust_time(const struct tm* start, int hour, int minute)
 	cur.tm_min = minute;
 	cur.tm_sec = 0;
 	cur.tm_isdst = -1;
-	const time_t t = mktime(&cur);
-	localtime_r(&t, &cur);
-	return cur;
+	return update_tm(&cur);
 }
 
 /* [MS-RDPBCGR] 2.2.1.11.1.1.1.1.1  System Time (TS_SYSTEMTIME) */
@@ -425,8 +428,8 @@ static WORD get_transition_weekday_occurrence(const SYSTEMTIME* st)
 		const time_t t = mktime(&next);
 		next.tm_mday++;
 
-		struct tm cur = { 0 };
-		localtime_r(&t, &cur);
+		struct tm cur = WINPR_C_ARRAY_INIT;
+		(void)localtime_r(&t, &cur);
 
 		if (cur.tm_mon + 1 != st->wMonth)
 			break;
@@ -479,19 +482,20 @@ static SYSTEMTIME get_transition_time(const struct tm* start, BOOL toDst)
 	return tm2transitiontime(start);
 }
 
-static BOOL get_transition_date(const struct tm* start, BOOL toDst, SYSTEMTIME* pdate)
+static BOOL get_transition_date(const struct tm* pstart, BOOL toDst, SYSTEMTIME* pdate)
 {
-	WINPR_ASSERT(start);
+	WINPR_ASSERT(pstart);
 	WINPR_ASSERT(pdate);
 
-	*pdate = tm2transitiontime(NULL);
+	*pdate = tm2transitiontime(nullptr);
 
-	if (start->tm_isdst < 0)
+	struct tm start = update_tm(pstart);
+	if (start.tm_isdst < 0)
 		return FALSE;
 
-	BOOL val = start->tm_isdst > 0; // the year starts with DST or not
+	BOOL val = start.tm_isdst > 0; // the year starts with DST or not
 	BOOL toggled = FALSE;
-	struct tm cur = *start;
+	struct tm cur = start;
 	struct tm last = cur;
 	for (int day = 1; day <= 365; day++)
 	{
@@ -552,7 +556,7 @@ static BOOL map_iana_id(const char* iana, LPDYNAMIC_TIME_ZONE_INFORMATION tz)
 	if (winId)
 		(void)ConvertUtf8ToWChar(winId, tz->TimeZoneKeyName, ARRAYSIZE(tz->TimeZoneKeyName));
 
-	return winId != NULL;
+	return winId != nullptr;
 }
 
 static const char* weekday2str(WORD wDayOfWeek)
@@ -580,7 +584,7 @@ static const char* weekday2str(WORD wDayOfWeek)
 
 static char* systemtime2str(const SYSTEMTIME* t, char* buffer, size_t len)
 {
-	const SYSTEMTIME empty = { 0 };
+	const SYSTEMTIME empty = WINPR_C_ARRAY_INIT;
 
 	if (memcmp(t, &empty, sizeof(SYSTEMTIME)) == 0)
 		(void)_snprintf(buffer, len, "{ not set }");
@@ -595,14 +599,16 @@ static char* systemtime2str(const SYSTEMTIME* t, char* buffer, size_t len)
 	return buffer;
 }
 
-static void log_print(wLog* log, DWORD level, const char* file, const char* fkt, size_t line, ...)
+WINPR_ATTR_FORMAT_ARG(6, 7)
+static void log_print(wLog* log, DWORD level, const char* file, const char* fkt, size_t line,
+                      WINPR_FORMAT_ARG const char* fmt, ...)
 {
 	if (!WLog_IsLevelActive(log, level))
 		return;
 
-	va_list ap = { 0 };
-	va_start(ap, line);
-	WLog_PrintMessageVA(log, WLOG_MESSAGE_TEXT, level, line, file, fkt, ap);
+	va_list ap = WINPR_C_ARRAY_INIT;
+	va_start(ap, fmt);
+	WLog_PrintTextMessageVA(log, level, line, file, fkt, fmt, ap);
 	va_end(ap);
 }
 
@@ -612,25 +618,25 @@ static void log_timezone_(const DYNAMIC_TIME_ZONE_INFORMATION* tzif, DWORD resul
 {
 	WINPR_ASSERT(tzif);
 
-	char buffer[130] = { 0 };
+	char buffer[130] = WINPR_C_ARRAY_INIT;
 	DWORD level = WLOG_TRACE;
 	wLog* log = WLog_Get(TAG);
 	log_print(log, level, file, fkt, line, "DYNAMIC_TIME_ZONE_INFORMATION {");
 
-	log_print(log, level, file, fkt, line, "  Bias=%" PRIu32, tzif->Bias);
+	log_print(log, level, file, fkt, line, "  Bias=%" PRId32, tzif->Bias);
 	(void)ConvertWCharNToUtf8(tzif->StandardName, ARRAYSIZE(tzif->StandardName), buffer,
 	                          ARRAYSIZE(buffer));
 	log_print(log, level, file, fkt, line, "  StandardName=%s", buffer);
 	log_print(log, level, file, fkt, line, "  StandardDate=%s",
 	          systemtime2str(&tzif->StandardDate, buffer, sizeof(buffer)));
-	log_print(log, level, file, fkt, line, "  StandardBias=%" PRIu32, tzif->StandardBias);
+	log_print(log, level, file, fkt, line, "  StandardBias=%" PRId32, tzif->StandardBias);
 
 	(void)ConvertWCharNToUtf8(tzif->DaylightName, ARRAYSIZE(tzif->DaylightName), buffer,
 	                          ARRAYSIZE(buffer));
 	log_print(log, level, file, fkt, line, "  DaylightName=%s", buffer);
 	log_print(log, level, file, fkt, line, "  DaylightDate=%s",
 	          systemtime2str(&tzif->DaylightDate, buffer, sizeof(buffer)));
-	log_print(log, level, file, fkt, line, "  DaylightBias=%" PRIu32, tzif->DaylightBias);
+	log_print(log, level, file, fkt, line, "  DaylightBias=%" PRId32, tzif->DaylightBias);
 	(void)ConvertWCharNToUtf8(tzif->TimeZoneKeyName, ARRAYSIZE(tzif->TimeZoneKeyName), buffer,
 	                          ARRAYSIZE(buffer));
 	log_print(log, level, file, fkt, line, "  TimeZoneKeyName=%s", buffer);
@@ -653,7 +659,7 @@ static void log_timezone_(const DYNAMIC_TIME_ZONE_INFORMATION* tzif, DWORD resul
 
 DWORD GetTimeZoneInformation(LPTIME_ZONE_INFORMATION lpTimeZoneInformation)
 {
-	DYNAMIC_TIME_ZONE_INFORMATION dyn = { 0 };
+	DYNAMIC_TIME_ZONE_INFORMATION dyn = WINPR_C_ARRAY_INIT;
 	DWORD rc = GetDynamicTimeZoneInformation(&dyn);
 	lpTimeZoneInformation->Bias = dyn.Bias;
 	lpTimeZoneInformation->DaylightBias = dyn.DaylightBias;
@@ -730,62 +736,85 @@ static int dynamic_time_zone_from_localtime(const struct tm* local_time,
 	int rc = HAVE_TRANSITION_DATES;
 
 	tz->Bias = get_bias(local_time, FALSE);
+
+	/* If the current time has (or had) DST */
 	if (local_time->tm_isdst >= 0)
 	{
 		/* DST bias is the difference between standard time and DST in minutes */
 		const LONG d = get_bias(local_time, TRUE);
-		tz->DaylightBias = -1 * (LONG)labs(tz->Bias - d);
-		if (!get_transition_date(local_time, FALSE, &tz->StandardDate))
+		tz->DaylightBias = -1 * (tz->Bias - d);
+		struct tm newyear = *local_time;
+		newyear.tm_mday = 0;
+		newyear.tm_yday = 0;
+		newyear.tm_wday = 0;
+		newyear.tm_min = 0;
+		newyear.tm_sec = 0;
+		newyear.tm_mon = 0;
+
+		/* Searching for transition dates.
+		 *
+		 * For the current DST setting, search from the local_time, for the other one
+		 * search from beginning of the year.
+		 * We want the dates in the same year, so searching both from local_time might lead to
+		 * issues.
+		 */
+		const struct tm* stdtransition = local_time;
+		const struct tm* dsttransition = &newyear;
+		if (local_time->tm_isdst == 0)
+		{
+			stdtransition = &newyear;
+			dsttransition = local_time;
+		}
+		if (!get_transition_date(stdtransition, FALSE, &tz->StandardDate))
+		{
 			rc |= HAVE_NO_STANDARD_TRANSITION_DATE;
-		if (!get_transition_date(local_time, TRUE, &tz->DaylightDate))
+			tz->StandardBias = 0;
+		}
+		if (!get_transition_date(dsttransition, TRUE, &tz->DaylightDate))
+		{
 			rc |= HAVE_NO_DAYLIGHT_TRANSITION_DATE;
+			tz->DaylightBias = 0;
+		}
 	}
 	return rc;
 }
 
-DWORD GetDynamicTimeZoneInformation(PDYNAMIC_TIME_ZONE_INFORMATION tz)
+DWORD GetDynamicTimeZoneInformation(PDYNAMIC_TIME_ZONE_INFORMATION pTimeZoneInformation)
 {
-	BOOL doesNotHaveStandardDate = FALSE;
-	BOOL doesNotHaveDaylightDate = FALSE;
-	const char** list = NULL;
-	char* tzid = NULL;
+	const char** list = nullptr;
+	char* tzid = nullptr;
 	const char* defaultName = "Client Local Time";
 	DWORD res = TIME_ZONE_ID_UNKNOWN;
-	const DYNAMIC_TIME_ZONE_INFORMATION empty = { 0 };
+	const DYNAMIC_TIME_ZONE_INFORMATION empty = WINPR_C_ARRAY_INIT;
 
-	WINPR_ASSERT(tz);
+	WINPR_ASSERT(pTimeZoneInformation);
 
-	*tz = empty;
-	(void)ConvertUtf8ToWChar(defaultName, tz->StandardName, ARRAYSIZE(tz->StandardName));
+	*pTimeZoneInformation = empty;
+	(void)ConvertUtf8ToWChar(defaultName, pTimeZoneInformation->StandardName,
+	                         ARRAYSIZE(pTimeZoneInformation->StandardName));
 
-	const time_t t = time(NULL);
-	struct tm tres = { 0 };
+	const time_t t = time(nullptr);
+	struct tm tres = WINPR_C_ARRAY_INIT;
 	struct tm* local_time = localtime_r(&t, &tres);
 	if (!local_time)
 		goto out_error;
 
-	tz->Bias = get_bias(local_time, FALSE);
+	pTimeZoneInformation->Bias = get_bias(local_time, FALSE);
 	if (local_time->tm_isdst >= 0)
-	{
-		const int rc = dynamic_time_zone_from_localtime(local_time, tz);
-		if (rc & HAVE_NO_STANDARD_TRANSITION_DATE)
-			doesNotHaveStandardDate = TRUE;
-		if (rc & HAVE_NO_DAYLIGHT_TRANSITION_DATE)
-			doesNotHaveDaylightDate = TRUE;
-	}
+		dynamic_time_zone_from_localtime(local_time, pTimeZoneInformation);
 
 	tzid = winpr_guess_time_zone();
-	if (!map_iana_id(tzid, tz))
+	if (!map_iana_id(tzid, pTimeZoneInformation))
 	{
-		const size_t len = TimeZoneIanaAbbrevGet(local_time->tm_zone, NULL, 0);
-		list = calloc(len, sizeof(char*));
+		const size_t len = TimeZoneIanaAbbrevGet(local_time->tm_zone, nullptr, 0);
+		list = (const char**)calloc(len, sizeof(const char*));
 		if (!list)
 			goto out_error;
 		const size_t size = TimeZoneIanaAbbrevGet(local_time->tm_zone, list, len);
 		for (size_t x = 0; x < size; x++)
 		{
 			const char* id = list[x];
-			if (map_iana_id(id, tz))
+			if (map_iana_id(id, pTimeZoneInformation))
 			{
 				res = (local_time->tm_isdst) ? TIME_ZONE_ID_DAYLIGHT : TIME_ZONE_ID_STANDARD;
 				break;
@@ -795,17 +824,11 @@ DWORD GetDynamicTimeZoneInformation(PDYNAMIC_TIME_ZONE_INFORMATION tz)
 	else
 		res = (local_time->tm_isdst) ? TIME_ZONE_ID_DAYLIGHT : TIME_ZONE_ID_STANDARD;
 
-	if (doesNotHaveDaylightDate)
-		tz->DaylightBias = 0;
-
-	if (doesNotHaveStandardDate)
-		tz->StandardBias = 0;
-
 out_error:
 	free(tzid);
-	free(list);
+	free((void*)list);
 
-	log_timezone(tz, res);
+	log_timezone(pTimeZoneInformation, res);
 	return res;
 }
 
@@ -850,12 +873,12 @@ BOOL TzSpecificLocalTimeToSystemTimeEx(const DYNAMIC_TIME_ZONE_INFORMATION* lpTi
 
 #if !defined(_WIN32)
 
-DWORD EnumDynamicTimeZoneInformation(const DWORD dwIndex,
+DWORD EnumDynamicTimeZoneInformation(DWORD dwIndex,
                                      PDYNAMIC_TIME_ZONE_INFORMATION lpTimeZoneInformation)
 {
 	if (!lpTimeZoneInformation)
 		return ERROR_INVALID_PARAMETER;
-	const DYNAMIC_TIME_ZONE_INFORMATION empty = { 0 };
+	const DYNAMIC_TIME_ZONE_INFORMATION empty = WINPR_C_ARRAY_INIT;
 	*lpTimeZoneInformation = empty;
 
 	const TimeZoneNameMapEntry* entry = TimeZoneGetAt(dwIndex);
@@ -872,43 +895,25 @@ DWORD EnumDynamicTimeZoneInformation(const DWORD dwIndex,
 		(void)ConvertUtf8ToWChar(entry->Id, lpTimeZoneInformation->TimeZoneKeyName,
 		                         ARRAYSIZE(lpTimeZoneInformation->TimeZoneKeyName));
 
-	const time_t t = time(NULL);
-	struct tm tres = { 0 };
+	const time_t t = time(nullptr);
+	struct tm tres = WINPR_C_ARRAY_INIT;
 
-	const char* tz = getenv("TZ");
-	char* tzcopy = NULL;
-	if (tz)
-	{
-		size_t tzianalen = 0;
-		winpr_asprintf(&tzcopy, &tzianalen, "TZ=%s", tz);
-	}
+	char* tzcopy = entry->Iana ? setNewAndSaveOldTZ(entry->Iana) : nullptr;
 
-	char* tziana = NULL;
-	{
-		size_t tzianalen = 0;
-		winpr_asprintf(&tziana, &tzianalen, "TZ=%s", entry->Iana);
-	}
-	if (tziana)
-		putenv(tziana);
-
-	tzset();
 	struct tm* local_time = localtime_r(&t, &tres);
-	free(tziana);
-	if (tzcopy)
-		putenv(tzcopy);
-	else
-		unsetenv("TZ");
-	free(tzcopy);
 
 	if (local_time)
 		dynamic_time_zone_from_localtime(local_time, lpTimeZoneInformation);
+
+	if (entry->Iana)
+		restoreSavedTZ(tzcopy);
 
 	return ERROR_SUCCESS;
 }
 
 // NOLINTBEGIN(readability-non-const-parameter)
 DWORD GetDynamicTimeZoneInformationEffectiveYears(
-    const PDYNAMIC_TIME_ZONE_INFORMATION lpTimeZoneInformation, LPDWORD FirstYear, LPDWORD LastYear)
+    const DYNAMIC_TIME_ZONE_INFORMATION* lpTimeZoneInformation, LPDWORD FirstYear, LPDWORD LastYear)
 // NOLINTEND(readability-non-const-parameter)
 {
 	WINPR_UNUSED(lpTimeZoneInformation);
@@ -918,7 +923,7 @@ DWORD GetDynamicTimeZoneInformationEffectiveYears(
 }
 
 #elif _WIN32_WINNT < 0x0602 /* Windows 8 */
-DWORD EnumDynamicTimeZoneInformation(const DWORD dwIndex,
+DWORD EnumDynamicTimeZoneInformation(DWORD dwIndex,
                                      PDYNAMIC_TIME_ZONE_INFORMATION lpTimeZoneInformation)
 {
 	WINPR_UNUSED(dwIndex);
@@ -927,11 +932,40 @@ DWORD EnumDynamicTimeZoneInformation(const DWORD dwIndex,
 }
 
 DWORD GetDynamicTimeZoneInformationEffectiveYears(
-    const PDYNAMIC_TIME_ZONE_INFORMATION lpTimeZoneInformation, LPDWORD FirstYear, LPDWORD LastYear)
+    const DYNAMIC_TIME_ZONE_INFORMATION* lpTimeZoneInformation, LPDWORD FirstYear, LPDWORD LastYear)
 {
 	WINPR_UNUSED(lpTimeZoneInformation);
 	WINPR_UNUSED(FirstYear);
 	WINPR_UNUSED(LastYear);
 	return ERROR_FILE_NOT_FOUND;
+}
+#endif
+
+#if !defined(_WIN32)
+char* setNewAndSaveOldTZ(const char* val)
+{
+	// NOLINTBEGIN(concurrency-mt-unsafe)
+	const char* otz = getenv("TZ");
+	char* oldtz = nullptr;
+	if (otz)
+		oldtz = _strdup(otz);
+	setenv("TZ", val, 1);
+	tzset();
+	// NOLINTEND(concurrency-mt-unsafe)
+	return oldtz;
+}
+
+void restoreSavedTZ(char* saved)
+{
+	// NOLINTBEGIN(concurrency-mt-unsafe)
+	if (saved)
+	{
+		setenv("TZ", saved, 1);
+		free(saved);
+	}
+	else
+		unsetenv("TZ");
+	tzset();
+	// NOLINTEND(concurrency-mt-unsafe)
 }
 #endif

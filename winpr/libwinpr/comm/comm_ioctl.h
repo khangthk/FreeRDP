@@ -79,8 +79,8 @@ extern "C"
 	{
 		ULONG ControlHandShake;
 		ULONG FlowReplace;
-		LONG XonLimit;
-		LONG XoffLimit;
+		ULONG XonLimit;
+		ULONG XoffLimit;
 	} SERIAL_HANDFLOW, *PSERIAL_HANDFLOW;
 
 #define SERIAL_DTR_MASK ((ULONG)0x03)
@@ -182,7 +182,7 @@ extern "C"
 #define SERIAL_DCD_STATE ((ULONG)0x00000080)
 
 	/**
-	 * A function might be NULL if not supported by the underlying driver.
+	 * A function might be nullptr if not supported by the underlying driver.
 	 *
 	 * FIXME: better have to use input and output buffers for all functions?
 	 */
@@ -223,7 +223,7 @@ extern "C"
 
 	} SERIAL_DRIVER;
 
-	int _comm_ioctl_tcsetattr(int fd, int optional_actions, const struct termios* termios_p);
+	int comm_ioctl_tcsetattr(int fd, int optional_actions, const struct termios* termios_p);
 
 #ifdef __cplusplus
 }

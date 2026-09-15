@@ -25,6 +25,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 #include <winpr/tchar.h>
 #include <winpr/synch.h>
 #include <winpr/dsparse.h>
@@ -46,6 +47,7 @@
 
 #include "rpc.h"
 #include "rts.h"
+#include "../utils.h"
 
 #define TAG FREERDP_TAG("core.gateway.rpc")
 
@@ -272,7 +274,7 @@ void rpc_pdu_header_print(wLog* log, const rpcconn_hdr_t* header)
 
 rpcconn_common_hdr_t rpc_pdu_header_init(const rdpRpc* rpc)
 {
-	rpcconn_common_hdr_t header = { 0 };
+	rpcconn_common_hdr_t header = WINPR_C_ARRAY_INIT;
 	WINPR_ASSERT(rpc);
 
 	header.rpc_vers = rpc->rpc_vers;
@@ -384,7 +386,7 @@ BOOL rpc_get_stub_data_info(rdpRpc* rpc, const rpcconn_hdr_t* header, size_t* po
 	UINT32 auth_length = 0;
 	UINT32 auth_pad_length = 0;
 	UINT32 sec_trailer_offset = 0;
-	const rpc_sec_trailer* sec_trailer = NULL;
+	const rpc_sec_trailer* sec_trailer = nullptr;
 
 	WINPR_ASSERT(rpc);
 	WINPR_ASSERT(header);
@@ -465,6 +467,9 @@ SSIZE_T rpc_channel_read(RpcChannel* channel, wStream* s, size_t length)
 	if (!channel || (length > INT32_MAX))
 		return -1;
 
+	if (!Stream_EnsureRemainingCapacity(s, length))
+		return -1;
+
 	ERR_clear_error();
 	status = BIO_read(channel->tls->bio, Stream_Pointer(s), (INT32)length);
 
@@ -481,22 +486,25 @@ SSIZE_T rpc_channel_read(RpcChannel* channel, wStream* s, size_t length)
 	return -1;
 }
 
-SSIZE_T rpc_channel_write(RpcChannel* channel, const BYTE* data, size_t length)
+SSIZE_T rpc_channel_write_int(RpcChannel* channel, const BYTE* data, size_t length,
+                              const char* file, size_t line, const char* fkt)
 {
-	int status = 0;
+	WINPR_ASSERT(channel);
+	WINPR_ASSERT(channel->rpc);
 
-	if (!channel || (length > INT32_MAX))
-		return -1;
+	const DWORD level = WLOG_TRACE;
+	if (WLog_IsLevelActive(channel->rpc->log, level))
+	{
+		WLog_PrintTextMessage(channel->rpc->log, level, line, file, fkt,
+		                      "Sending [%s] %" PRIuz " bytes", fkt, length);
+	}
 
-	status = freerdp_tls_write_all(channel->tls, data, (INT32)length);
-	return status;
+	return freerdp_tls_write_all(channel->tls, data, length);
 }
 
 BOOL rpc_in_channel_transition_to_state(RpcInChannel* inChannel, CLIENT_IN_CHANNEL_STATE state)
 {
-	if (!inChannel)
-		return FALSE;
-
+	WINPR_ASSERT(inChannel);
 	inChannel->State = state;
 	WLog_Print(inChannel->common.rpc->log, WLOG_DEBUG, "%s", client_in_state_str(state));
 	return TRUE;
@@ -505,8 +513,8 @@ BOOL rpc_in_channel_transition_to_state(RpcInChannel* inChannel, CLIENT_IN_CHANN
 static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const char* inout,
                                  const GUID* guid)
 {
-	HttpContext* http = NULL;
-	rdpSettings* settings = NULL;
+	HttpContext* http = nullptr;
+	rdpSettings* settings = nullptr;
 	UINT32 timeout = 0;
 
 	if (!client || !channel || !inout || !client->context || !client->context->settings)
@@ -514,7 +522,8 @@ static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const c
 
 	settings = client->context->settings;
 	channel->auth = credssp_auth_new(client->context);
-	rts_generate_cookie((BYTE*)&channel->Cookie);
+	if (UuidCreate(&channel->Cookie) != RPC_S_OK)
+		return -1;
 	channel->client = client;
 
 	if (!channel->auth)
@@ -533,14 +542,9 @@ static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const c
 
 		if (guid)
 		{
-			char* strguid = NULL;
-			RPC_STATUS rpcStatus = UuidToStringA(guid, &strguid);
-
-			if (rpcStatus != RPC_S_OK)
-				return -1;
-
-			const BOOL rc = http_context_append_pragma(http, "SessionId=%s", strguid);
-			RpcStringFreeA(&strguid);
+			char buffer[64] = WINPR_C_ARRAY_INIT;
+			const BOOL rc = http_context_append_pragma(http, "SessionId=%s",
+			                                           guid2str(guid, buffer, sizeof(buffer)));
 			if (!rc)
 				return -1;
 		}
@@ -551,7 +555,7 @@ static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const c
 		}
 
 		if (!http_context_set_rdg_correlation_id(http, guid) ||
-		    !http_context_set_rdg_connection_id(http, guid))
+		    !http_context_set_rdg_connection_id(http))
 			return -1;
 	}
 
@@ -611,8 +615,7 @@ void rpc_channel_free(RpcChannel* channel)
 
 BOOL rpc_out_channel_transition_to_state(RpcOutChannel* outChannel, CLIENT_OUT_CHANNEL_STATE state)
 {
-	if (!outChannel)
-		return FALSE;
+	WINPR_ASSERT(outChannel);
 
 	outChannel->State = state;
 	WLog_Print(outChannel->common.rpc->log, WLOG_DEBUG, "%s", client_out_state_str(state));
@@ -653,9 +656,7 @@ RpcOutChannel* rpc_out_channel_new(rdpRpc* rpc, const GUID* guid)
 BOOL rpc_virtual_connection_transition_to_state(rdpRpc* rpc, RpcVirtualConnection* connection,
                                                 VIRTUAL_CONNECTION_STATE state)
 {
-	if (!connection)
-		return FALSE;
-
+	WINPR_ASSERT(connection);
 	WINPR_ASSERT(rpc);
 	connection->State = state;
 	WLog_Print(rpc->log, WLOG_DEBUG, "%s", rpc_vc_state_str(state));
@@ -686,10 +687,12 @@ static RpcVirtualConnection* rpc_virtual_connection_new(rdpRpc* rpc)
 	    (RpcVirtualConnection*)calloc(1, sizeof(RpcVirtualConnection));
 
 	if (!connection)
-		return NULL;
+		return nullptr;
 
-	rts_generate_cookie((BYTE*)&(connection->Cookie));
-	rts_generate_cookie((BYTE*)&(connection->AssociationGroupId));
+	if (UuidCreate(&connection->Cookie) != RPC_S_OK)
+		goto fail;
+	if (UuidCreate(&connection->AssociationGroupId) != RPC_S_OK)
+		goto fail;
 	connection->State = VIRTUAL_CONNECTION_STATE_INITIAL;
 
 	connection->DefaultInChannel = rpc_in_channel_new(rpc, &connection->Cookie);
@@ -705,7 +708,7 @@ static RpcVirtualConnection* rpc_virtual_connection_new(rdpRpc* rpc)
 	return connection;
 fail:
 	rpc_virtual_connection_free(connection);
-	return NULL;
+	return nullptr;
 }
 
 static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
@@ -755,8 +758,9 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 
 	if (channel->client->isProxy)
 	{
+		WINPR_ASSERT(settings->GatewayPort <= UINT16_MAX);
 		if (!proxy_connect(context, bufferedBio, proxyUsername, proxyPassword,
-		                   settings->GatewayHostname, settings->GatewayPort))
+		                   settings->GatewayHostname, (UINT16)settings->GatewayPort))
 		{
 			BIO_free_all(bufferedBio);
 			return FALSE;
@@ -770,7 +774,7 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 		return FALSE;
 
 	tls->hostname = settings->GatewayHostname;
-	tls->port = settings->GatewayPort;
+	tls->port = WINPR_ASSERTING_INT_CAST(int32_t, MIN(UINT16_MAX, settings->GatewayPort));
 	tls->isGatewayTransport = TRUE;
 	int tlsStatus = freerdp_tls_connect(tls, bufferedBio);
 
@@ -793,7 +797,7 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 
 static int rpc_in_channel_connect(RpcInChannel* inChannel, UINT32 timeout)
 {
-	rdpContext* context = NULL;
+	rdpContext* context = nullptr;
 
 	if (!inChannel || !inChannel->common.client || !inChannel->common.client->context)
 		return -1;
@@ -825,9 +829,9 @@ static int rpc_in_channel_connect(RpcInChannel* inChannel, UINT32 timeout)
 	return 1;
 }
 
-static int rpc_out_channel_connect(RpcOutChannel* outChannel, int timeout)
+static int rpc_out_channel_connect(RpcOutChannel* outChannel, UINT32 timeout)
 {
-	rdpContext* context = NULL;
+	rdpContext* context = nullptr;
 
 	if (!outChannel || !outChannel->common.client || !outChannel->common.client->context)
 		return -1;
@@ -857,9 +861,9 @@ static int rpc_out_channel_connect(RpcOutChannel* outChannel, int timeout)
 	return 1;
 }
 
-int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, int timeout)
+int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, uint32_t timeout)
 {
-	rdpContext* context = NULL;
+	rdpContext* context = nullptr;
 
 	if (!outChannel || !outChannel->common.client || !outChannel->common.client->context)
 		return -1;
@@ -891,9 +895,9 @@ int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, int timeout)
 
 BOOL rpc_connect(rdpRpc* rpc, UINT32 timeout)
 {
-	RpcInChannel* inChannel = NULL;
-	RpcOutChannel* outChannel = NULL;
-	RpcVirtualConnection* connection = NULL;
+	RpcInChannel* inChannel = nullptr;
+	RpcOutChannel* outChannel = nullptr;
+	RpcVirtualConnection* connection = nullptr;
 	rpc->VirtualConnection = rpc_virtual_connection_new(rpc);
 
 	if (!rpc->VirtualConnection)
@@ -916,14 +920,14 @@ BOOL rpc_connect(rdpRpc* rpc, UINT32 timeout)
 rdpRpc* rpc_new(rdpTransport* transport)
 {
 	rdpContext* context = transport_get_context(transport);
-	rdpRpc* rpc = NULL;
+	rdpRpc* rpc = nullptr;
 
 	WINPR_ASSERT(context);
 
 	rpc = (rdpRpc*)calloc(1, sizeof(rdpRpc));
 
 	if (!rpc)
-		return NULL;
+		return nullptr;
 
 	rpc->log = WLog_Get(TAG);
 	rpc->State = RPC_CLIENT_STATE_INITIAL;
@@ -963,7 +967,7 @@ out_free:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	rpc_free(rpc);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void rpc_free(rdpRpc* rpc)

@@ -22,6 +22,8 @@
  */
 
 #include <freerdp/config.h>
+#include <freerdp/utils/helpers.h>
+#include <freerdp/utils/rdpdr_utils.h>
 
 #include <errno.h>
 #include <stdio.h>
@@ -56,6 +58,7 @@ typedef struct
 	wListDictionary* files;
 
 	HANDLE thread;
+	BOOL async;
 	wMessageQueue* IrpQueue;
 
 	DEVMAN* devman;
@@ -63,9 +66,9 @@ typedef struct
 	rdpContext* rdpcontext;
 } DRIVE_DEVICE;
 
-static DWORD drive_map_windows_err(DWORD fs_errno)
+static NTSTATUS drive_map_windows_err(DWORD fs_errno)
 {
-	DWORD rc = 0;
+	NTSTATUS rc = 0;
 
 	/* try to return NTSTATUS version of error code */
 
@@ -121,6 +124,10 @@ static DWORD drive_map_windows_err(DWORD fs_errno)
 			rc = STATUS_OBJECT_PATH_NOT_FOUND;
 			break;
 
+		case ERROR_DIR_NOT_EMPTY:
+			rc = STATUS_DIRECTORY_NOT_EMPTY;
+			break;
+
 		default:
 			rc = STATUS_UNSUCCESSFUL;
 			WLog_ERR(TAG, "Error code not found: %" PRIu32 "", fs_errno);
@@ -132,11 +139,11 @@ static DWORD drive_map_windows_err(DWORD fs_errno)
 
 static DRIVE_FILE* drive_get_file_by_id(DRIVE_DEVICE* drive, UINT32 id)
 {
-	DRIVE_FILE* file = NULL;
+	DRIVE_FILE* file = nullptr;
 	void* key = (void*)(size_t)id;
 
 	if (!drive)
-		return NULL;
+		return nullptr;
 
 	file = (DRIVE_FILE*)ListDictionary_GetItemValue(drive->files, key);
 	return file;
@@ -149,39 +156,32 @@ static DRIVE_FILE* drive_get_file_by_id(DRIVE_DEVICE* drive, UINT32 id)
  */
 static UINT drive_process_irp_create(DRIVE_DEVICE* drive, IRP* irp)
 {
-	UINT32 FileId = 0;
-	DRIVE_FILE* file = NULL;
 	BYTE Information = 0;
-	UINT32 FileAttributes = 0;
-	UINT32 SharedAccess = 0;
-	UINT32 DesiredAccess = 0;
-	UINT32 CreateDisposition = 0;
-	UINT32 CreateOptions = 0;
-	UINT32 PathLength = 0;
-	UINT64 allocationSize = 0;
-	const WCHAR* path = NULL;
 
-	if (!drive || !irp || !irp->devman || !irp->Complete)
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
+	if (!irp->devman)
 		return ERROR_INVALID_PARAMETER;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 6 * 4 + 8))
 		return ERROR_INVALID_DATA;
 
-	Stream_Read_UINT32(irp->input, DesiredAccess);
-	Stream_Read_UINT64(irp->input, allocationSize);
-	Stream_Read_UINT32(irp->input, FileAttributes);
-	Stream_Read_UINT32(irp->input, SharedAccess);
-	Stream_Read_UINT32(irp->input, CreateDisposition);
-	Stream_Read_UINT32(irp->input, CreateOptions);
-	Stream_Read_UINT32(irp->input, PathLength);
+	const uint32_t DesiredAccess = Stream_Get_UINT32(irp->input);
+	const uint64_t allocationSize = Stream_Get_UINT64(irp->input);
+	const uint32_t FileAttributes = Stream_Get_UINT32(irp->input);
+	const uint32_t SharedAccess = Stream_Get_UINT32(irp->input);
+	const uint32_t CreateDisposition = Stream_Get_UINT32(irp->input);
+	const uint32_t CreateOptions = Stream_Get_UINT32(irp->input);
+	const uint32_t PathLength = Stream_Get_UINT32(irp->input);
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, PathLength))
 		return ERROR_INVALID_DATA;
 
-	path = Stream_ConstPointer(irp->input);
-	FileId = irp->devman->id_sequence++;
-	file = drive_file_new(drive->path, path, PathLength / sizeof(WCHAR), FileId, DesiredAccess,
-	                      CreateDisposition, CreateOptions, FileAttributes, SharedAccess);
+	const WCHAR* path = Stream_ConstPointer(irp->input);
+	UINT32 FileId = irp->devman->id_sequence++;
+	DRIVE_FILE* file =
+	    drive_file_new(drive->path, path, PathLength / sizeof(WCHAR), FileId, DesiredAccess,
+	                   CreateDisposition, CreateOptions, FileAttributes, SharedAccess);
 
 	if (!file)
 	{
@@ -220,11 +220,21 @@ static UINT drive_process_irp_create(DRIVE_DEVICE* drive, IRP* irp)
 				Information = 0;
 				break;
 		}
+
+		if (allocationSize > 0)
+		{
+			const BYTE buffer[] = { '\0' };
+			if (!drive_file_seek(file, allocationSize - sizeof(buffer)))
+				return ERROR_INTERNAL_ERROR;
+			if (!drive_file_write(file, buffer, sizeof(buffer)))
+				return ERROR_INTERNAL_ERROR;
+		}
 	}
 
 	Stream_Write_UINT32(irp->output, FileId);
 	Stream_Write_UINT8(irp->output, Information);
-	return irp->Complete(irp);
+
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -234,29 +244,25 @@ static UINT drive_process_irp_create(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_close(DRIVE_DEVICE* drive, IRP* irp)
 {
-	void* key = NULL;
-	DRIVE_FILE* file = NULL;
-
-	if (!drive || !irp || !irp->Complete || !irp->output)
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
+	if (!irp->output)
 		return ERROR_INVALID_PARAMETER;
 
-	file = drive_get_file_by_id(drive, irp->FileId);
-	key = (void*)(size_t)irp->FileId;
+	DRIVE_FILE* file = drive_get_file_by_id(drive, irp->FileId);
+	void* key = (void*)(size_t)irp->FileId;
 
 	if (!file)
 		irp->IoStatus = STATUS_UNSUCCESSFUL;
 	else
 	{
-		ListDictionary_Take(drive->files, key);
-
-		if (drive_file_free(file))
-			irp->IoStatus = STATUS_SUCCESS;
-		else
-			irp->IoStatus = drive_map_windows_err(GetLastError());
+		ListDictionary_Remove(drive->files, key);
+		irp->IoStatus = drive_map_windows_err(GetLastError());
 	}
 
 	Stream_Zero(irp->output, 5); /* Padding(5) */
-	return irp->Complete(irp);
+
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -266,11 +272,13 @@ static UINT drive_process_irp_close(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_read(DRIVE_DEVICE* drive, IRP* irp)
 {
-	DRIVE_FILE* file = NULL;
+	DRIVE_FILE* file = nullptr;
 	UINT32 Length = 0;
 	UINT64 Offset = 0;
 
-	if (!drive || !irp || !irp->output || !irp->Complete)
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
+	if (!irp->output)
 		return ERROR_INVALID_PARAMETER;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 12))
@@ -291,7 +299,7 @@ static UINT drive_process_irp_read(DRIVE_DEVICE* drive, IRP* irp)
 		Length = 0;
 	}
 
-	if (!Stream_EnsureRemainingCapacity(irp->output, Length + 4))
+	if (!Stream_EnsureRemainingCapacity(irp->output, 4ull + Length))
 	{
 		WLog_ERR(TAG, "Stream_EnsureRemainingCapacity failed!");
 		return ERROR_INTERNAL_ERROR;
@@ -314,7 +322,7 @@ static UINT drive_process_irp_read(DRIVE_DEVICE* drive, IRP* irp)
 		}
 	}
 
-	return irp->Complete(irp);
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -324,11 +332,13 @@ static UINT drive_process_irp_read(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_write(DRIVE_DEVICE* drive, IRP* irp)
 {
-	DRIVE_FILE* file = NULL;
+	DRIVE_FILE* file = nullptr;
 	UINT32 Length = 0;
 	UINT64 Offset = 0;
 
-	if (!drive || !irp || !irp->input || !irp->output || !irp->Complete)
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
+	if (!irp->input || !irp->output)
 		return ERROR_INVALID_PARAMETER;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 32))
@@ -360,7 +370,8 @@ static UINT drive_process_irp_write(DRIVE_DEVICE* drive, IRP* irp)
 
 	Stream_Write_UINT32(irp->output, Length);
 	Stream_Write_UINT8(irp->output, 0); /* Padding */
-	return irp->Complete(irp);
+
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -370,11 +381,11 @@ static UINT drive_process_irp_write(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_query_information(DRIVE_DEVICE* drive, IRP* irp)
 {
-	DRIVE_FILE* file = NULL;
+	DRIVE_FILE* file = nullptr;
 	UINT32 FsInformationClass = 0;
 
-	if (!drive || !irp || !irp->Complete)
-		return ERROR_INVALID_PARAMETER;
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 4))
 		return ERROR_INVALID_DATA;
@@ -391,7 +402,7 @@ static UINT drive_process_irp_query_information(DRIVE_DEVICE* drive, IRP* irp)
 		irp->IoStatus = drive_map_windows_err(GetLastError());
 	}
 
-	return irp->Complete(irp);
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -401,11 +412,13 @@ static UINT drive_process_irp_query_information(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_set_information(DRIVE_DEVICE* drive, IRP* irp)
 {
-	DRIVE_FILE* file = NULL;
+	DRIVE_FILE* file = nullptr;
 	UINT32 FsInformationClass = 0;
 	UINT32 Length = 0;
 
-	if (!drive || !irp || !irp->Complete || !irp->input || !irp->output)
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
+	if (!irp->input || !irp->output)
 		return ERROR_INVALID_PARAMETER;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 32))
@@ -425,11 +438,9 @@ static UINT drive_process_irp_set_information(DRIVE_DEVICE* drive, IRP* irp)
 		irp->IoStatus = drive_map_windows_err(GetLastError());
 	}
 
-	if (file && file->is_dir && !PathIsDirectoryEmptyW(file->fullpath))
-		irp->IoStatus = STATUS_DIRECTORY_NOT_EMPTY;
-
 	Stream_Write_UINT32(irp->output, Length);
-	return irp->Complete(irp);
+
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -440,33 +451,40 @@ static UINT drive_process_irp_set_information(DRIVE_DEVICE* drive, IRP* irp)
 static UINT drive_process_irp_query_volume_information(DRIVE_DEVICE* drive, IRP* irp)
 {
 	UINT32 FsInformationClass = 0;
-	wStream* output = NULL;
 	DWORD lpSectorsPerCluster = 0;
 	DWORD lpBytesPerSector = 0;
 	DWORD lpNumberOfFreeClusters = 0;
 	DWORD lpTotalNumberOfClusters = 0;
-	WIN32_FILE_ATTRIBUTE_DATA wfad = { 0 };
-	WCHAR LabelBuffer[32] = { 0 };
+	WIN32_FILE_ATTRIBUTE_DATA wfad = WINPR_C_ARRAY_INIT;
 
-	if (!drive || !irp)
-		return ERROR_INVALID_PARAMETER;
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
 
-	output = irp->output;
+	wStream* output = irp->output;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 4))
 		return ERROR_INVALID_DATA;
 
 	Stream_Read_UINT32(irp->input, FsInformationClass);
-	GetDiskFreeSpaceW(drive->path, &lpSectorsPerCluster, &lpBytesPerSector, &lpNumberOfFreeClusters,
-	                  &lpTotalNumberOfClusters);
+	if (!GetDiskFreeSpaceW(drive->path, &lpSectorsPerCluster, &lpBytesPerSector,
+	                       &lpNumberOfFreeClusters, &lpTotalNumberOfClusters))
+	{
+		const UINT32 err = GetLastError();
+		const HRESULT herr = HRESULT_FROM_WIN32(err);
+		WLog_WARN(TAG, "GetDiskFreeSpaceW failed: %s [%" PRId32 "], win32=%s [%" PRIu32 "]",
+		          NtStatus2Tag(herr), herr, Win32ErrorCode2Tag(err & 0xFFFF), err);
+		lpSectorsPerCluster = 0;
+		lpBytesPerSector = 0;
+		lpNumberOfFreeClusters = 0;
+		lpTotalNumberOfClusters = 0;
+	}
 
 	switch (FsInformationClass)
 	{
 		case FileFsVolumeInformation:
 		{
 			/* http://msdn.microsoft.com/en-us/library/cc232108.aspx */
-			const WCHAR* volumeLabel =
-			    InitializeConstWCharFromUtf8("FREERDP", LabelBuffer, ARRAYSIZE(LabelBuffer));
+			const WCHAR* volumeLabel = freerdp_getApplicationDetailsStringW();
 			const size_t volumeLabelLen = (_wcslen(volumeLabel) + 1) * sizeof(WCHAR);
 			const size_t length = 17ul + volumeLabelLen;
 
@@ -481,7 +499,18 @@ static UINT drive_process_irp_query_volume_information(DRIVE_DEVICE* drive, IRP*
 				return CHANNEL_RC_NO_MEMORY;
 			}
 
-			GetFileAttributesExW(drive->path, GetFileExInfoStandard, &wfad);
+			if (!GetFileAttributesExW(drive->path, GetFileExInfoStandard, &wfad))
+			{
+				const UINT32 err = GetLastError();
+				const HRESULT herr = HRESULT_FROM_WIN32(err);
+				WLog_WARN(TAG,
+				          "GetFileAttributesExW failed: %s [%" PRId32 "], win32=%s [%" PRIu32 "]",
+				          NtStatus2Tag(herr), herr, Win32ErrorCode2Tag(err & 0xFFFF), err);
+
+				const WIN32_FILE_ATTRIBUTE_DATA empty = WINPR_C_ARRAY_INIT;
+				wfad = empty;
+			}
+
 			Stream_Write_UINT32(output, wfad.ftCreationTime.dwLowDateTime); /* VolumeCreationTime */
 			Stream_Write_UINT32(output,
 			                    wfad.ftCreationTime.dwHighDateTime);      /* VolumeCreationTime */
@@ -511,6 +540,7 @@ static UINT drive_process_irp_query_volume_information(DRIVE_DEVICE* drive, IRP*
 
 		case FileFsAttributeInformation:
 		{
+			WCHAR LabelBuffer[32] = WINPR_C_ARRAY_INIT;
 			/* http://msdn.microsoft.com/en-us/library/cc232101.aspx */
 			const WCHAR* diskType =
 			    InitializeConstWCharFromUtf8("FAT32", LabelBuffer, ARRAYSIZE(LabelBuffer));
@@ -569,12 +599,14 @@ static UINT drive_process_irp_query_volume_information(DRIVE_DEVICE* drive, IRP*
 			break;
 
 		default:
+			WLog_WARN(TAG, "Unhandled FSInformationClass %s [0x%08" PRIx32 "]",
+			          FSInformationClass2Tag(FsInformationClass), FsInformationClass);
 			irp->IoStatus = STATUS_UNSUCCESSFUL;
 			Stream_Write_UINT32(output, 0); /* Length */
 			break;
 	}
 
-	return irp->Complete(irp);
+	return CHANNEL_RC_OK;
 }
 
 /* http://msdn.microsoft.com/en-us/library/cc241518.aspx */
@@ -584,19 +616,21 @@ static UINT drive_process_irp_query_volume_information(DRIVE_DEVICE* drive, IRP*
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT drive_process_irp_silent_ignore(DRIVE_DEVICE* drive, IRP* irp)
+static UINT drive_process_irp_silent_ignore(WINPR_ATTR_UNUSED DRIVE_DEVICE* drive, IRP* irp)
 {
-	UINT32 FsInformationClass = 0;
-
-	if (!drive || !irp || !irp->output || !irp->Complete)
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
+	if (!irp->output)
 		return ERROR_INVALID_PARAMETER;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 4))
 		return ERROR_INVALID_DATA;
 
-	Stream_Read_UINT32(irp->input, FsInformationClass);
+	const uint32_t FsInformationClass = Stream_Get_UINT32(irp->input);
+	WLog_VRB(TAG, "Silently ignore FSInformationClass %s [0x%08" PRIx32 "]",
+	         FSInformationClass2Tag(FsInformationClass), FsInformationClass);
 	Stream_Write_UINT32(irp->output, 0); /* Length */
-	return irp->Complete(irp);
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -606,14 +640,14 @@ static UINT drive_process_irp_silent_ignore(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_query_directory(DRIVE_DEVICE* drive, IRP* irp)
 {
-	const WCHAR* path = NULL;
-	DRIVE_FILE* file = NULL;
+	const WCHAR* path = nullptr;
+	DRIVE_FILE* file = nullptr;
 	BYTE InitialQuery = 0;
 	UINT32 PathLength = 0;
 	UINT32 FsInformationClass = 0;
 
-	if (!drive || !irp || !irp->Complete)
-		return ERROR_INVALID_PARAMETER;
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 32))
 		return ERROR_INVALID_DATA;
@@ -628,7 +662,7 @@ static UINT drive_process_irp_query_directory(DRIVE_DEVICE* drive, IRP* irp)
 
 	file = drive_get_file_by_id(drive, irp->FileId);
 
-	if (file == NULL)
+	if (file == nullptr)
 	{
 		irp->IoStatus = STATUS_UNSUCCESSFUL;
 		Stream_Write_UINT32(irp->output, 0); /* Length */
@@ -639,7 +673,7 @@ static UINT drive_process_irp_query_directory(DRIVE_DEVICE* drive, IRP* irp)
 		irp->IoStatus = drive_map_windows_err(GetLastError());
 	}
 
-	return irp->Complete(irp);
+	return CHANNEL_RC_OK;
 }
 
 /**
@@ -649,8 +683,8 @@ static UINT drive_process_irp_query_directory(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp_directory_control(DRIVE_DEVICE* drive, IRP* irp)
 {
-	if (!drive || !irp)
-		return ERROR_INVALID_PARAMETER;
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
 
 	switch (irp->MinorFunction)
 	{
@@ -658,12 +692,14 @@ static UINT drive_process_irp_directory_control(DRIVE_DEVICE* drive, IRP* irp)
 			return drive_process_irp_query_directory(drive, irp);
 
 		case IRP_MN_NOTIFY_CHANGE_DIRECTORY: /* TODO */
-			return irp->Discard(irp);
+			irp->IoStatus = STATUS_NOT_SUPPORTED;
+			Stream_Write_UINT32(irp->output, 0); /* Length */
+			break;
 
 		default:
 			irp->IoStatus = STATUS_NOT_SUPPORTED;
 			Stream_Write_UINT32(irp->output, 0); /* Length */
-			return irp->Complete(irp);
+			break;
 	}
 
 	return CHANNEL_RC_OK;
@@ -674,13 +710,28 @@ static UINT drive_process_irp_directory_control(DRIVE_DEVICE* drive, IRP* irp)
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT drive_process_irp_device_control(DRIVE_DEVICE* drive, IRP* irp)
+static UINT drive_process_irp_device_control(WINPR_ATTR_UNUSED DRIVE_DEVICE* drive, IRP* irp)
 {
-	if (!drive || !irp)
-		return ERROR_INVALID_PARAMETER;
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
 
 	Stream_Write_UINT32(irp->output, 0); /* OutputBufferLength */
-	return irp->Complete(irp);
+	return CHANNEL_RC_OK;
+}
+
+static UINT drive_evaluate(UINT error, IRP* irp)
+{
+	WINPR_ASSERT(irp);
+	if (error == CHANNEL_RC_OK)
+	{
+		WINPR_ASSERT(irp->Complete);
+		return irp->Complete(irp);
+	}
+
+	WLog_ERR(TAG, "IRP %s failed with %" PRIu32, rdpdr_irp_string(irp->MajorFunction), error);
+	WINPR_ASSERT(irp->Discard);
+	irp->Discard(irp);
+	return error;
 }
 
 /**
@@ -690,10 +741,9 @@ static UINT drive_process_irp_device_control(DRIVE_DEVICE* drive, IRP* irp)
  */
 static UINT drive_process_irp(DRIVE_DEVICE* drive, IRP* irp)
 {
-	UINT error = 0;
-
-	if (!drive || !irp)
-		return ERROR_INVALID_PARAMETER;
+	UINT error = CHANNEL_RC_OK;
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(irp);
 
 	irp->IoStatus = STATUS_SUCCESS;
 
@@ -741,17 +791,31 @@ static UINT drive_process_irp(DRIVE_DEVICE* drive, IRP* irp)
 
 		default:
 			irp->IoStatus = STATUS_NOT_SUPPORTED;
-			error = irp->Complete(irp);
 			break;
 	}
 
-	return error;
+	return drive_evaluate(error, irp);
+}
+
+static BOOL drive_poll_run(DRIVE_DEVICE* drive, IRP* irp)
+{
+	WINPR_ASSERT(drive);
+
+	if (irp)
+	{
+		const UINT error = drive_process_irp(drive, irp);
+		if (error)
+		{
+			WLog_ERR(TAG, "drive_process_irp failed with error %" PRIu32 "!", error);
+			return FALSE;
+		}
+	}
+
+	return TRUE;
 }
 
 static DWORD WINAPI drive_thread_func(LPVOID arg)
 {
-	IRP* irp = NULL;
-	wMessage message = { 0 };
 	DRIVE_DEVICE* drive = (DRIVE_DEVICE*)arg;
 	UINT error = CHANNEL_RC_OK;
 
@@ -770,26 +834,22 @@ static DWORD WINAPI drive_thread_func(LPVOID arg)
 			break;
 		}
 
+		if (MessageQueue_Size(drive->IrpQueue) < 1)
+			continue;
+
+		wMessage message = WINPR_C_ARRAY_INIT;
 		if (!MessageQueue_Peek(drive->IrpQueue, &message, TRUE))
 		{
 			WLog_ERR(TAG, "MessageQueue_Peek failed!");
-			error = ERROR_INTERNAL_ERROR;
-			break;
+			continue;
 		}
 
 		if (message.id == WMQ_QUIT)
 			break;
 
-		irp = (IRP*)message.wParam;
-
-		if (irp)
-		{
-			if ((error = drive_process_irp(drive, irp)))
-			{
-				WLog_ERR(TAG, "drive_process_irp failed with error %" PRIu32 "!", error);
-				break;
-			}
-		}
+		IRP* irp = (IRP*)message.wParam;
+		if (!drive_poll_run(drive, irp))
+			break;
 	}
 
 fail:
@@ -813,10 +873,18 @@ static UINT drive_irp_request(DEVICE* device, IRP* irp)
 	if (!drive)
 		return ERROR_INVALID_PARAMETER;
 
-	if (!MessageQueue_Post(drive->IrpQueue, NULL, 0, (void*)irp, NULL))
+	if (drive->async)
 	{
-		WLog_ERR(TAG, "MessageQueue_Post failed!");
-		return ERROR_INTERNAL_ERROR;
+		if (!MessageQueue_Post(drive->IrpQueue, nullptr, 0, (void*)irp, nullptr))
+		{
+			WLog_ERR(TAG, "MessageQueue_Post failed!");
+			return ERROR_INTERNAL_ERROR;
+		}
+	}
+	else
+	{
+		if (!drive_poll_run(drive, irp))
+			return ERROR_INTERNAL_ERROR;
 	}
 
 	return CHANNEL_RC_OK;
@@ -891,16 +959,20 @@ static void drive_message_free(void* obj)
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints, const char* name,
-                                      const char* path, BOOL automount)
+                                      const char* path, BOOL automount, uint32_t* pid)
 {
+	WINPR_ASSERT(pid);
+
 	size_t length = 0;
-	DRIVE_DEVICE* drive = NULL;
+	DRIVE_DEVICE* drive = nullptr;
 	UINT error = ERROR_INTERNAL_ERROR;
 
 	if (!pEntryPoints || !name || !path)
 	{
-		WLog_ERR(TAG, "[%s] Invalid parameters: pEntryPoints=%p, name=%p, path=%p", pEntryPoints,
-		         name, path);
+		WLog_ERR(TAG, "Invalid parameters: pEntryPoints=%p, name=%p, path=%p",
+		         WINPR_CXX_COMPAT_CAST(const void*, pEntryPoints),
+		         WINPR_CXX_COMPAT_CAST(const void*, name),
+		         WINPR_CXX_COMPAT_CAST(const void*, path));
 		return ERROR_INVALID_PARAMETER;
 	}
 
@@ -921,7 +993,7 @@ static UINT drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints,
 		drive->rdpcontext = pEntryPoints->rdpcontext;
 		drive->automount = automount;
 		length = strlen(name);
-		drive->device.data = Stream_New(NULL, length + 1);
+		drive->device.data = Stream_New(nullptr, length + 1);
 
 		if (!drive->device.data)
 		{
@@ -959,7 +1031,7 @@ static UINT drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints,
 		if ((pathLength > 1) && (path[pathLength - 1] == '/'))
 			pathLength--;
 
-		drive->path = ConvertUtf8NToWCharAlloc(path, pathLength, NULL);
+		drive->path = ConvertUtf8NToWCharAlloc(path, pathLength, nullptr);
 		if (!drive->path)
 		{
 			error = CHANNEL_RC_NO_MEMORY;
@@ -976,7 +1048,7 @@ static UINT drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints,
 		}
 
 		ListDictionary_ValueObject(drive->files)->fnObjectFree = drive_file_objfree;
-		drive->IrpQueue = MessageQueue_New(NULL);
+		drive->IrpQueue = MessageQueue_New(nullptr);
 
 		if (!drive->IrpQueue)
 		{
@@ -989,25 +1061,100 @@ static UINT drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints,
 		WINPR_ASSERT(obj);
 		obj->fnObjectFree = drive_message_free;
 
-		if ((error = pEntryPoints->RegisterDevice(pEntryPoints->devman, (DEVICE*)drive)))
+		if ((error = pEntryPoints->RegisterDevice(pEntryPoints->devman, &drive->device)))
 		{
 			WLog_ERR(TAG, "RegisterDevice failed with error %" PRIu32 "!", error);
 			goto out_error;
 		}
+		*pid = drive->device.id;
 
-		if (!(drive->thread =
-		          CreateThread(NULL, 0, drive_thread_func, drive, CREATE_SUSPENDED, NULL)))
+		drive->async = !freerdp_settings_get_bool(drive->rdpcontext->settings,
+		                                          FreeRDP_SynchronousStaticChannels);
+		if (drive->async)
 		{
-			WLog_ERR(TAG, "CreateThread failed!");
-			goto out_error;
-		}
+			if (!(drive->thread = CreateThread(nullptr, 0, drive_thread_func, drive,
+			                                   CREATE_SUSPENDED, nullptr)))
+			{
+				WLog_ERR(TAG, "CreateThread failed!");
+				goto out_error;
+			}
 
-		ResumeThread(drive->thread);
+			ResumeThread(drive->thread);
+		}
 	}
 
 	return CHANNEL_RC_OK;
 out_error:
 	drive_free_int(drive);
+	return error;
+}
+
+static BOOL drive_filtered(const WCHAR* drive)
+{
+	const WCHAR a[] = { 'A', '\0' };
+	const WCHAR b[] = { 'B', '\0' };
+	const WCHAR la[] = { 'a', '\0' };
+	const WCHAR lb[] = { 'b', '\0' };
+	const WCHAR* list[] = { a, b, la, lb };
+
+	for (size_t x = 0; x < ARRAYSIZE(list); x++)
+	{
+		const WCHAR* cur = list[x];
+		if (_wcsncmp(drive, cur, 2) == 0)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static UINT handle_all_drives(RDPDR_DRIVE* drive, PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
+{
+	UINT error = ERROR_INTERNAL_ERROR;
+
+	WINPR_ASSERT(drive);
+	WINPR_ASSERT(pEntryPoints);
+
+	/* Enumerate all devices: */
+	const DWORD dlen = GetLogicalDriveStringsW(0, nullptr);
+
+	WCHAR* devlist = calloc(dlen, sizeof(WCHAR));
+	if (!devlist)
+		return ERROR_OUTOFMEMORY;
+
+	const DWORD rc = GetLogicalDriveStringsW(dlen, devlist);
+	if (rc >= dlen)
+		goto fail;
+
+	for (size_t offset = 0, len = 0; offset < rc; offset += len + 1)
+	{
+		len = _wcsnlen(&devlist[offset], rc - offset);
+
+		const WCHAR* dev = &devlist[offset];
+		if (!drive_filtered(dev))
+		{
+			char* bufdup = nullptr;
+			char* devdup = ConvertWCharNToUtf8Alloc(dev, len, nullptr);
+			if (!devdup)
+			{
+				error = ERROR_OUTOFMEMORY;
+				goto fail;
+			}
+			size_t size = 0;
+			winpr_asprintf(&bufdup, &size, "%s_%s", drive->device.Name, devdup);
+
+			error =
+			    drive_register_drive_path(pEntryPoints, bufdup, devdup, TRUE, &drive->device.Id);
+			free(devdup);
+			free(bufdup);
+			if (error != CHANNEL_RC_OK)
+				goto fail;
+		}
+	}
+
+	error = CHANNEL_RC_OK;
+
+fail:
+	free(devlist);
+
 	return error;
 }
 
@@ -1019,34 +1166,20 @@ out_error:
 FREERDP_ENTRY_POINT(
     UINT VCAPITYPE drive_DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints))
 {
-	RDPDR_DRIVE* drive = NULL;
 	UINT error = 0;
-#ifdef WIN32
-	int len;
-	char devlist[512], buf[512];
-	char* bufdup;
-	char* devdup;
-#endif
 
 	WINPR_ASSERT(pEntryPoints);
 
-	drive = (RDPDR_DRIVE*)pEntryPoints->device;
+	RDPDR_DRIVE* drive = (RDPDR_DRIVE*)pEntryPoints->device;
 	WINPR_ASSERT(drive);
 
-#ifndef WIN32
-	if (strcmp(drive->Path, "*") == 0)
+	const char all[] = "*";
+	const char home[] = "%";
+	if (strncmp(drive->Path, all, sizeof(all)) == 0)
 	{
-		/* all drives */
-		free(drive->Path);
-		drive->Path = _strdup("/");
-
-		if (!drive->Path)
-		{
-			WLog_ERR(TAG, "_strdup failed!");
-			return CHANNEL_RC_NO_MEMORY;
-		}
+		error = handle_all_drives(drive, pEntryPoints);
 	}
-	else if (strcmp(drive->Path, "%") == 0)
+	else if (strncmp(drive->Path, home, sizeof(home)) == 0)
 	{
 		free(drive->Path);
 		drive->Path = GetKnownPath(KNOWN_PATH_HOME);
@@ -1056,73 +1189,13 @@ FREERDP_ENTRY_POINT(
 			WLog_ERR(TAG, "_strdup failed!");
 			return CHANNEL_RC_NO_MEMORY;
 		}
-	}
-
-	error =
-	    drive_register_drive_path(pEntryPoints, drive->device.Name, drive->Path, drive->automount);
-#else
-	/* Special case: path[0] == '*' -> export all drives */
-	/* Special case: path[0] == '%' -> user home dir */
-	if (strcmp(drive->Path, "%") == 0)
-	{
-		GetEnvironmentVariableA("USERPROFILE", buf, sizeof(buf));
-		PathCchAddBackslashA(buf, sizeof(buf));
-		free(drive->Path);
-		drive->Path = _strdup(buf);
-
-		if (!drive->Path)
-		{
-			WLog_ERR(TAG, "_strdup failed!");
-			return CHANNEL_RC_NO_MEMORY;
-		}
-
 		error = drive_register_drive_path(pEntryPoints, drive->device.Name, drive->Path,
-		                                  drive->automount);
-	}
-	else if (strcmp(drive->Path, "*") == 0)
-	{
-		/* Enumerate all devices: */
-		GetLogicalDriveStringsA(sizeof(devlist) - 1, devlist);
-
-		for (size_t i = 0;; i++)
-		{
-			char* dev = &devlist[i * 4];
-			if (!*dev)
-				break;
-			if (*dev > 'B')
-			{
-				/* Suppress disk drives A and B to avoid pesty messages */
-				len = sprintf_s(buf, sizeof(buf) - 4, "%s", drive->device.Name);
-				buf[len] = '_';
-				buf[len + 1] = dev[0];
-				buf[len + 2] = 0;
-				buf[len + 3] = 0;
-
-				if (!(bufdup = _strdup(buf)))
-				{
-					WLog_ERR(TAG, "_strdup failed!");
-					return CHANNEL_RC_NO_MEMORY;
-				}
-
-				if (!(devdup = _strdup(dev)))
-				{
-					WLog_ERR(TAG, "_strdup failed!");
-					return CHANNEL_RC_NO_MEMORY;
-				}
-
-				if ((error = drive_register_drive_path(pEntryPoints, bufdup, devdup, TRUE)))
-				{
-					break;
-				}
-			}
-		}
+		                                  drive->automount, &drive->device.Id);
 	}
 	else
 	{
 		error = drive_register_drive_path(pEntryPoints, drive->device.Name, drive->Path,
-		                                  drive->automount);
+		                                  drive->automount, &drive->device.Id);
 	}
-
-#endif
 	return error;
 }

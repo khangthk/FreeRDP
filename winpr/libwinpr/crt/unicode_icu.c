@@ -29,10 +29,6 @@
 #include <winpr/error.h>
 #include <winpr/print.h>
 
-#ifndef MIN
-#define MIN(a, b) (a) < (b) ? (a) : (b)
-#endif
-
 #include <unicode/ucnv.h>
 #include <unicode/ustring.h>
 
@@ -62,14 +58,14 @@ int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr,
 	if (isNullTerminated)
 		len = strlen(lpMultiByteStr) + 1;
 	else
-		len = cbMultiByte;
+		len = WINPR_ASSERTING_INT_CAST(size_t, cbMultiByte);
 
 	if (len >= INT_MAX)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return 0;
 	}
-	cbMultiByte = (int)len;
+	cbMultiByte = WINPR_ASSERTING_INT_CAST(int, len);
 
 	/*
 	 * if cchWideChar is 0, the function returns the required buffer size
@@ -126,11 +122,11 @@ int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr,
 				break;
 			default:
 				WLog_WARN(TAG, "unexpected ICU error code %s [0x%08" PRIx32 "]", u_errorName(error),
-				          error);
+				          WINPR_CXX_COMPAT_CAST(unsigned, error));
 				if (U_FAILURE(error))
 				{
 					WLog_ERR(TAG, "unexpected ICU error code %s [0x%08" PRIx32 "] is fatal",
-					         u_errorName(error), error);
+					         u_errorName(error), WINPR_CXX_COMPAT_CAST(unsigned, error));
 					cchWideChar = 0;
 					SetLastError(ERROR_NO_UNICODE_TRANSLATION);
 				}
@@ -143,9 +139,10 @@ int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr,
 	return cchWideChar;
 }
 
-int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr, int cchWideChar,
-                            LPSTR lpMultiByteStr, int cbMultiByte, LPCSTR lpDefaultChar,
-                            LPBOOL lpUsedDefaultChar)
+int int_WideCharToMultiByte(UINT CodePage, WINPR_ATTR_UNUSED DWORD dwFlags, LPCWSTR lpWideCharStr,
+                            int cchWideChar, LPSTR lpMultiByteStr, int cbMultiByte,
+                            WINPR_ATTR_UNUSED LPCSTR lpDefaultChar,
+                            WINPR_ATTR_UNUSED LPBOOL lpUsedDefaultChar)
 {
 	/* If cchWideChar is 0, the function fails */
 
@@ -161,14 +158,14 @@ int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr,
 	if (cchWideChar == -1)
 		len = _wcslen(lpWideCharStr) + 1;
 	else
-		len = cchWideChar;
+		len = WINPR_ASSERTING_INT_CAST(size_t, cchWideChar);
 
 	if (len >= INT32_MAX)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return 0;
 	}
-	cchWideChar = (int)len;
+	cchWideChar = WINPR_ASSERTING_INT_CAST(int, len);
 
 	/*
 	 * if cbMultiByte is 0, the function returns the required buffer size
@@ -220,11 +217,11 @@ int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr,
 				break;
 			default:
 				WLog_WARN(TAG, "unexpected ICU error code %s [0x%08" PRIx32 "]", u_errorName(error),
-				          error);
+				          WINPR_CXX_COMPAT_CAST(unsigned, error));
 				if (U_FAILURE(error))
 				{
 					WLog_ERR(TAG, "unexpected ICU error code %s [0x%08" PRIx32 "] is fatal",
-					         u_errorName(error), error);
+					         u_errorName(error), WINPR_CXX_COMPAT_CAST(unsigned, error));
 					cbMultiByte = 0;
 					SetLastError(ERROR_NO_UNICODE_TRANSLATION);
 				}

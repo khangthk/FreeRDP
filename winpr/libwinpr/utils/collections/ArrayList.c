@@ -86,7 +86,7 @@ size_t ArrayList_Items(wArrayList* arrayList, ULONG_PTR** ppItems)
  * Gets a value indicating whether the ArrayList has a fixed size.
  */
 
-BOOL ArrayList_IsFixedSized(wArrayList* arrayList)
+BOOL ArrayList_IsFixedSized(WINPR_ATTR_UNUSED wArrayList* arrayList)
 {
 	WINPR_ASSERT(arrayList);
 	return FALSE;
@@ -96,7 +96,7 @@ BOOL ArrayList_IsFixedSized(wArrayList* arrayList)
  * Gets a value indicating whether the ArrayList is read-only.
  */
 
-BOOL ArrayList_IsReadOnly(wArrayList* arrayList)
+BOOL ArrayList_IsReadOnly(WINPR_ATTR_UNUSED wArrayList* arrayList)
 {
 	WINPR_ASSERT(arrayList);
 	return FALSE;
@@ -152,7 +152,7 @@ void ArrayList_Unlock(wArrayList* arrayList)
 
 void* ArrayList_GetItem(wArrayList* arrayList, size_t index)
 {
-	void* obj = NULL;
+	void* obj = nullptr;
 
 	WINPR_ASSERT(arrayList);
 	if (index < arrayList->size)
@@ -202,12 +202,12 @@ static BOOL ArrayList_EnsureCapacity(wArrayList* arrayList, size_t count)
 
 	if (arrayList->size + count > arrayList->capacity)
 	{
-		void** newArray = NULL;
+		void** newArray = nullptr;
 		size_t newCapacity = arrayList->capacity * arrayList->growthFactor;
 		if (newCapacity < arrayList->size + count)
 			newCapacity = arrayList->size + count;
 
-		newArray = (void**)realloc(arrayList->array, sizeof(void*) * newCapacity);
+		newArray = (void**)realloc((void*)arrayList->array, sizeof(void*) * newCapacity);
 
 		if (!newArray)
 			return FALSE;
@@ -227,22 +227,25 @@ static BOOL ArrayList_Shift(wArrayList* arrayList, size_t index, SSIZE_T count)
 	WINPR_ASSERT(arrayList);
 	if (count > 0)
 	{
-		if (!ArrayList_EnsureCapacity(arrayList, count))
+		if (!ArrayList_EnsureCapacity(arrayList, (size_t)count))
 			return FALSE;
 
-		MoveMemory(&arrayList->array[index + count], &arrayList->array[index],
+		MoveMemory((void*)&arrayList->array[index + (size_t)count], (void*)&arrayList->array[index],
 		           (arrayList->size - index) * sizeof(void*));
-		arrayList->size += count;
+		arrayList->size += (size_t)count;
 	}
 	else if (count < 0)
 	{
-		INT64 chunk = arrayList->size - index + count;
+		const size_t scount = WINPR_ASSERTING_INT_CAST(size_t, -count);
+		const size_t off = index + scount;
+		if (off < arrayList->size)
+		{
+			const size_t chunk = arrayList->size - off;
+			MoveMemory((void*)&arrayList->array[index], (void*)&arrayList->array[off],
+			           chunk * sizeof(void*));
+		}
 
-		if (chunk > 0)
-			MoveMemory(&arrayList->array[index], &arrayList->array[index - count],
-			           (size_t)chunk * sizeof(void*));
-
-		arrayList->size += count;
+		arrayList->size -= scount;
 	}
 
 	return TRUE;
@@ -262,7 +265,7 @@ void ArrayList_Clear(wArrayList* arrayList)
 		if (arrayList->object.fnObjectFree)
 			arrayList->object.fnObjectFree(arrayList->array[index]);
 
-		arrayList->array[index] = NULL;
+		arrayList->array[index] = nullptr;
 	}
 
 	arrayList->size = 0;
@@ -339,7 +342,7 @@ BOOL ArrayList_Insert(wArrayList* arrayList, size_t index, const void* obj)
 	WINPR_ASSERT(arrayList);
 	ArrayList_Lock_Conditional(arrayList);
 
-	if (index < arrayList->size)
+	if (index <= arrayList->size)
 	{
 		if (!ArrayList_Shift(arrayList, index, 1))
 		{
@@ -347,7 +350,7 @@ BOOL ArrayList_Insert(wArrayList* arrayList, size_t index, const void* obj)
 		}
 		else
 		{
-			ArrayList_SetItem(arrayList, index, obj);
+			ret = ArrayList_SetItem(arrayList, index, obj);
 		}
 	}
 
@@ -493,9 +496,12 @@ SSIZE_T ArrayList_LastIndexOf(wArrayList* arrayList, const void* obj, SSIZE_T st
 	if (startIndex < 0)
 		sindex = 0;
 
-	cindex = (size_t)count;
+	cindex = count;
 	if (count < 0)
-		cindex = arrayList->size;
+	{
+		WINPR_ASSERT(arrayList->size <= SSIZE_MAX);
+		cindex = (SSIZE_T)arrayList->size;
+	}
 
 	SSIZE_T index = sindex + cindex;
 	for (; index > sindex; index--)
@@ -517,7 +523,7 @@ SSIZE_T ArrayList_LastIndexOf(wArrayList* arrayList, const void* obj, SSIZE_T st
 
 static BOOL ArrayList_DefaultCompare(const void* objA, const void* objB)
 {
-	return objA == objB ? TRUE : FALSE;
+	return (objA == objB);
 }
 
 wObject* ArrayList_Object(wArrayList* arrayList)
@@ -529,7 +535,7 @@ wObject* ArrayList_Object(wArrayList* arrayList)
 BOOL ArrayList_ForEach(wArrayList* arrayList, ArrayList_ForEachFkt fkt, ...)
 {
 	BOOL rc = 0;
-	va_list ap = { 0 };
+	va_list ap = WINPR_C_ARRAY_INIT;
 	va_start(ap, fkt);
 	rc = ArrayList_ForEachAP(arrayList, fkt, ap);
 	va_end(ap);
@@ -540,7 +546,7 @@ BOOL ArrayList_ForEach(wArrayList* arrayList, ArrayList_ForEachFkt fkt, ...)
 BOOL ArrayList_ForEachAP(wArrayList* arrayList, ArrayList_ForEachFkt fkt, va_list ap)
 {
 	BOOL rc = FALSE;
-	va_list cap;
+	va_list cap = WINPR_C_ARRAY_INIT;
 
 	WINPR_ASSERT(arrayList);
 	WINPR_ASSERT(fkt);
@@ -569,12 +575,12 @@ fail:
 
 wArrayList* ArrayList_New(BOOL synchronized)
 {
-	wObject* obj = NULL;
-	wArrayList* arrayList = NULL;
+	wObject* obj = nullptr;
+	wArrayList* arrayList = nullptr;
 	arrayList = (wArrayList*)calloc(1, sizeof(wArrayList));
 
 	if (!arrayList)
-		return NULL;
+		return nullptr;
 
 	arrayList->synchronized = synchronized;
 	arrayList->growthFactor = 2;
@@ -585,14 +591,15 @@ wArrayList* ArrayList_New(BOOL synchronized)
 	if (!ArrayList_EnsureCapacity(arrayList, 32))
 		goto fail;
 
-	InitializeCriticalSectionAndSpinCount(&arrayList->lock, 4000);
+	if (!InitializeCriticalSectionAndSpinCount(&arrayList->lock, 4000))
+		goto fail;
 	return arrayList;
 fail:
 	WINPR_PRAGMA_DIAG_PUSH
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	ArrayList_Free(arrayList);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void ArrayList_Free(wArrayList* arrayList)
@@ -602,6 +609,6 @@ void ArrayList_Free(wArrayList* arrayList)
 
 	ArrayList_Clear(arrayList);
 	DeleteCriticalSection(&arrayList->lock);
-	free(arrayList->array);
+	free((void*)arrayList->array);
 	free(arrayList);
 }

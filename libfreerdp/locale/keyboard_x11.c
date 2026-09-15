@@ -49,6 +49,7 @@ static BOOL parse_xkb_rule_names(char* xkb_rule, unsigned long num_bytes, char**
 	for (size_t i = 0, index = 0; i < num_bytes; i++, index++)
 	{
 		char* ptr = xkb_rule + i;
+		i += strnlen(ptr, num_bytes - i);
 
 		switch (index)
 		{
@@ -66,23 +67,28 @@ static BOOL parse_xkb_rule_names(char* xkb_rule, unsigned long num_bytes, char**
 				break;
 			}
 			case 3: // variant
+			{
+				/* If multiple variants are present we just take the first one */
+				char* delimiter = strchr(ptr, ',');
+				if (delimiter)
+					*delimiter = '\0';
 				*variant = ptr;
-				break;
+			}
+			break;
 			case 4: // option
 				break;
 			default:
 				break;
 		}
-		i += strlen(ptr);
 	}
 	return TRUE;
 }
 
 static DWORD kbd_layout_id_from_x_property(Display* display, Window root, char* property_name)
 {
-	char* layout = NULL;
-	char* variant = NULL;
-	char* rule = NULL;
+	char* layout = nullptr;
+	char* variant = nullptr;
+	char* rule = nullptr;
 	Atom type = None;
 	int item_size = 0;
 	unsigned long items = 0;
@@ -115,7 +121,7 @@ static DWORD kbd_layout_id_from_x_property(Display* display, Window root, char* 
 
 int freerdp_detect_keyboard_layout_from_xkb(DWORD* keyboardLayoutId)
 {
-	Display* display = XOpenDisplay(NULL);
+	Display* display = XOpenDisplay(nullptr);
 
 	if (!display)
 		return 0;

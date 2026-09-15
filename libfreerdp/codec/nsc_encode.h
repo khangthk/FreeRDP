@@ -22,9 +22,13 @@
 #ifndef FREERDP_LIB_CODEC_NSC_ENCODE_H
 #define FREERDP_LIB_CODEC_NSC_ENCODE_H
 
+#include <winpr/wtypes.h>
 #include <freerdp/api.h>
+#include <freerdp/codec/nsc.h>
 
+WINPR_ATTR_NODISCARD
 FREERDP_LOCAL BOOL nsc_encode(NSC_CONTEXT* WINPR_RESTRICT context,
                               const BYTE* WINPR_RESTRICT bmpdata, UINT32 rowstride);
+void nsc_context_planebuffers_free(NSC_CONTEXT_PRIV* priv);
 
 #endif /* FREERDP_LIB_CODEC_NSC_ENCODE_H */

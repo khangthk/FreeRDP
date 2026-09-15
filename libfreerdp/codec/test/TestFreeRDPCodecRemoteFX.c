@@ -800,7 +800,7 @@ static UINT32 srefImage
 #define FORMAT_SIZE 4ULL
 #define FORMAT PIXEL_FORMAT_XRGB32
 
-static INLINE size_t fuzzyCompare(BYTE b1, BYTE b2)
+static inline size_t fuzzyCompare(BYTE b1, BYTE b2)
 {
 	if (b1 > b2)
 		return b1 - b2;
@@ -845,9 +845,9 @@ static BOOL fuzzyCompareImage(const UINT32* crefImage, const BYTE* img, size_t n
 int TestFreeRDPCodecRemoteFX(int argc, char* argv[])
 {
 	int rc = -1;
-	REGION16 region = { 0 };
-	RFX_CONTEXT* context = NULL;
-	BYTE* dest = NULL;
+	REGION16 region = WINPR_C_ARRAY_INIT;
+	RFX_CONTEXT* context = nullptr;
+	BYTE* dest = nullptr;
 	size_t stride = FORMAT_SIZE * IMG_WIDTH;
 
 	WINPR_UNUSED(argc);
@@ -873,14 +873,6 @@ int TestFreeRDPCodecRemoteFX(int argc, char* argv[])
 	                         FORMAT, stride, IMG_HEIGHT, &region))
 		goto fail;
 	region16_print(&region);
-
-#if 0
-	FILE *f = fopen("/tmp/windows.data", "w");
-	if (f) {
-		fwrite(dest, IMG_WIDTH * IMG_HEIGHT, FORMAT_SIZE, f);
-		fclose(f);
-	}
-#endif
 
 	if (!fuzzyCompareImage(srefImage, dest, IMG_WIDTH * IMG_HEIGHT))
 		goto fail;

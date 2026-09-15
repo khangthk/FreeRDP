@@ -27,7 +27,8 @@
 
 #define TAG FREERDP_TAG("core.gateway.rpc")
 
-static ALIGN64 const RPC_FAULT_CODE RPC_FAULT_CODES[] = {
+ALIGN64
+static const RPC_FAULT_CODE RPC_FAULT_CODES[] = {
 	DEFINE_RPC_FAULT_CODE(nca_s_fault_object_not_found, CAT_GATEWAY),
 	DEFINE_RPC_FAULT_CODE(nca_s_fault_cancel, CAT_GATEWAY),
 	DEFINE_RPC_FAULT_CODE(nca_s_fault_addr_error, CAT_GATEWAY),
@@ -347,6 +348,8 @@ static UINT32 rpc_map_status_code_to_win32_error_code(UINT32 code)
 
 		case nca_s_fault_no_client_stub:
 			return nca_s_fault_no_client_stub;
+		default:
+			break;
 	}
 
 	return code;

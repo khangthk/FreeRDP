@@ -176,7 +176,8 @@ static const XKB_KEY_NAME_SCANCODE XKB_KEY_NAME_SCANCODE_TABLE[] = {
 	{ "RWIN", RDP_SCANCODE_RWIN },                /* 134: RWIN [Super_R] */
 	{ "COMP", RDP_SCANCODE_APPS },                /* 135: COMP [Menu] */
 	{ "STOP", RDP_SCANCODE_BROWSER_STOP },        /* 136: STOP [Cancel] */
-	{ "AGAI", RDP_SCANCODE_UNKNOWN },             /* 137: AGAI [Redo] */
+	{ "AGAI" /* codespell:ignore */, RDP_SCANCODE_UNKNOWN },
+	/* 137: AGAI [Redo] */                        /* codespell:ignore */
 	{ "PROP", RDP_SCANCODE_UNKNOWN },             /* 138: PROP [SunProps] */
 	{ "UNDO", RDP_SCANCODE_UNKNOWN },             /* 139: UNDO [Undo] */
 	{ "FRNT", RDP_SCANCODE_UNKNOWN },             /* 140: FRNT [SunFront] */
@@ -305,15 +306,15 @@ static void* freerdp_keyboard_xkb_init(void)
 {
 	int status = 0;
 
-	Display* display = XOpenDisplay(NULL);
+	Display* display = XOpenDisplay(nullptr);
 
 	if (!display)
-		return NULL;
+		return nullptr;
 
-	status = XkbQueryExtension(display, NULL, NULL, NULL, NULL, NULL);
+	status = XkbQueryExtension(display, nullptr, nullptr, nullptr, nullptr, nullptr);
 
 	if (!status)
-		return NULL;
+		return nullptr;
 
 	return (void*)display;
 }
@@ -351,7 +352,7 @@ int freerdp_keyboard_init_xkbfile(DWORD* keyboardLayoutId, DWORD* x11_keycode_to
 /* return substring starting after nth comma, ending at following comma */
 static char* comma_substring(char* s, size_t n)
 {
-	char* p = NULL;
+	char* p = nullptr;
 
 	if (!s)
 		return "";
@@ -376,8 +377,8 @@ int detect_keyboard_layout_from_xkbfile(void* display, DWORD* keyboardLayoutId)
 	if (!display)
 		return -2;
 
-	char* rules = NULL;
-	XkbRF_VarDefsRec rules_names = { 0 };
+	char* rules = nullptr;
+	XkbRF_VarDefsRec rules_names = WINPR_C_ARRAY_INIT;
 	const Bool rc = XkbRF_GetNamesProp(display, &rules, &rules_names);
 	if (!rc)
 	{
@@ -391,8 +392,8 @@ int detect_keyboard_layout_from_xkbfile(void* display, DWORD* keyboardLayoutId)
 		DEBUG_KBD("variants: %s", rules_names.variant ? rules_names.variant : "");
 
 		DWORD group = 0;
-		XkbStateRec state = { 0 };
-		XKeyboardState coreKbdState = { 0 };
+		XkbStateRec state = WINPR_C_ARRAY_INIT;
+		XKeyboardState coreKbdState = WINPR_C_ARRAY_INIT;
 		XGetKeyboardControl(display, &coreKbdState);
 
 		if (XkbGetState(display, XkbUseCoreKbd, &state) == Success)
@@ -421,21 +422,22 @@ static int xkb_cmp(const void* pva, const void* pvb)
 {
 	const XKB_KEY_NAME_SCANCODE* a = pva;
 	const XKB_KEY_NAME_SCANCODE* b = pvb;
+
+	if (!a && !b)
+		return 0;
 	if (!a)
 		return 1;
 	if (!b)
 		return -1;
-	if (!a && !b)
-		return 0;
 	return strcmp(a->xkb_keyname, b->xkb_keyname);
 }
 
 static BOOL try_add(size_t offset, const char* xkb_keyname, DWORD* x11_keycode_to_rdp_scancode,
 
-                    size_t count)
+                    WINPR_ATTR_UNUSED size_t count)
 {
 	static BOOL initialized = FALSE;
-	static XKB_KEY_NAME_SCANCODE copy[ARRAYSIZE(XKB_KEY_NAME_SCANCODE_TABLE)] = { 0 };
+	static XKB_KEY_NAME_SCANCODE copy[ARRAYSIZE(XKB_KEY_NAME_SCANCODE_TABLE)] = WINPR_C_ARRAY_INIT;
 	if (!initialized)
 	{
 		memcpy(copy, XKB_KEY_NAME_SCANCODE_TABLE, sizeof(copy));
@@ -443,7 +445,7 @@ static BOOL try_add(size_t offset, const char* xkb_keyname, DWORD* x11_keycode_t
 		initialized = TRUE;
 	}
 
-	XKB_KEY_NAME_SCANCODE key = { 0 };
+	XKB_KEY_NAME_SCANCODE key = WINPR_C_ARRAY_INIT;
 	key.xkb_keyname = xkb_keyname;
 	XKB_KEY_NAME_SCANCODE* found =
 	    bsearch(&key, copy, ARRAYSIZE(copy), sizeof(XKB_KEY_NAME_SCANCODE), xkb_cmp);
@@ -468,7 +470,7 @@ int freerdp_keyboard_load_map_from_xkbfile(void* display, DWORD* x11_keycode_to_
 	XkbDescPtr xkb = XkbGetMap(display, 0, XkbUseCoreKbd);
 	if (!xkb)
 	{
-		DEBUG_KBD("XkbGetMap() == NULL");
+		DEBUG_KBD("XkbGetMap() == nullptr");
 		return -3;
 	}
 
@@ -496,7 +498,7 @@ int freerdp_keyboard_load_map_from_xkbfile(void* display, DWORD* x11_keycode_to_
 
 			if (!found)
 			{
-				DEBUG_KBD("%4s: keycode: 0x%02X -> no RDP scancode found", xkb_keyname, i);
+				DEBUG_KBD("%4s: keycode: 0x%02" PRIxz " -> no RDP scancode found", xkb_keyname, i);
 			}
 			else
 				status = 0;

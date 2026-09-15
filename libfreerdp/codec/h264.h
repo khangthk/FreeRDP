@@ -44,10 +44,10 @@ extern "C"
 	struct S_H264_CONTEXT_SUBSYSTEM
 	{
 		const char* name;
-		pfnH264SubsystemInit Init;
+		WINPR_ATTR_NODISCARD pfnH264SubsystemInit Init;
 		pfnH264SubsystemUninit Uninit;
-		pfnH264SubsystemDecompress Decompress;
-		pfnH264SubsystemCompress Compress;
+		WINPR_ATTR_NODISCARD pfnH264SubsystemDecompress Decompress;
+		WINPR_ATTR_NODISCARD pfnH264SubsystemCompress Compress;
 	};
 
 	struct S_H264_CONTEXT
@@ -62,6 +62,7 @@ extern "C"
 		UINT32 FrameRate;
 		UINT32 QP;
 		UINT32 UsageType;
+		UINT32 hwAccel;
 		UINT32 NumberOfThreads;
 
 		UINT32 iStride[3];
@@ -84,8 +85,12 @@ extern "C"
 
 		void* lumaData;
 		wLog* log;
+
+		UINT32 YUVWidth;
+		UINT32 YUVHeight;
 	};
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_LOCAL BOOL avc420_ensure_buffer(H264_CONTEXT* h264, UINT32 stride, UINT32 width,
 	                                        UINT32 height);
 

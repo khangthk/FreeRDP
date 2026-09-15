@@ -55,6 +55,7 @@ extern "C"
 	FREERDP_API void redirection_free(rdpRedirection* redirection);
 
 	WINPR_ATTR_MALLOC(redirection_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API rdpRedirection* redirection_new(void);
 
 	/** \brief This function checks if all necessary settings for a given \b rdpRedirection are
@@ -66,14 +67,24 @@ extern "C"
 	 *
 	 *  \return \b TRUE if the redirection settings are ready to use, \b FALSE otherwise.
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL redirection_settings_are_valid(rdpRedirection* redirection, UINT32* pFlags);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL redirection_set_flags(rdpRedirection* redirection, UINT32 flags);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL redirection_set_session_id(rdpRedirection* redirection, UINT32 session_id);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL redirection_set_byte_option(rdpRedirection* redirection, UINT32 flag,
 	                                             const BYTE* data, size_t length);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL redirection_set_string_option(rdpRedirection* redirection, UINT32 flag,
 	                                               const char* str);
+
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL redirection_set_array_option(rdpRedirection* redirection, UINT32 flag,
 	                                              const char** str, size_t count);
 

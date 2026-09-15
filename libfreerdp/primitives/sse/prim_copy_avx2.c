@@ -28,51 +28,69 @@
 
 #include <freerdp/codec/color.h>
 
-#if defined(SSE2_ENABLED)
-#define TAG FREERDP_TAG("primitives.copy")
-
+#if defined(SSE_AVX_INTRINSICS_ENABLED)
 #include <emmintrin.h>
 #include <immintrin.h>
 
-static INLINE pstatus_t avx2_image_copy_no_overlap_convert(
-    BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat, UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
-    UINT32 nWidth, UINT32 nHeight, const BYTE* WINPR_RESTRICT pSrcData, DWORD SrcFormat,
-    UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc, const gdiPalette* WINPR_RESTRICT palette,
-    SSIZE_T srcVMultiplier, SSIZE_T srcVOffset, SSIZE_T dstVMultiplier, SSIZE_T dstVOffset);
+static inline __m256i mm256_set_epu32(uint32_t i0, uint32_t i1, uint32_t i2, uint32_t i3,
+                                      uint32_t i4, uint32_t i5, uint32_t i6, uint32_t i7)
+{
+	return _mm256_set_epi32((int32_t)i0, (int32_t)i1, (int32_t)i2, (int32_t)i3, (int32_t)i4,
+	                        (int32_t)i5, (int32_t)i6, (int32_t)i7);
+}
 
-static INLINE pstatus_t avx2_image_copy_bgr24_bgrx32(BYTE* WINPR_RESTRICT pDstData, UINT32 nDstStep,
+static inline pstatus_t avx2_image_copy_bgr24_bgrx32(BYTE* WINPR_RESTRICT pDstData, UINT32 nDstStep,
                                                      UINT32 nXDst, UINT32 nYDst, UINT32 nWidth,
                                                      UINT32 nHeight,
                                                      const BYTE* WINPR_RESTRICT pSrcData,
                                                      UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc,
-                                                     SSIZE_T srcVMultiplier, SSIZE_T srcVOffset,
-                                                     SSIZE_T dstVMultiplier, SSIZE_T dstVOffset)
+                                                     int64_t srcVMultiplier, int64_t srcVOffset,
+                                                     int64_t dstVMultiplier, int64_t dstVOffset)
 {
 
-	const SSIZE_T srcByte = 3;
-	const SSIZE_T dstByte = 4;
+	const int64_t srcByte = 3;
+	const int64_t dstByte = 4;
 
-	const __m256i mask = _mm256_set_epi32(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
-	const SSIZE_T rem = nWidth % 8;
-	const SSIZE_T width = nWidth - rem;
-	for (SSIZE_T y = 0; y < nHeight; y++)
+	const __m256i mask = mm256_set_epu32(0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,
+	                                     0xFF000000, 0xFF000000, 0xFF000000);
+	const __m256i smask = mm256_set_epu32(0xff171615, 0xff141312, 0xff1110ff, 0xffffffff,
+	                                      0xff0b0a09, 0xff080706, 0xff050403, 0xff020100);
+	const __m256i shelpmask = mm256_set_epu32(0xffffffff, 0xffffffff, 0xffffff1f, 0xff1e1d1c,
+	                                          0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff);
+	const UINT32 rem = nWidth % 8;
+	const int64_t width = nWidth - rem;
+
+	for (int64_t y = 0; y < nHeight; y++)
 	{
 		const BYTE* WINPR_RESTRICT srcLine =
 		    &pSrcData[srcVMultiplier * (y + nYSrc) * nSrcStep + srcVOffset];
 		BYTE* WINPR_RESTRICT dstLine =
 		    &pDstData[dstVMultiplier * (y + nYDst) * nDstStep + dstVOffset];
 
-		SSIZE_T x = 0;
+		int64_t x = 0;
+
+		/* Ensure alignment requirements can be met */
 		for (; x < width; x += 8)
 		{
-			const __m256i* src = (const __m256i*)&srcLine[(x + nXSrc) * srcByte];
-			__m256i* dst = (__m256i*)&dstLine[(x + nXDst) * dstByte];
+			const __m256i* src =
+			    WINPR_PACKED_ALIGN_CAST(const __m256i*, &srcLine[(x + nXSrc) * srcByte]);
+			__m256i* dst = WINPR_PACKED_ALIGN_CAST(__m256i*, &dstLine[(x + nXDst) * dstByte]);
 			const __m256i s0 = _mm256_loadu_si256(src);
-			const __m256i s1 = _mm256_loadu_si256(dst);
-			const __m256i s2 = _mm256_shuffle_epi8(s1, mask);
-			__m256i d0 = _mm256_blendv_epi8(s2, s0, mask);
+			__m256i s1 = _mm256_shuffle_epi8(s0, smask);
+
+			/* _mm256_shuffle_epi8 can not cross 128bit lanes.
+			 * manually copy these bytes with extract/insert */
+			const __m256i sx = _mm256_broadcastsi128_si256(_mm256_extractf128_si256(s0, 0));
+			const __m256i sxx = _mm256_shuffle_epi8(sx, shelpmask);
+			const __m256i bmask = _mm256_set_epi32(0x00000000, 0x00000000, 0x000000FF, 0x00FFFFFF,
+			                                       0x00000000, 0x00000000, 0x00000000, 0x00000000);
+			const __m256i merged = _mm256_blendv_epi8(s1, sxx, bmask);
+
+			const __m256i s2 = _mm256_loadu_si256(dst);
+			__m256i d0 = _mm256_blendv_epi8(merged, s2, mask);
 			_mm256_storeu_si256(dst, d0);
 		}
+
 		for (; x < nWidth; x++)
 		{
 			const BYTE* src = &srcLine[(x + nXSrc) * srcByte];
@@ -86,37 +104,38 @@ static INLINE pstatus_t avx2_image_copy_bgr24_bgrx32(BYTE* WINPR_RESTRICT pDstDa
 	return PRIMITIVES_SUCCESS;
 }
 
-static INLINE pstatus_t avx2_image_copy_bgrx32_bgrx32(BYTE* WINPR_RESTRICT pDstData,
+static inline pstatus_t avx2_image_copy_bgrx32_bgrx32(BYTE* WINPR_RESTRICT pDstData,
                                                       UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
                                                       UINT32 nWidth, UINT32 nHeight,
                                                       const BYTE* WINPR_RESTRICT pSrcData,
                                                       UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc,
-                                                      SSIZE_T srcVMultiplier, SSIZE_T srcVOffset,
-                                                      SSIZE_T dstVMultiplier, SSIZE_T dstVOffset)
+                                                      int64_t srcVMultiplier, int64_t srcVOffset,
+                                                      int64_t dstVMultiplier, int64_t dstVOffset)
 {
 
-	const SSIZE_T srcByte = 4;
-	const SSIZE_T dstByte = 4;
+	const int64_t srcByte = 4;
+	const int64_t dstByte = 4;
 
 	const __m256i mask = _mm256_setr_epi8(
 	    (char)0xFF, (char)0xFF, (char)0xFF, 0x00, (char)0xFF, (char)0xFF, (char)0xFF, 0x00,
 	    (char)0xFF, (char)0xFF, (char)0xFF, 0x00, (char)0xFF, (char)0xFF, (char)0xFF, 0x00,
 	    (char)0xFF, (char)0xFF, (char)0xFF, 0x00, (char)0xFF, (char)0xFF, (char)0xFF, 0x00,
 	    (char)0xFF, (char)0xFF, (char)0xFF, 0x00, (char)0xFF, (char)0xFF, (char)0xFF, 0x00);
-	const SSIZE_T rem = nWidth % 8;
-	const SSIZE_T width = nWidth - rem;
-	for (SSIZE_T y = 0; y < nHeight; y++)
+	const UINT32 rem = nWidth % 8;
+	const int64_t width = nWidth - rem;
+	for (int64_t y = 0; y < nHeight; y++)
 	{
 		const BYTE* WINPR_RESTRICT srcLine =
 		    &pSrcData[srcVMultiplier * (y + nYSrc) * nSrcStep + srcVOffset];
 		BYTE* WINPR_RESTRICT dstLine =
 		    &pDstData[dstVMultiplier * (y + nYDst) * nDstStep + dstVOffset];
 
-		SSIZE_T x = 0;
+		int64_t x = 0;
 		for (; x < width; x += 8)
 		{
-			const __m256i* src = (const __m256i*)&srcLine[(x + nXSrc) * srcByte];
-			__m256i* dst = (__m256i*)&dstLine[(x + nXDst) * dstByte];
+			const __m256i* src =
+			    WINPR_PACKED_ALIGN_CAST(const __m256i*, &srcLine[(x + nXSrc) * srcByte]);
+			__m256i* dst = WINPR_PACKED_ALIGN_CAST(__m256i*, &dstLine[(x + nXDst) * dstByte]);
 			const __m256i s0 = _mm256_loadu_si256(src);
 			const __m256i s1 = _mm256_loadu_si256(dst);
 			__m256i d0 = _mm256_blendv_epi8(s1, s0, mask);
@@ -140,7 +159,8 @@ static pstatus_t avx2_image_copy_no_overlap_dst_alpha(
     BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat, UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
     UINT32 nWidth, UINT32 nHeight, const BYTE* WINPR_RESTRICT pSrcData, DWORD SrcFormat,
     UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc, const gdiPalette* WINPR_RESTRICT palette,
-    SSIZE_T srcVMultiplier, SSIZE_T srcVOffset, SSIZE_T dstVMultiplier, SSIZE_T dstVOffset)
+    UINT32 flags, int64_t srcVMultiplier, int64_t srcVOffset, int64_t dstVMultiplier,
+    int64_t dstVOffset)
 {
 	WINPR_ASSERT(pDstData);
 	WINPR_ASSERT(pSrcData);
@@ -172,48 +192,26 @@ static pstatus_t avx2_image_copy_no_overlap_dst_alpha(
 					break;
 			}
 			break;
+		case PIXEL_FORMAT_RGBX32:
+		case PIXEL_FORMAT_RGBA32:
+			switch (DstFormat)
+			{
+				case PIXEL_FORMAT_RGBX32:
+				case PIXEL_FORMAT_RGBA32:
+					return avx2_image_copy_bgrx32_bgrx32(
+					    pDstData, nDstStep, nXDst, nYDst, nWidth, nHeight, pSrcData, nSrcStep,
+					    nXSrc, nYSrc, srcVMultiplier, srcVOffset, dstVMultiplier, dstVOffset);
+				default:
+					break;
+			}
+			break;
 		default:
 			break;
 	}
 
-	return avx2_image_copy_no_overlap_convert(
-	    pDstData, DstFormat, nDstStep, nXDst, nYDst, nWidth, nHeight, pSrcData, SrcFormat, nSrcStep,
-	    nXSrc, nYSrc, palette, srcVMultiplier, srcVOffset, dstVMultiplier, dstVOffset);
-}
-
-pstatus_t avx2_image_copy_no_overlap_convert(
-    BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat, UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
-    UINT32 nWidth, UINT32 nHeight, const BYTE* WINPR_RESTRICT pSrcData, DWORD SrcFormat,
-    UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc, const gdiPalette* WINPR_RESTRICT palette,
-    SSIZE_T srcVMultiplier, SSIZE_T srcVOffset, SSIZE_T dstVMultiplier, SSIZE_T dstVOffset)
-{
-	const SSIZE_T srcByte = FreeRDPGetBytesPerPixel(SrcFormat);
-	const SSIZE_T dstByte = FreeRDPGetBytesPerPixel(DstFormat);
-
-	const UINT32 width = nWidth - nWidth % 8;
-	for (SSIZE_T y = 0; y < nHeight; y++)
-	{
-		const BYTE* WINPR_RESTRICT srcLine =
-		    &pSrcData[srcVMultiplier * (y + nYSrc) * nSrcStep + srcVOffset];
-		BYTE* WINPR_RESTRICT dstLine =
-		    &pDstData[dstVMultiplier * (y + nYDst) * nDstStep + dstVOffset];
-
-		SSIZE_T x = 0;
-		WINPR_PRAGMA_UNROLL_LOOP
-		for (; x < width; x++)
-		{
-			const UINT32 color = FreeRDPReadColor_int(&srcLine[(x + nXSrc) * srcByte], SrcFormat);
-			const UINT32 dstColor = FreeRDPConvertColor(color, SrcFormat, DstFormat, palette);
-			FreeRDPWriteColor_int(&dstLine[(x + nXDst) * dstByte], DstFormat, dstColor);
-		}
-		for (; x < nWidth; x++)
-		{
-			const UINT32 color = FreeRDPReadColor_int(&srcLine[(x + nXSrc) * srcByte], SrcFormat);
-			const UINT32 dstColor = FreeRDPConvertColor(color, SrcFormat, DstFormat, palette);
-			FreeRDPWriteColor_int(&dstLine[(x + nXDst) * dstByte], DstFormat, dstColor);
-		}
-	}
-	return PRIMITIVES_SUCCESS;
+	primitives_t* gen = primitives_get_generic();
+	return gen->copy_no_overlap(pDstData, DstFormat, nDstStep, nXDst, nYDst, nWidth, nHeight,
+	                            pSrcData, SrcFormat, nSrcStep, nXSrc, nYSrc, palette, flags);
 }
 
 static pstatus_t avx2_image_copy_no_overlap(BYTE* WINPR_RESTRICT pDstData, DWORD DstFormat,
@@ -223,11 +221,11 @@ static pstatus_t avx2_image_copy_no_overlap(BYTE* WINPR_RESTRICT pDstData, DWORD
                                             UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc,
                                             const gdiPalette* WINPR_RESTRICT palette, UINT32 flags)
 {
-	const BOOL vSrcVFlip = (flags & FREERDP_FLIP_VERTICAL) ? TRUE : FALSE;
-	SSIZE_T srcVOffset = 0;
-	SSIZE_T srcVMultiplier = 1;
-	SSIZE_T dstVOffset = 0;
-	SSIZE_T dstVMultiplier = 1;
+	const BOOL vSrcVFlip = (flags & FREERDP_FLIP_VERTICAL) != 0;
+	int64_t srcVOffset = 0;
+	int64_t srcVMultiplier = 1;
+	int64_t dstVOffset = 0;
+	int64_t dstVMultiplier = 1;
 
 	if ((nWidth == 0) || (nHeight == 0))
 		return PRIMITIVES_SUCCESS;
@@ -253,7 +251,7 @@ static pstatus_t avx2_image_copy_no_overlap(BYTE* WINPR_RESTRICT pDstData, DWORD
 	if (((flags & FREERDP_KEEP_DST_ALPHA) != 0) && FreeRDPColorHasAlpha(DstFormat))
 		return avx2_image_copy_no_overlap_dst_alpha(pDstData, DstFormat, nDstStep, nXDst, nYDst,
 		                                            nWidth, nHeight, pSrcData, SrcFormat, nSrcStep,
-		                                            nXSrc, nYSrc, palette, srcVMultiplier,
+		                                            nXSrc, nYSrc, palette, flags, srcVMultiplier,
 		                                            srcVOffset, dstVMultiplier, dstVOffset);
 	else if (FreeRDPAreColorFormatsEqualNoAlpha(SrcFormat, DstFormat))
 		return generic_image_copy_no_overlap_memcpy(pDstData, DstFormat, nDstStep, nXDst, nYDst,
@@ -261,24 +259,22 @@ static pstatus_t avx2_image_copy_no_overlap(BYTE* WINPR_RESTRICT pDstData, DWORD
 		                                            nXSrc, nYSrc, palette, srcVMultiplier,
 		                                            srcVOffset, dstVMultiplier, dstVOffset, flags);
 	else
-		return avx2_image_copy_no_overlap_convert(pDstData, DstFormat, nDstStep, nXDst, nYDst,
-		                                          nWidth, nHeight, pSrcData, SrcFormat, nSrcStep,
-		                                          nXSrc, nYSrc, palette, srcVMultiplier, srcVOffset,
-		                                          dstVMultiplier, dstVOffset);
+	{
+		primitives_t* gen = primitives_get_generic();
+		return gen->copy_no_overlap(pDstData, DstFormat, nDstStep, nXDst, nYDst, nWidth, nHeight,
+		                            pSrcData, SrcFormat, nSrcStep, nXSrc, nYSrc, palette, flags);
+	}
 }
 #endif
 
 /* ------------------------------------------------------------------------- */
-void primitives_init_copy_avx2(primitives_t* prims)
+void primitives_init_copy_avx2_int(primitives_t* WINPR_RESTRICT prims)
 {
-#if defined(SSE2_ENABLED)
-	if (IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE))
-	{
-		WLog_VRB(PRIM_TAG, "AVX2 optimizations");
-		prims->copy_no_overlap = avx2_image_copy_no_overlap;
-	}
+#if defined(SSE_AVX_INTRINSICS_ENABLED)
+	WLog_VRB(PRIM_TAG, "AVX2 optimizations");
+	prims->copy_no_overlap = avx2_image_copy_no_overlap;
 #else
-	WLog_VRB(PRIM_TAG, "undefined WITH_SSE2");
+	WLog_VRB(PRIM_TAG, "undefined WITH_SIMD or WITH_AVX2 or AVX2 intrinsics not available");
 	WINPR_UNUSED(prims);
 #endif
 }

@@ -91,7 +91,9 @@ static CGContextRef mac_create_bitmap_context(rdpContext *context);
 	EventArgsInit(&e, "mfreerdp");
 	e.embed = TRUE;
 	e.handle = (void *)self;
-	PubSub_OnEmbedWindow(context->pubSub, context, &e);
+	if (PubSub_OnEmbedWindow(context->pubSub, context, &e) < 0)
+		return -1;
+
 	NSScreen *screen = [[NSScreen screens] objectAtIndex:0];
 	NSRect screenFrame = [screen frame];
 
@@ -112,7 +114,7 @@ static CGContextRef mac_create_bitmap_context(rdpContext *context);
 	mfc->client_width = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
 
 	if (!(mfc->common.thread =
-	          CreateThread(NULL, 0, mac_client_thread, (void *)context, 0, &mfc->mainThreadId)))
+	          CreateThread(nullptr, 0, mac_client_thread, (void *)context, 0, &mfc->mainThreadId)))
 	{
 		WLog_ERR(TAG, "failed to create client thread");
 		return -1;
@@ -127,7 +129,7 @@ DWORD WINAPI mac_client_thread(void *param)
 	{
 		int status;
 		DWORD rc;
-		HANDLE events[16] = { 0 };
+		HANDLE events[16] = WINPR_C_ARRAY_INIT;
 		HANDLE inputEvent;
 		DWORD nCount;
 		DWORD nCountTmp;
@@ -577,7 +579,7 @@ static BOOL updateFlagState(rdpInput *input, DWORD modFlags, DWORD aKbdModFlags,
 	BOOL press = ((modFlags & flag) != 0) && ((aKbdModFlags & flag) == 0);
 	BOOL release = ((modFlags & flag) == 0) && ((aKbdModFlags & flag) != 0);
 	DWORD keyFlags = 0;
-	const char *name = NULL;
+	const char *name = nullptr;
 	DWORD scancode = 0;
 
 	if ((modFlags & flag) == (aKbdModFlags & flag))
@@ -906,7 +908,7 @@ BOOL mac_pre_connect(freerdp *instance)
 BOOL mac_post_connect(freerdp *instance)
 {
 	rdpGdi *gdi;
-	rdpPointer rdp_pointer = { 0 };
+	rdpPointer rdp_pointer = WINPR_C_ARRAY_INIT;
 	mfContext *mfc;
 	MRDPView *view;
 
@@ -988,9 +990,9 @@ static BOOL mac_show_auth_dialog(MRDPView *view, NSString *title, char **usernam
 	free(*username);
 	free(*password);
 	free(*domain);
-	*username = NULL;
-	*password = NULL;
-	*domain = NULL;
+	*username = nullptr;
+	*password = nullptr;
+	*domain = nullptr;
 
 	dispatch_sync(dispatch_get_main_queue(), ^{
 		[dialog performSelectorOnMainThread:@selector(runModal:)
@@ -1045,7 +1047,7 @@ static BOOL mac_authenticate_raw(freerdp *instance, char **username, char **pass
 	const rdpSettings *settings = instance->context->settings;
 	mfContext *mfc = (mfContext *)instance->context;
 	MRDPView *view = (MRDPView *)mfc->view;
-	NSString *title = NULL;
+	NSString *title = nullptr;
 
 	switch (reason)
 	{
@@ -1106,9 +1108,9 @@ fail:
 	free(*username);
 	free(*domain);
 	free(*password);
-	*username = NULL;
-	*domain = NULL;
-	*password = NULL;
+	*username = nullptr;
+	*domain = nullptr;
+	*password = nullptr;
 	return FALSE;
 }
 
@@ -1151,7 +1153,7 @@ DWORD mac_verify_certificate_ex(freerdp *instance, const char *host, UINT16 port
 	MRDPView *view = (MRDPView *)mfc->view;
 	CertificateDialog *dialog = [CertificateDialog new];
 	const char *type = "RDP-Server";
-	char hostname[8192] = { 0 };
+	char hostname[8192] = WINPR_C_ARRAY_INIT;
 
 	if (flags & VERIFY_CERT_FLAG_GATEWAY)
 		type = "RDP-Gateway";
@@ -1159,7 +1161,7 @@ DWORD mac_verify_certificate_ex(freerdp *instance, const char *host, UINT16 port
 	if (flags & VERIFY_CERT_FLAG_REDIRECT)
 		type = "RDP-Redirect";
 
-	sprintf_s(hostname, sizeof(hostname), "%s %s:%" PRIu16, type, host, port);
+	(void)sprintf_s(hostname, sizeof(hostname), "%s %s:%" PRIu16, type, host, port);
 	dialog.serverHostname = [NSString stringWithCString:hostname encoding:NSUTF8StringEncoding];
 	dialog.commonName = [NSString stringWithCString:common_name encoding:NSUTF8StringEncoding];
 	dialog.subject = [NSString stringWithCString:subject encoding:NSUTF8StringEncoding];
@@ -1196,7 +1198,7 @@ DWORD mac_verify_changed_certificate_ex(freerdp *instance, const char *host, UIN
 	if (flags & VERIFY_CERT_FLAG_REDIRECT)
 		type = "RDP-Redirect";
 
-	sprintf_s(hostname, sizeof(hostname), "%s %s:%" PRIu16, type, host, port);
+	(void)sprintf_s(hostname, sizeof(hostname), "%s %s:%" PRIu16, type, host, port);
 	dialog.serverHostname = [NSString stringWithCString:hostname encoding:NSUTF8StringEncoding];
 	dialog.commonName = [NSString stringWithCString:common_name encoding:NSUTF8StringEncoding];
 	dialog.subject = [NSString stringWithCString:subject encoding:NSUTF8StringEncoding];
@@ -1263,10 +1265,10 @@ BOOL mf_Pointer_New(rdpContext *context, rdpPointer *pointer)
 	if (!freerdp_image_copy_from_pointer_data(cursor_data, format, 0, 0, 0, pointer->width,
 	                                          pointer->height, pointer->xorMaskData,
 	                                          pointer->lengthXorMask, pointer->andMaskData,
-	                                          pointer->lengthAndMask, pointer->xorBpp, NULL))
+	                                          pointer->lengthAndMask, pointer->xorBpp, nullptr))
 	{
 		free(cursor_data);
-		mrdpCursor->cursor_data = NULL;
+		mrdpCursor->cursor_data = nullptr;
 		return FALSE;
 	}
 
@@ -1400,29 +1402,37 @@ BOOL mac_begin_paint(rdpContext *context)
 
 BOOL mac_end_paint(rdpContext *context)
 {
-	rdpGdi *gdi;
-	HGDI_RGN invalid;
 	NSRect newDrawRect;
-	int ww, wh, dw, dh;
-	mfContext *mfc = (mfContext *)context;
-	MRDPView *view = (MRDPView *)mfc->view;
-	gdi = context->gdi;
-
-	if (!gdi)
-		return FALSE;
-
-	ww = mfc->client_width;
-	wh = mfc->client_height;
-	dw = freerdp_settings_get_uint32(mfc->common.context.settings, FreeRDP_DesktopWidth);
-	dh = freerdp_settings_get_uint32(mfc->common.context.settings, FreeRDP_DesktopHeight);
 
 	if ((!context) || (!context->gdi))
 		return FALSE;
 
-	if (context->gdi->primary->hdc->hwnd->invalid->null)
+	mfContext *mfc = (mfContext *)context;
+	MRDPView *view = (MRDPView *)mfc->view;
+	WINPR_ASSERT(view);
+
+	rdpGdi *gdi = context->gdi;
+
+	if (!gdi)
+		return FALSE;
+
+	const int ww = mfc->client_width;
+	const int wh = mfc->client_height;
+	const int dw = freerdp_settings_get_uint32(mfc->common.context.settings, FreeRDP_DesktopWidth);
+	const int dh = freerdp_settings_get_uint32(mfc->common.context.settings, FreeRDP_DesktopHeight);
+
+	HGDI_DC hdc = gdi->primary->hdc;
+	WINPR_ASSERT(hdc);
+	if (!hdc->hwnd)
 		return TRUE;
 
-	invalid = gdi->primary->hdc->hwnd->invalid;
+	HGDI_WND hwnd = hdc->hwnd;
+	WINPR_ASSERT(hwnd->invalid || (hwnd->ninvalid == 0));
+
+	if (hwnd->invalid->null)
+		return TRUE;
+
+	HGDI_RGN invalid = gdi->primary->hdc->hwnd->invalid;
 	newDrawRect.origin.x = invalid->x;
 	newDrawRect.origin.y = invalid->y;
 	newDrawRect.size.width = invalid->w;
@@ -1468,7 +1478,7 @@ BOOL mac_desktop_resize(rdpContext *context)
 	 * resize, and then continue with post-resizing graphical updates.
 	 */
 	CGContextRef old_context = view->bitmap_context;
-	view->bitmap_context = NULL;
+	view->bitmap_context = nullptr;
 	CGContextRelease(old_context);
 	mfc->width = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
 	mfc->height = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
@@ -1487,7 +1497,8 @@ BOOL mac_desktop_resize(rdpContext *context)
 	EventArgsInit(&e, "mfreerdp");
 	e.width = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
 	e.height = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
-	PubSub_OnResizeWindow(context->pubSub, context, &e);
+	if (PubSub_OnResizeWindow(context->pubSub, context, &e) < 0)
+		return FALSE;
 	return TRUE;
 }
 

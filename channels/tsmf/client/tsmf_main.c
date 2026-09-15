@@ -36,8 +36,7 @@
 
 BOOL tsmf_send_eos_response(IWTSVirtualChannelCallback* pChannelCallback, UINT32 message_id)
 {
-	wStream* s = NULL;
-	int status = -1;
+	ssize_t status = -1;
 	TSMF_CHANNEL_CALLBACK* callback = (TSMF_CHANNEL_CALLBACK*)pChannelCallback;
 
 	if (!callback)
@@ -48,7 +47,7 @@ BOOL tsmf_send_eos_response(IWTSVirtualChannelCallback* pChannelCallback, UINT32
 
 	if (callback && callback->stream_id && callback->channel && callback->channel->Write)
 	{
-		s = Stream_New(NULL, 24);
+		wStream* s = Stream_New(nullptr, 24);
 
 		if (!s)
 			return FALSE;
@@ -59,13 +58,15 @@ BOOL tsmf_send_eos_response(IWTSVirtualChannelCallback* pChannelCallback, UINT32
 		Stream_Write_UINT32(s, callback->stream_id);           /* StreamId */
 		Stream_Write_UINT32(s, TSMM_CLIENT_EVENT_ENDOFSTREAM); /* EventId */
 		Stream_Write_UINT32(s, 0);                             /* cbData */
-		DEBUG_TSMF("EOS response size %" PRIuz "", Stream_GetPosition(s));
-		status = callback->channel->Write(callback->channel, Stream_GetPosition(s),
-		                                  Stream_Buffer(s), NULL);
+		const size_t pos = Stream_GetPosition(s);
+		DEBUG_TSMF("EOS response size %" PRIuz "", pos);
+		WINPR_ASSERT(pos <= UINT32_MAX);
+		status =
+		    callback->channel->Write(callback->channel, (UINT32)pos, Stream_Buffer(s), nullptr);
 
 		if (status)
 		{
-			WLog_ERR(TAG, "response error %d", status);
+			WLog_ERR(TAG, "response error %" PRId32, WINPR_CXX_COMPAT_CAST(int32_t, status));
 		}
 
 		Stream_Free(s, TRUE);
@@ -77,14 +78,13 @@ BOOL tsmf_send_eos_response(IWTSVirtualChannelCallback* pChannelCallback, UINT32
 BOOL tsmf_playback_ack(IWTSVirtualChannelCallback* pChannelCallback, UINT32 message_id,
                        UINT64 duration, UINT32 data_size)
 {
-	wStream* s = NULL;
-	int status = -1;
+	ssize_t status = -1;
 	TSMF_CHANNEL_CALLBACK* callback = (TSMF_CHANNEL_CALLBACK*)pChannelCallback;
 
 	if (!callback)
 		return FALSE;
 
-	s = Stream_New(NULL, 32);
+	wStream* s = Stream_New(nullptr, 32);
 
 	if (!s)
 		return FALSE;
@@ -95,23 +95,25 @@ BOOL tsmf_playback_ack(IWTSVirtualChannelCallback* pChannelCallback, UINT32 mess
 	Stream_Write_UINT32(s, callback->stream_id); /* StreamId */
 	Stream_Write_UINT64(s, duration);            /* DataDuration */
 	Stream_Write_UINT64(s, data_size);           /* cbData */
-	DEBUG_TSMF("ACK response size %" PRIuz "", Stream_GetPosition(s));
+
+	const size_t pos = Stream_GetPosition(s);
+	DEBUG_TSMF("ACK response size %" PRIuz "", pos);
 
 	if (!callback->channel || !callback->channel->Write)
 	{
-		WLog_ERR(TAG, "callback=%p, channel=%p, write=%p", callback,
-		         (callback ? callback->channel : NULL),
-		         (callback && callback->channel ? callback->channel->Write : NULL));
+		WLog_ERR(TAG, "channel=%p, write=%p", WINPR_CXX_COMPAT_CAST(const void*, callback->channel),
+		         WINPR_CXX_COMPAT_CAST(const void*,
+		                               callback->channel ? callback->channel->Write : nullptr));
 	}
 	else
 	{
-		status = callback->channel->Write(callback->channel, Stream_GetPosition(s),
-		                                  Stream_Buffer(s), NULL);
+		status = callback->channel->Write(
+		    callback->channel, WINPR_ASSERTING_INT_CAST(uint32_t, pos), Stream_Buffer(s), nullptr);
 	}
 
 	if (status)
 	{
-		WLog_ERR(TAG, "response error %d", status);
+		WLog_ERR(TAG, "response error %" PRId32, WINPR_CXX_COMPAT_CAST(int32_t, status));
 	}
 
 	Stream_Free(s, TRUE);
@@ -125,24 +127,23 @@ BOOL tsmf_playback_ack(IWTSVirtualChannelCallback* pChannelCallback, UINT32 mess
  */
 static UINT tsmf_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, wStream* data)
 {
-	size_t length = 0;
-	wStream* input = NULL;
-	wStream* output = NULL;
+	wStream* input = nullptr;
+	wStream* output = nullptr;
 	UINT error = CHANNEL_RC_OK;
 	BOOL processed = FALSE;
-	TSMF_IFMAN ifman = { 0 };
+	TSMF_IFMAN ifman = WINPR_C_ARRAY_INIT;
 	UINT32 MessageId = 0;
 	UINT32 FunctionId = 0;
 	UINT32 InterfaceId = 0;
 	TSMF_CHANNEL_CALLBACK* callback = (TSMF_CHANNEL_CALLBACK*)pChannelCallback;
-	UINT32 cbSize = Stream_GetRemainingLength(data);
+	const size_t cbSize = Stream_GetRemainingLength(data);
 
 	/* 2.2.1 Shared Message Header (SHARED_MSG_HEADER) */
-	if (!Stream_CheckAndLogRequiredLength(TAG, data, 12))
+	if (!Stream_CheckAndLogRequiredLength(TAG, data, 12) || (cbSize > UINT32_MAX))
 		return ERROR_INVALID_DATA;
 
 	input = data;
-	output = Stream_New(NULL, 256);
+	output = Stream_New(nullptr, 256);
 
 	if (!output)
 		return ERROR_OUTOFMEMORY;
@@ -162,7 +163,7 @@ static UINT tsmf_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, 
 	ifman.stream_id = callback->stream_id;
 	ifman.message_id = MessageId;
 	ifman.input = input;
-	ifman.input_size = cbSize - 12;
+	ifman.input_size = (UINT32)(cbSize - 12U);
 	ifman.output = output;
 	ifman.output_pending = FALSE;
 	ifman.output_interface_id = InterfaceId;
@@ -333,8 +334,8 @@ static UINT tsmf_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, 
 			break;
 	}
 
-	input = NULL;
-	ifman.input = NULL;
+	input = nullptr;
+	ifman.input = nullptr;
 
 	if (error)
 	{
@@ -357,6 +358,8 @@ static UINT tsmf_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, 
 				   This message is not supported in this channel. */
 				processed = TRUE;
 				break;
+			default:
+				break;
 		}
 
 		if (!processed)
@@ -374,12 +377,15 @@ static UINT tsmf_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, 
 	if (processed && !ifman.output_pending)
 	{
 		/* Response packet does not have FunctionId */
-		length = Stream_GetPosition(output);
-		Stream_SetPosition(output, 0);
+		const size_t length = Stream_GetPosition(output);
+		if (length > UINT32_MAX)
+			goto out;
+		Stream_ResetPosition(output);
 		Stream_Write_UINT32(output, ifman.output_interface_id);
 		Stream_Write_UINT32(output, MessageId);
 		DEBUG_TSMF("response size %d", length);
-		error = callback->channel->Write(callback->channel, length, Stream_Buffer(output), NULL);
+		error = callback->channel->Write(callback->channel, (UINT32)length, Stream_Buffer(output),
+		                                 nullptr);
 
 		if (error)
 		{
@@ -399,8 +405,8 @@ out:
  */
 static UINT tsmf_on_close(IWTSVirtualChannelCallback* pChannelCallback)
 {
-	TSMF_STREAM* stream = NULL;
-	TSMF_PRESENTATION* presentation = NULL;
+	TSMF_STREAM* stream = nullptr;
+	TSMF_PRESENTATION* presentation = nullptr;
 	TSMF_CHANNEL_CALLBACK* callback = (TSMF_CHANNEL_CALLBACK*)pChannelCallback;
 	DEBUG_TSMF("");
 
@@ -427,10 +433,12 @@ static UINT tsmf_on_close(IWTSVirtualChannelCallback* pChannelCallback)
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT tsmf_on_new_channel_connection(IWTSListenerCallback* pListenerCallback,
-                                           IWTSVirtualChannel* pChannel, BYTE* Data, BOOL* pbAccept,
+                                           IWTSVirtualChannel* pChannel,
+                                           WINPR_ATTR_UNUSED BYTE* Data,
+                                           WINPR_ATTR_UNUSED BOOL* pbAccept,
                                            IWTSVirtualChannelCallback** ppCallback)
 {
-	TSMF_CHANNEL_CALLBACK* callback = NULL;
+	TSMF_CHANNEL_CALLBACK* callback = nullptr;
 	TSMF_LISTENER_CALLBACK* listener_callback = (TSMF_LISTENER_CALLBACK*)pListenerCallback;
 	DEBUG_TSMF("");
 	callback = (TSMF_CHANNEL_CALLBACK*)calloc(1, sizeof(TSMF_CHANNEL_CALLBACK));
@@ -440,7 +448,7 @@ static UINT tsmf_on_new_channel_connection(IWTSListenerCallback* pListenerCallba
 
 	callback->iface.OnDataReceived = tsmf_on_data_received;
 	callback->iface.OnClose = tsmf_on_close;
-	callback->iface.OnOpen = NULL;
+	callback->iface.OnOpen = nullptr;
 	callback->plugin = listener_callback->plugin;
 	callback->channel_mgr = listener_callback->channel_mgr;
 	callback->channel = pChannel;
@@ -495,17 +503,19 @@ static UINT tsmf_process_addin_args(IWTSPlugin* pPlugin, const ADDIN_ARGV* args)
 {
 	int status = 0;
 	DWORD flags = 0;
-	const COMMAND_LINE_ARGUMENT_A* arg = NULL;
+	const COMMAND_LINE_ARGUMENT_A* arg = nullptr;
 	TSMF_PLUGIN* tsmf = (TSMF_PLUGIN*)pPlugin;
 	COMMAND_LINE_ARGUMENT_A tsmf_args[] = { { "sys", COMMAND_LINE_VALUE_REQUIRED, "<subsystem>",
-		                                      NULL, NULL, -1, NULL, "audio subsystem" },
-		                                    { "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>", NULL,
-		                                      NULL, -1, NULL, "audio device name" },
+		                                      nullptr, nullptr, -1, nullptr, "audio subsystem" },
+		                                    { "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>",
+		                                      nullptr, nullptr, -1, nullptr, "audio device name" },
 		                                    { "decoder", COMMAND_LINE_VALUE_REQUIRED, "<subsystem>",
-		                                      NULL, NULL, -1, NULL, "decoder subsystem" },
-		                                    { NULL, 0, NULL, NULL, NULL, -1, NULL, NULL } };
+		                                      nullptr, nullptr, -1, nullptr, "decoder subsystem" },
+		                                    { nullptr, 0, nullptr, nullptr, nullptr, -1, nullptr,
+		                                      nullptr } };
 	flags = COMMAND_LINE_SIGIL_NONE | COMMAND_LINE_SEPARATOR_COLON;
-	status = CommandLineParseArgumentsA(args->argc, args->argv, tsmf_args, flags, tsmf, NULL, NULL);
+	status = CommandLineParseArgumentsA(args->argc, args->argv, tsmf_args, flags, tsmf, nullptr,
+	                                    nullptr);
 
 	if (status != 0)
 		return ERROR_INVALID_DATA;
@@ -542,7 +552,7 @@ static UINT tsmf_process_addin_args(IWTSPlugin* pPlugin, const ADDIN_ARGV* args)
 		{
 		}
 		CommandLineSwitchEnd(arg)
-	} while ((arg = CommandLineFindNextArgumentA(arg)) != NULL);
+	} while ((arg = CommandLineFindNextArgumentA(arg)) != nullptr);
 
 	return CHANNEL_RC_OK;
 }
@@ -555,8 +565,8 @@ static UINT tsmf_process_addin_args(IWTSPlugin* pPlugin, const ADDIN_ARGV* args)
 FREERDP_ENTRY_POINT(UINT VCAPITYPE tsmf_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints))
 {
 	UINT status = 0;
-	TSMF_PLUGIN* tsmf = NULL;
-	TsmfClientContext* context = NULL;
+	TSMF_PLUGIN* tsmf = nullptr;
+	TsmfClientContext* context = nullptr;
 	UINT error = CHANNEL_RC_NO_MEMORY;
 	tsmf = (TSMF_PLUGIN*)pEntryPoints->GetPlugin(pEntryPoints, "tsmf");
 
@@ -571,8 +581,8 @@ FREERDP_ENTRY_POINT(UINT VCAPITYPE tsmf_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pE
 		}
 
 		tsmf->iface.Initialize = tsmf_plugin_initialize;
-		tsmf->iface.Connected = NULL;
-		tsmf->iface.Disconnected = NULL;
+		tsmf->iface.Connected = nullptr;
+		tsmf->iface.Disconnected = nullptr;
 		tsmf->iface.Terminated = tsmf_plugin_terminated;
 		tsmf->rdpcontext = pEntryPoints->GetRdpContext(pEntryPoints);
 		context = (TsmfClientContext*)calloc(1, sizeof(TsmfClientContext));

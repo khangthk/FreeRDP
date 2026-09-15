@@ -30,6 +30,7 @@ extern "C"
 
 	typedef void (*freerdp_signal_handler_t)(int signum, const char* signame, void* context);
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API int freerdp_handle_signals(void);
 
 	/** \brief registers a cleanup handler for non fatal signals.
@@ -37,10 +38,11 @@ extern "C"
 	 *  This allows cleaning up resources like with \b atexit but for signals.
 	 *
 	 *  \param context a context for the clenaup handler.
-	 *  \param handler the function to call on cleanup. Must not be \b NULL
+	 *  \param handler the function to call on cleanup. Must not be \b nullptr
 	 *
 	 *  \return \b TRUE if registered successfully, \b FALSE otherwise.
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_add_signal_cleanup_handler(void* context,
 	                                                    freerdp_signal_handler_t handler);
 
@@ -49,7 +51,7 @@ extern "C"
 	 *  This allows removal of a cleanup handler for signals.
 	 *
 	 *  \param context a context for the clenaup handler.
-	 *  \param handler the function to call on cleanup. Must not be \b NULL
+	 *  \param handler the function to call on cleanup. Must not be \b nullptr
 	 *
 	 *  \return \b TRUE if unregistered successfully, \b FALSE otherwise.
 	 */

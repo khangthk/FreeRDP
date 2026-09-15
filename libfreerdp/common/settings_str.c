@@ -79,13 +79,18 @@ BOOL freerdp_settings_clone_keys(rdpSettings* dst, const rdpSettings* src)
 			break;
 			case FREERDP_SETTINGS_TYPE_POINTER: /* pointer */
 			{
-				const void* sval =
-				    freerdp_settings_get_pointer(src, (FreeRDP_Settings_Keys_Pointer)cur->id);
-				if (!freerdp_settings_set_pointer(dst, (FreeRDP_Settings_Keys_Pointer)cur->id,
-				                                  sval))
-					return FALSE;
+				if (cur->id == FreeRDP_instance)
+				{
+					const void* sval =
+					    freerdp_settings_get_pointer(src, (FreeRDP_Settings_Keys_Pointer)cur->id);
+					if (!freerdp_settings_set_pointer(dst, (FreeRDP_Settings_Keys_Pointer)cur->id,
+					                                  sval))
+						return FALSE;
+				}
 			}
 			break;
+			default:
+				return FALSE;
 		}
 	}
 	return TRUE;
@@ -234,6 +239,8 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				}
 			}
 			break;
+			default:
+				break;
 		}
 	}
 	return rc;
@@ -312,6 +319,8 @@ void freerdp_settings_dump(wLog* log, DWORD level, const rdpSettings* settings)
 				WLog_Print(log, level, "%s [POINTER]: '%p'", cur->str, sval);
 			}
 			break;
+			default:
+				break;
 		}
 	}
 }
@@ -326,12 +335,25 @@ void freerdp_settings_free_keys(rdpSettings* dst, BOOL cleanup)
 		switch (cur->type)
 		{
 			case FREERDP_SETTINGS_TYPE_STRING: /* strings */
-				(void)freerdp_settings_set_string_copy_(dst, (FreeRDP_Settings_Keys_String)cur->id,
-				                                        NULL, 0, cleanup);
+				if (!freerdp_settings_set_string_copy_(dst, (FreeRDP_Settings_Keys_String)cur->id,
+				                                       nullptr, 0, cleanup))
+				{
+					WLog_WARN(TAG,
+					          "freerdp_settings_set_string_copy_(dst, %" PRIdz
+					          ", nullptr, 0, %s) failed",
+					          cur->id, cleanup ? "true" : "false");
+				}
 				break;
 			case FREERDP_SETTINGS_TYPE_POINTER: /* pointer */
-				(void)freerdp_settings_set_pointer_len(dst, (FreeRDP_Settings_Keys_Pointer)cur->id,
-				                                       NULL, 0);
+				if (!freerdp_settings_set_pointer_len(dst, (FreeRDP_Settings_Keys_Pointer)cur->id,
+				                                      nullptr, 0))
+				{
+					WLog_WARN(
+					    TAG, "freerdp_settings_set_pointer_len(dst, %" PRIdz ", nullptr, 0) failed",
+					    cur->id);
+				}
+				break;
+			default:
 				break;
 		}
 	}
@@ -415,7 +437,7 @@ const char* freerdp_settings_get_name_for_key(SSIZE_T key)
 		if (cur->id == key)
 			return cur->str;
 	}
-	return NULL;
+	return nullptr;
 }
 
 BOOL freerdp_settings_copy_item(rdpSettings* dst, const rdpSettings* src, SSIZE_T id)

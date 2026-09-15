@@ -52,21 +52,21 @@ static BOOL CALLBACK init_module(PINIT_ONCE once, PVOID param, PVOID* context)
 #endif
 
 static TP_POOL DEFAULT_POOL = {
-	0,    /* DWORD Minimum */
-	500,  /* DWORD Maximum */
-	NULL, /* wArrayList* Threads */
-	NULL, /* wQueue* PendingQueue */
-	NULL, /* HANDLE TerminateEvent */
-	NULL, /* wCountdownEvent* WorkComplete */
+	0,       /* DWORD Minimum */
+	500,     /* DWORD Maximum */
+	nullptr, /* wArrayList* Threads */
+	nullptr, /* wQueue* PendingQueue */
+	nullptr, /* HANDLE TerminateEvent */
+	nullptr, /* wCountdownEvent* WorkComplete */
 };
 
 static DWORD WINAPI thread_pool_work_func(LPVOID arg)
 {
 	DWORD status = 0;
-	PTP_POOL pool = NULL;
-	PTP_WORK work = NULL;
+	PTP_POOL pool = nullptr;
+	PTP_WORK work = nullptr;
 	HANDLE events[2];
-	PTP_CALLBACK_INSTANCE callbackInstance = NULL;
+	PTP_CALLBACK_INSTANCE callbackInstance = nullptr;
 
 	pool = (PTP_POOL)arg;
 
@@ -107,7 +107,7 @@ static void threads_close(void* thread)
 static BOOL InitializeThreadpool(PTP_POOL pool)
 {
 	BOOL rc = FALSE;
-	wObject* obj = NULL;
+	wObject* obj = nullptr;
 
 	if (pool->Threads)
 		return TRUE;
@@ -118,7 +118,7 @@ static BOOL InitializeThreadpool(PTP_POOL pool)
 	if (!(pool->WorkComplete = CountdownEvent_New(0)))
 		goto fail;
 
-	if (!(pool->TerminateEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+	if (!(pool->TerminateEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr)))
 		goto fail;
 
 	if (!(pool->Threads = ArrayList_New(TRUE)))
@@ -127,13 +127,31 @@ static BOOL InitializeThreadpool(PTP_POOL pool)
 	obj = ArrayList_Object(pool->Threads);
 	obj->fnObjectFree = threads_close;
 
-	SYSTEM_INFO info = { 0 };
-	GetSystemInfo(&info);
-	if (info.dwNumberOfProcessors < 1)
-		info.dwNumberOfProcessors = 1;
-	if (!SetThreadpoolThreadMinimum(pool, info.dwNumberOfProcessors))
-		goto fail;
-	SetThreadpoolThreadMaximum(pool, info.dwNumberOfProcessors);
+#if !defined(WINPR_THREADPOOL_DEFAULT_MIN_COUNT)
+#error "WINPR_THREADPOOL_DEFAULT_MIN_COUNT must be defined"
+#endif
+#if !defined(WINPR_THREADPOOL_DEFAULT_MAX_COUNT)
+#error "WINPR_THREADPOOL_DEFAULT_MAX_COUNT must be defined"
+#endif
+
+	{
+		SYSTEM_INFO info = WINPR_C_ARRAY_INIT;
+		GetSystemInfo(&info);
+
+		DWORD min = info.dwNumberOfProcessors;
+		DWORD max = info.dwNumberOfProcessors;
+		if (info.dwNumberOfProcessors < WINPR_THREADPOOL_DEFAULT_MIN_COUNT)
+			min = WINPR_THREADPOOL_DEFAULT_MIN_COUNT;
+		if (info.dwNumberOfProcessors > WINPR_THREADPOOL_DEFAULT_MAX_COUNT)
+			max = WINPR_THREADPOOL_DEFAULT_MAX_COUNT;
+		if (min > max)
+			min = max;
+
+		if (!SetThreadpoolThreadMinimum(pool, min))
+			goto fail;
+
+		SetThreadpoolThreadMaximum(pool, max);
+	}
 
 	rc = TRUE;
 
@@ -143,33 +161,32 @@ fail:
 
 PTP_POOL GetDefaultThreadpool(void)
 {
-	PTP_POOL pool = NULL;
-
-	pool = &DEFAULT_POOL;
+	PTP_POOL pool = &DEFAULT_POOL;
 
 	if (!InitializeThreadpool(pool))
-		return NULL;
+		return nullptr;
 
 	return pool;
 }
 
 PTP_POOL winpr_CreateThreadpool(PVOID reserved)
 {
-	PTP_POOL pool = NULL;
+	PTP_POOL pool = nullptr;
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return nullptr;
 	if (pCreateThreadpool)
 		return pCreateThreadpool(reserved);
 #else
 	WINPR_UNUSED(reserved);
 #endif
 	if (!(pool = (PTP_POOL)calloc(1, sizeof(TP_POOL))))
-		return NULL;
+		return nullptr;
 
 	if (!InitializeThreadpool(pool))
 	{
 		winpr_CloseThreadpool(pool);
-		return NULL;
+		return nullptr;
 	}
 
 	return pool;
@@ -178,7 +195,8 @@ PTP_POOL winpr_CreateThreadpool(PVOID reserved)
 VOID winpr_CloseThreadpool(PTP_POOL ptpp)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pCloseThreadpool)
 	{
 		pCloseThreadpool(ptpp);
@@ -193,7 +211,7 @@ VOID winpr_CloseThreadpool(PTP_POOL ptpp)
 	(void)CloseHandle(ptpp->TerminateEvent);
 
 	{
-		TP_POOL empty = { 0 };
+		TP_POOL empty = WINPR_C_ARRAY_INIT;
 		*ptpp = empty;
 	}
 
@@ -205,7 +223,8 @@ BOOL winpr_SetThreadpoolThreadMinimum(PTP_POOL ptpp, DWORD cthrdMic)
 {
 	BOOL rc = FALSE;
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return FALSE;
 	if (pSetThreadpoolThreadMinimum)
 		return pSetThreadpoolThreadMinimum(ptpp, cthrdMic);
 #endif
@@ -214,7 +233,7 @@ BOOL winpr_SetThreadpoolThreadMinimum(PTP_POOL ptpp, DWORD cthrdMic)
 	ArrayList_Lock(ptpp->Threads);
 	while (ArrayList_Count(ptpp->Threads) < ptpp->Minimum)
 	{
-		HANDLE thread = CreateThread(NULL, 0, thread_pool_work_func, (void*)ptpp, 0, NULL);
+		HANDLE thread = CreateThread(nullptr, 0, thread_pool_work_func, (void*)ptpp, 0, nullptr);
 		if (!thread)
 			goto fail;
 
@@ -235,7 +254,8 @@ fail:
 VOID winpr_SetThreadpoolThreadMaximum(PTP_POOL ptpp, DWORD cthrdMost)
 {
 #ifdef _WIN32
-	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);
+	if (!InitOnceExecuteOnce(&init_once_module, init_module, nullptr, nullptr))
+		return;
 	if (pSetThreadpoolThreadMaximum)
 	{
 		pSetThreadpoolThreadMaximum(ptpp, cthrdMost);

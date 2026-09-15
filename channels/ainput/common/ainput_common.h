@@ -25,9 +25,10 @@
 
 #include <freerdp/channels/ainput.h>
 
-static INLINE const char* ainput_flags_to_string(UINT64 flags, char* buffer, size_t size)
+WINPR_ATTR_NODISCARD
+static inline const char* ainput_flags_to_string(UINT64 flags, char* buffer, size_t size)
 {
-	char number[32] = { 0 };
+	char number[32] = WINPR_C_ARRAY_INIT;
 
 	if (flags & AINPUT_FLAGS_HAVE_REL)
 		winpr_str_append("AINPUT_FLAGS_HAVE_REL", buffer, size, "|");
@@ -50,7 +51,7 @@ static INLINE const char* ainput_flags_to_string(UINT64 flags, char* buffer, siz
 	if (flags & AINPUT_XFLAGS_BUTTON2)
 		winpr_str_append("AINPUT_XFLAGS_BUTTON2", buffer, size, "|");
 
-	_snprintf(number, sizeof(number), "[0x%08" PRIx64 "]", flags);
+	(void)_snprintf(number, sizeof(number), "[0x%08" PRIx64 "]", flags);
 	winpr_str_append(number, buffer, size, " ");
 
 	return buffer;

@@ -37,6 +37,7 @@
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
+#include <openssl/err.h>
 
 #include "privatekey.h"
 #include "cert_common.h"
@@ -95,10 +96,10 @@ static RSA* evp_pkey_to_rsa(const rdpPrivateKey* key)
 	if (!freerdp_key_is_rsa(key))
 	{
 		WLog_WARN(TAG, "Key is no RSA key");
-		return NULL;
+		return nullptr;
 	}
 
-	RSA* rsa = NULL;
+	RSA* rsa = nullptr;
 	BIO* bio = BIO_new(
 #if defined(LIBRESSL_VERSION_NUMBER)
 	    BIO_s_mem()
@@ -107,40 +108,58 @@ static RSA* evp_pkey_to_rsa(const rdpPrivateKey* key)
 #endif
 	);
 	if (!bio)
-		return NULL;
-	const int rc = PEM_write_bio_PrivateKey(bio, key->evp, NULL, NULL, 0, NULL, NULL);
+		return nullptr;
+	const int rc = PEM_write_bio_PrivateKey(bio, key->evp, nullptr, nullptr, 0, nullptr, nullptr);
 	if (rc != 1)
 		goto fail;
-	rsa = PEM_read_bio_RSAPrivateKey(bio, NULL, NULL, NULL);
+	rsa = PEM_read_bio_RSAPrivateKey(bio, nullptr, nullptr, nullptr);
 fail:
 	BIO_free_all(bio);
 	return rsa;
 }
 #endif
 
-static EVP_PKEY* evp_pkey_utils_from_pem(const char* data, size_t len, BOOL fromFile)
+static int pem_pwd_cb(char* buf, int size, WINPR_ATTR_UNUSED int rwflag, void* userdata)
 {
-	EVP_PKEY* evp = NULL;
-	BIO* bio = NULL;
+	const char* pwd = userdata;
+	if (!pwd || (size < 0))
+		return -1;
+	if (size == 0)
+		return 0;
+
+	size_t len = strlen(pwd);
+	if (len >= WINPR_ASSERTING_INT_CAST(size_t, size))
+		len = WINPR_ASSERTING_INT_CAST(size_t, size) - 1;
+	memcpy(buf, pwd, len);
+	buf[len] = '\0';
+	return WINPR_ASSERTING_INT_CAST(int, len);
+}
+
+static EVP_PKEY* evp_pkey_utils_from_pem(const char* data, size_t len, BOOL fromFile,
+                                         const char* password)
+{
+	EVP_PKEY* evp = nullptr;
+	BIO* bio = nullptr;
 	if (fromFile)
 		bio = BIO_new_file(data, "rb");
 	else
 	{
 		if (len > INT_MAX)
-			return NULL;
+			return nullptr;
 		bio = BIO_new_mem_buf(data, (int)len);
 	}
 
 	if (!bio)
 	{
 		WLog_ERR(TAG, "BIO_new failed for private key");
-		return NULL;
+		return nullptr;
 	}
 
-	evp = PEM_read_bio_PrivateKey(bio, NULL, NULL, 0);
+	evp = PEM_read_bio_PrivateKey(bio, nullptr, pem_pwd_cb,
+	                              WINPR_CAST_CONST_PTR_AWAY(password, void*));
 	BIO_free_all(bio);
 	if (!evp)
-		WLog_ERR(TAG, "PEM_read_bio_PrivateKey returned NULL [input length %" PRIuz "]", len);
+		WLog_ERR(TAG, "PEM_read_bio_PrivateKey returned nullptr [input length %" PRIuz "]", len);
 
 	return evp;
 }
@@ -160,7 +179,7 @@ static BOOL key_read_private(rdpPrivateKey* key)
 	RSA* rsa = evp_pkey_to_rsa(key);
 	if (!rsa)
 	{
-		char ebuffer[256] = { 0 };
+		char ebuffer[256] = WINPR_C_ARRAY_INIT;
 		WLog_ERR(TAG, "unable to load RSA key: %s.",
 		         winpr_strerror(errno, ebuffer, sizeof(ebuffer)));
 		goto fail;
@@ -178,22 +197,22 @@ static BOOL key_read_private(rdpPrivateKey* key)
 
 		default:
 		{
-			char ebuffer[256] = { 0 };
+			char ebuffer[256] = WINPR_C_ARRAY_INIT;
 			WLog_ERR(TAG, "unexpected error when checking RSA key: %s.",
 			         winpr_strerror(errno, ebuffer, sizeof(ebuffer)));
 			goto fail;
 		}
 	}
 
-	const BIGNUM* rsa_e = NULL;
-	const BIGNUM* rsa_n = NULL;
-	const BIGNUM* rsa_d = NULL;
+	const BIGNUM* rsa_e = nullptr;
+	const BIGNUM* rsa_n = nullptr;
+	const BIGNUM* rsa_d = nullptr;
 
 	RSA_get0_key(rsa, &rsa_n, &rsa_e, &rsa_d);
 #else
-	BIGNUM* rsa_e = NULL;
-	BIGNUM* rsa_n = NULL;
-	BIGNUM* rsa_d = NULL;
+	BIGNUM* rsa_e = nullptr;
+	BIGNUM* rsa_n = nullptr;
+	BIGNUM* rsa_d = nullptr;
 
 	if (!EVP_PKEY_get_bn_param(key->evp, OSSL_PKEY_PARAM_RSA_N, &rsa_n))
 		goto fail;
@@ -227,10 +246,16 @@ fail:
 
 rdpPrivateKey* freerdp_key_new_from_pem(const char* pem)
 {
+	return freerdp_key_new_from_pem_enc(pem, nullptr);
+}
+
+rdpPrivateKey* freerdp_key_new_from_pem_enc(const char* pem, const char* password)
+{
 	rdpPrivateKey* key = freerdp_key_new();
 	if (!key || !pem)
 		goto fail;
-	key->evp = evp_pkey_utils_from_pem(pem, strlen(pem), FALSE);
+
+	key->evp = evp_pkey_utils_from_pem(pem, strlen(pem), FALSE, password);
 	if (!key->evp)
 		goto fail;
 	if (!key_read_private(key))
@@ -238,17 +263,21 @@ rdpPrivateKey* freerdp_key_new_from_pem(const char* pem)
 	return key;
 fail:
 	freerdp_key_free(key);
-	return NULL;
+	return nullptr;
 }
 
 rdpPrivateKey* freerdp_key_new_from_file(const char* keyfile)
 {
+	return freerdp_key_new_from_file_enc(keyfile, nullptr);
+}
 
+rdpPrivateKey* freerdp_key_new_from_file_enc(const char* keyfile, const char* password)
+{
 	rdpPrivateKey* key = freerdp_key_new();
 	if (!key || !keyfile)
 		goto fail;
 
-	key->evp = evp_pkey_utils_from_pem(keyfile, strlen(keyfile), TRUE);
+	key->evp = evp_pkey_utils_from_pem(keyfile, strlen(keyfile), TRUE, password);
 	if (!key->evp)
 		goto fail;
 	if (!key_read_private(key))
@@ -256,7 +285,7 @@ rdpPrivateKey* freerdp_key_new_from_file(const char* keyfile)
 	return key;
 fail:
 	freerdp_key_free(key);
-	return NULL;
+	return nullptr;
 }
 
 rdpPrivateKey* freerdp_key_new(void)
@@ -267,12 +296,12 @@ rdpPrivateKey* freerdp_key_new(void)
 rdpPrivateKey* freerdp_key_clone(const rdpPrivateKey* key)
 {
 	if (!key)
-		return NULL;
+		return nullptr;
 
 	rdpPrivateKey* _key = (rdpPrivateKey*)calloc(1, sizeof(rdpPrivateKey));
 
 	if (!_key)
-		return NULL;
+		return nullptr;
 
 	if (key->evp)
 	{
@@ -302,7 +331,7 @@ out_fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	freerdp_key_free(_key);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }
 
 void freerdp_key_free(rdpPrivateKey* key)
@@ -322,7 +351,7 @@ const rdpCertInfo* freerdp_key_get_info(const rdpPrivateKey* key)
 {
 	WINPR_ASSERT(key);
 	if (!freerdp_key_is_rsa(key))
-		return NULL;
+		return nullptr;
 	return &key->cert;
 }
 
@@ -333,7 +362,7 @@ const BYTE* freerdp_key_get_exponent(const rdpPrivateKey* key, size_t* plength)
 	{
 		if (plength)
 			*plength = 0;
-		return NULL;
+		return nullptr;
 	}
 
 	if (plength)
@@ -375,17 +404,37 @@ size_t freerdp_key_get_bits(const rdpPrivateKey* key)
 	rc = EVP_PKEY_get_bits(key->evp);
 #endif
 
-	return rc;
+	return WINPR_ASSERTING_INT_CAST(size_t, rc);
 }
 
-BOOL freerdp_key_generate(rdpPrivateKey* key, size_t key_length)
+BOOL freerdp_key_generate(rdpPrivateKey* key, const char* type, size_t count, ...)
 {
 	BOOL rc = FALSE;
 
+	if (!type)
+	{
+		WLog_ERR(TAG, "Invalid argument type=%s", type);
+		return FALSE;
+	}
+	if (strncmp("RSA", type, 4) != 0)
+	{
+		WLog_ERR(TAG, "Argument type=%s is currently not supported, aborting", type);
+		return FALSE;
+	}
+	if (count != 1)
+	{
+		WLog_ERR(TAG, "Argument type=%s requires count=1, got %" PRIuz ", aborting", type, count);
+		return FALSE;
+	}
+	va_list ap = WINPR_C_ARRAY_INIT;
+	va_start(ap, count);
+	const int key_length = va_arg(ap, int);
+	va_end(ap);
+
 #if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
-	RSA* rsa = NULL;
+	RSA* rsa = nullptr;
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
-	rsa = RSA_generate_key(key_length, RSA_F4, NULL, NULL);
+	rsa = RSA_generate_key(key_length, RSA_F4, nullptr, nullptr);
 #else
 	{
 		BIGNUM* bn = BN_secure_new();
@@ -402,7 +451,7 @@ BOOL freerdp_key_generate(rdpPrivateKey* key, size_t key_length)
 		}
 
 		BN_set_word(bn, RSA_F4);
-		const int res = RSA_generate_key_ex(rsa, key_length, bn, NULL);
+		const int res = RSA_generate_key_ex(rsa, key_length, bn, nullptr);
 		BN_clear_free(bn);
 
 		if (res != 1)
@@ -416,28 +465,25 @@ BOOL freerdp_key_generate(rdpPrivateKey* key, size_t key_length)
 	if (!EVP_PKEY_assign_RSA(key->evp, rsa))
 	{
 		EVP_PKEY_free(key->evp);
-		key->evp = NULL;
+		key->evp = nullptr;
 		RSA_free(rsa);
 		return FALSE;
 	}
 
 	rc = TRUE;
 #else
-	EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL);
+	EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_from_name(nullptr, type, nullptr);
 	if (!pctx)
 		return FALSE;
 
 	if (EVP_PKEY_keygen_init(pctx) != 1)
 		goto fail;
 
-	if (key_length > INT_MAX)
-		goto fail;
-
-	if (EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, (int)key_length) != 1)
+	if (EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, key_length) != 1)
 		goto fail;
 
 	EVP_PKEY_free(key->evp);
-	key->evp = NULL;
+	key->evp = nullptr;
 
 	if (EVP_PKEY_generate(pctx, &key->evp) != 1)
 		goto fail;
@@ -451,17 +497,17 @@ fail:
 
 BYTE* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM param, size_t* plength)
 {
-	BYTE* buf = NULL;
+	BYTE* buf = nullptr;
 
 	WINPR_ASSERT(key);
 	WINPR_ASSERT(plength);
 
 	*plength = 0;
 
-	BIGNUM* bn = NULL;
+	BIGNUM* bn = nullptr;
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 
-	const char* pk = NULL;
+	const char* pk = nullptr;
 	switch (param)
 	{
 		case FREERDP_KEY_PARAM_RSA_D:
@@ -474,18 +520,18 @@ BYTE* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM par
 			pk = OSSL_PKEY_PARAM_RSA_N;
 			break;
 		default:
-			return NULL;
+			return nullptr;
 	}
 
 	if (!EVP_PKEY_get_bn_param(key->evp, pk, &bn))
-		return NULL;
+		return nullptr;
 #else
 	{
 		const RSA* rsa = EVP_PKEY_get0_RSA(key->evp);
 		if (!rsa)
-			return NULL;
+			return nullptr;
 
-		const BIGNUM* cbn = NULL;
+		const BIGNUM* cbn = nullptr;
 		switch (param)
 		{
 			case FREERDP_KEY_PARAM_RSA_D:
@@ -504,13 +550,13 @@ BYTE* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM par
 #endif
 				break;
 			default:
-				return NULL;
+				return nullptr;
 		}
 		if (!cbn)
-			return NULL;
+			return nullptr;
 		bn = BN_dup(cbn);
 		if (!bn)
-			return NULL;
+			return nullptr;
 	}
 #endif
 
@@ -518,19 +564,24 @@ BYTE* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM par
 	if (length < 0)
 		goto fail;
 
-	const size_t alloc_size = (size_t)length + 1ull;
-	buf = calloc(alloc_size, sizeof(BYTE));
+	{
+		const size_t alloc_size = (size_t)length + 1ull;
+		buf = calloc(alloc_size, sizeof(BYTE));
+	}
+
 	if (!buf)
 		goto fail;
 
-	const int bnlen = BN_bn2bin(bn, buf);
-	if (bnlen != length)
 	{
-		free(buf);
-		buf = NULL;
+		const int bnlen = BN_bn2bin(bn, buf);
+		if (bnlen != length)
+		{
+			free(buf);
+			buf = nullptr;
+		}
+		else
+			*plength = WINPR_ASSERTING_INT_CAST(size_t, length);
 	}
-	else
-		*plength = length;
 
 fail:
 	BN_free(bn);
@@ -541,12 +592,52 @@ WINPR_DIGEST_CTX* freerdp_key_digest_sign(rdpPrivateKey* key, WINPR_MD_TYPE dige
 {
 	WINPR_DIGEST_CTX* md_ctx = winpr_Digest_New();
 	if (!md_ctx)
-		return NULL;
+		return nullptr;
 
 	if (!winpr_DigestSign_Init(md_ctx, digest, key->evp))
 	{
 		winpr_Digest_Free(md_ctx);
-		return NULL;
+		return nullptr;
 	}
 	return md_ctx;
+}
+
+char* freerdp_key_get_pem(const rdpPrivateKey* key, size_t* plen, const char* password)
+{
+	WINPR_ASSERT(key);
+
+	if (!key->evp)
+		return nullptr;
+
+	/**
+	 * Don't manage certificates internally, leave it up entirely to the external client
+	 * implementation
+	 */
+	BIO* bio = BIO_new(BIO_s_mem());
+
+	if (!bio)
+	{
+		WLog_ERR(TAG, "BIO_new() failure");
+		return nullptr;
+	}
+
+	char* pem = nullptr;
+
+	const EVP_CIPHER* enc = nullptr;
+	if (password)
+		enc = EVP_aes_256_xts();
+
+	const int status = PEM_write_bio_PrivateKey(bio, key->evp, enc, nullptr, 0, nullptr,
+	                                            WINPR_CAST_CONST_PTR_AWAY(password, void*));
+	if (status < 0)
+	{
+		WLog_ERR(TAG, "PEM_write_bio_PrivateKey failure: %d", status);
+		goto fail;
+	}
+
+	pem = x509_utils_bio_read(bio, plen);
+
+fail:
+	BIO_free_all(bio);
+	return pem;
 }

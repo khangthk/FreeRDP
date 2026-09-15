@@ -32,21 +32,27 @@
 static const char* CREDSSP_PACKAGE_NAME = "CredSSP";
 
 static SECURITY_STATUS SEC_ENTRY credssp_InitializeSecurityContextW(
-    PCredHandle phCredential, PCtxtHandle phContext, SEC_WCHAR* pszTargetName, ULONG fContextReq,
-    ULONG Reserved1, ULONG TargetDataRep, PSecBufferDesc pInput, ULONG Reserved2,
-    PCtxtHandle phNewContext, PSecBufferDesc pOutput, PULONG pfContextAttr, PTimeStamp ptsExpiry)
+    WINPR_ATTR_UNUSED PCredHandle phCredential, WINPR_ATTR_UNUSED PCtxtHandle phContext,
+    WINPR_ATTR_UNUSED SEC_WCHAR* pszTargetName, WINPR_ATTR_UNUSED ULONG fContextReq,
+    WINPR_ATTR_UNUSED ULONG Reserved1, WINPR_ATTR_UNUSED ULONG TargetDataRep,
+    WINPR_ATTR_UNUSED PSecBufferDesc pInput, WINPR_ATTR_UNUSED ULONG Reserved2,
+    WINPR_ATTR_UNUSED PCtxtHandle phNewContext, WINPR_ATTR_UNUSED PSecBufferDesc pOutput,
+    WINPR_ATTR_UNUSED PULONG pfContextAttr, WINPR_ATTR_UNUSED PTimeStamp ptsExpiry)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
 static SECURITY_STATUS SEC_ENTRY credssp_InitializeSecurityContextA(
-    PCredHandle phCredential, PCtxtHandle phContext, SEC_CHAR* pszTargetName, ULONG fContextReq,
-    ULONG Reserved1, ULONG TargetDataRep, PSecBufferDesc pInput, ULONG Reserved2,
-    PCtxtHandle phNewContext, PSecBufferDesc pOutput, PULONG pfContextAttr, PTimeStamp ptsExpiry)
+    PCredHandle phCredential, PCtxtHandle phContext, WINPR_ATTR_UNUSED SEC_CHAR* pszTargetName,
+    WINPR_ATTR_UNUSED ULONG fContextReq, WINPR_ATTR_UNUSED ULONG Reserved1,
+    WINPR_ATTR_UNUSED ULONG TargetDataRep, WINPR_ATTR_UNUSED PSecBufferDesc pInput,
+    WINPR_ATTR_UNUSED ULONG Reserved2, PCtxtHandle phNewContext,
+    WINPR_ATTR_UNUSED PSecBufferDesc pOutput, WINPR_ATTR_UNUSED PULONG pfContextAttr,
+    WINPR_ATTR_UNUSED PTimeStamp ptsExpiry)
 {
-	CREDSSP_CONTEXT* context = NULL;
-	SSPI_CREDENTIALS* credentials = NULL;
+	CREDSSP_CONTEXT* context = nullptr;
+	SSPI_CREDENTIALS* credentials = nullptr;
 
 	/* behave like windows SSPIs that don't want empty context */
 	if (phContext && !phContext->dwLower && !phContext->dwUpper)
@@ -85,11 +91,11 @@ static SECURITY_STATUS SEC_ENTRY credssp_InitializeSecurityContextA(
 
 CREDSSP_CONTEXT* credssp_ContextNew(void)
 {
-	CREDSSP_CONTEXT* context = NULL;
+	CREDSSP_CONTEXT* context = nullptr;
 	context = (CREDSSP_CONTEXT*)calloc(1, sizeof(CREDSSP_CONTEXT));
 
 	if (!context)
-		return NULL;
+		return nullptr;
 
 	return context;
 }
@@ -100,7 +106,8 @@ void credssp_ContextFree(CREDSSP_CONTEXT* context)
 }
 
 static SECURITY_STATUS SEC_ENTRY credssp_QueryContextAttributes(PCtxtHandle phContext,
-                                                                ULONG ulAttribute, void* pBuffer)
+                                                                WINPR_ATTR_UNUSED ULONG ulAttribute,
+                                                                void* pBuffer)
 {
 	if (!phContext)
 		return SEC_E_INVALID_HANDLE;
@@ -113,21 +120,25 @@ static SECURITY_STATUS SEC_ENTRY credssp_QueryContextAttributes(PCtxtHandle phCo
 }
 
 static SECURITY_STATUS SEC_ENTRY credssp_AcquireCredentialsHandleW(
-    SEC_WCHAR* pszPrincipal, SEC_WCHAR* pszPackage, ULONG fCredentialUse, void* pvLogonID,
-    void* pAuthData, SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
-    PTimeStamp ptsExpiry)
+    WINPR_ATTR_UNUSED SEC_WCHAR* pszPrincipal, WINPR_ATTR_UNUSED SEC_WCHAR* pszPackage,
+    WINPR_ATTR_UNUSED ULONG fCredentialUse, WINPR_ATTR_UNUSED void* pvLogonID,
+    WINPR_ATTR_UNUSED void* pAuthData, WINPR_ATTR_UNUSED SEC_GET_KEY_FN pGetKeyFn,
+    WINPR_ATTR_UNUSED void* pvGetKeyArgument, WINPR_ATTR_UNUSED PCredHandle phCredential,
+    WINPR_ATTR_UNUSED PTimeStamp ptsExpiry)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
 static SECURITY_STATUS SEC_ENTRY credssp_AcquireCredentialsHandleA(
-    SEC_CHAR* pszPrincipal, SEC_CHAR* pszPackage, ULONG fCredentialUse, void* pvLogonID,
-    void* pAuthData, SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
-    PTimeStamp ptsExpiry)
+    WINPR_ATTR_UNUSED SEC_CHAR* pszPrincipal, WINPR_ATTR_UNUSED SEC_CHAR* pszPackage,
+    WINPR_ATTR_UNUSED ULONG fCredentialUse, WINPR_ATTR_UNUSED void* pvLogonID,
+    WINPR_ATTR_UNUSED void* pAuthData, WINPR_ATTR_UNUSED SEC_GET_KEY_FN pGetKeyFn,
+    WINPR_ATTR_UNUSED void* pvGetKeyArgument, WINPR_ATTR_UNUSED PCredHandle phCredential,
+    WINPR_ATTR_UNUSED PTimeStamp ptsExpiry)
 {
-	SSPI_CREDENTIALS* credentials = NULL;
-	SEC_WINNT_AUTH_IDENTITY* identity = NULL;
+	SSPI_CREDENTIALS* credentials = nullptr;
+	SEC_WINNT_AUTH_IDENTITY* identity = nullptr;
 
 	if (fCredentialUse == SECPKG_CRED_OUTBOUND)
 	{
@@ -154,17 +165,17 @@ static SECURITY_STATUS SEC_ENTRY credssp_AcquireCredentialsHandleA(
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY credssp_QueryCredentialsAttributesW(PCredHandle phCredential,
-                                                                     ULONG ulAttribute,
-                                                                     void* pBuffer)
+static SECURITY_STATUS SEC_ENTRY credssp_QueryCredentialsAttributesW(
+    WINPR_ATTR_UNUSED PCredHandle phCredential, WINPR_ATTR_UNUSED ULONG ulAttribute,
+    WINPR_ATTR_UNUSED void* pBuffer)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY credssp_QueryCredentialsAttributesA(PCredHandle phCredential,
-                                                                     ULONG ulAttribute,
-                                                                     void* pBuffer)
+static SECURITY_STATUS SEC_ENTRY credssp_QueryCredentialsAttributesA(
+    WINPR_ATTR_UNUSED PCredHandle phCredential, WINPR_ATTR_UNUSED ULONG ulAttribute,
+    WINPR_ATTR_UNUSED void* pBuffer)
 {
 	if (ulAttribute == SECPKG_CRED_ATTR_NAMES)
 	{
@@ -183,13 +194,12 @@ static SECURITY_STATUS SEC_ENTRY credssp_QueryCredentialsAttributesA(PCredHandle
 
 static SECURITY_STATUS SEC_ENTRY credssp_FreeCredentialsHandle(PCredHandle phCredential)
 {
-	SSPI_CREDENTIALS* credentials = NULL;
-
 	if (!phCredential)
 		return SEC_E_INVALID_HANDLE;
 
-	credentials = (SSPI_CREDENTIALS*)sspi_SecureHandleGetLowerPointer(phCredential);
-
+	SSPI_CREDENTIALS* credentials =
+	    (SSPI_CREDENTIALS*)sspi_SecureHandleGetLowerPointer(phCredential);
+	sspi_SecureHandleInvalidate(phCredential);
 	if (!credentials)
 		return SEC_E_INVALID_HANDLE;
 
@@ -197,31 +207,37 @@ static SECURITY_STATUS SEC_ENTRY credssp_FreeCredentialsHandle(PCredHandle phCre
 	return SEC_E_OK;
 }
 
-static SECURITY_STATUS SEC_ENTRY credssp_EncryptMessage(PCtxtHandle phContext, ULONG fQOP,
-                                                        PSecBufferDesc pMessage, ULONG MessageSeqNo)
+static SECURITY_STATUS SEC_ENTRY credssp_EncryptMessage(WINPR_ATTR_UNUSED PCtxtHandle phContext,
+                                                        WINPR_ATTR_UNUSED ULONG fQOP,
+                                                        WINPR_ATTR_UNUSED PSecBufferDesc pMessage,
+                                                        WINPR_ATTR_UNUSED ULONG MessageSeqNo)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY credssp_DecryptMessage(PCtxtHandle phContext,
-                                                        PSecBufferDesc pMessage, ULONG MessageSeqNo,
-                                                        ULONG* pfQOP)
+static SECURITY_STATUS SEC_ENTRY credssp_DecryptMessage(WINPR_ATTR_UNUSED PCtxtHandle phContext,
+                                                        WINPR_ATTR_UNUSED PSecBufferDesc pMessage,
+                                                        WINPR_ATTR_UNUSED ULONG MessageSeqNo,
+                                                        WINPR_ATTR_UNUSED ULONG* pfQOP)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY credssp_MakeSignature(PCtxtHandle phContext, ULONG fQOP,
-                                                       PSecBufferDesc pMessage, ULONG MessageSeqNo)
+static SECURITY_STATUS SEC_ENTRY credssp_MakeSignature(WINPR_ATTR_UNUSED PCtxtHandle phContext,
+                                                       WINPR_ATTR_UNUSED ULONG fQOP,
+                                                       WINPR_ATTR_UNUSED PSecBufferDesc pMessage,
+                                                       WINPR_ATTR_UNUSED ULONG MessageSeqNo)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
-static SECURITY_STATUS SEC_ENTRY credssp_VerifySignature(PCtxtHandle phContext,
-                                                         PSecBufferDesc pMessage,
-                                                         ULONG MessageSeqNo, ULONG* pfQOP)
+static SECURITY_STATUS SEC_ENTRY credssp_VerifySignature(WINPR_ATTR_UNUSED PCtxtHandle phContext,
+                                                         WINPR_ATTR_UNUSED PSecBufferDesc pMessage,
+                                                         WINPR_ATTR_UNUSED ULONG MessageSeqNo,
+                                                         WINPR_ATTR_UNUSED ULONG* pfQOP)
 {
 	WLog_ERR(TAG, "TODO: Implement");
 	return SEC_E_UNSUPPORTED_FUNCTION;
@@ -229,66 +245,66 @@ static SECURITY_STATUS SEC_ENTRY credssp_VerifySignature(PCtxtHandle phContext,
 
 const SecurityFunctionTableA CREDSSP_SecurityFunctionTableA = {
 	3,                                   /* dwVersion */
-	NULL,                                /* EnumerateSecurityPackages */
+	nullptr,                             /* EnumerateSecurityPackages */
 	credssp_QueryCredentialsAttributesA, /* QueryCredentialsAttributes */
 	credssp_AcquireCredentialsHandleA,   /* AcquireCredentialsHandle */
 	credssp_FreeCredentialsHandle,       /* FreeCredentialsHandle */
-	NULL,                                /* Reserved2 */
+	nullptr,                             /* Reserved2 */
 	credssp_InitializeSecurityContextA,  /* InitializeSecurityContext */
-	NULL,                                /* AcceptSecurityContext */
-	NULL,                                /* CompleteAuthToken */
-	NULL,                                /* DeleteSecurityContext */
-	NULL,                                /* ApplyControlToken */
+	nullptr,                             /* AcceptSecurityContext */
+	nullptr,                             /* CompleteAuthToken */
+	nullptr,                             /* DeleteSecurityContext */
+	nullptr,                             /* ApplyControlToken */
 	credssp_QueryContextAttributes,      /* QueryContextAttributes */
-	NULL,                                /* ImpersonateSecurityContext */
-	NULL,                                /* RevertSecurityContext */
+	nullptr,                             /* ImpersonateSecurityContext */
+	nullptr,                             /* RevertSecurityContext */
 	credssp_MakeSignature,               /* MakeSignature */
 	credssp_VerifySignature,             /* VerifySignature */
-	NULL,                                /* FreeContextBuffer */
-	NULL,                                /* QuerySecurityPackageInfo */
-	NULL,                                /* Reserved3 */
-	NULL,                                /* Reserved4 */
-	NULL,                                /* ExportSecurityContext */
-	NULL,                                /* ImportSecurityContext */
-	NULL,                                /* AddCredentials */
-	NULL,                                /* Reserved8 */
-	NULL,                                /* QuerySecurityContextToken */
+	nullptr,                             /* FreeContextBuffer */
+	nullptr,                             /* QuerySecurityPackageInfo */
+	nullptr,                             /* Reserved3 */
+	nullptr,                             /* Reserved4 */
+	nullptr,                             /* ExportSecurityContext */
+	nullptr,                             /* ImportSecurityContext */
+	nullptr,                             /* AddCredentials */
+	nullptr,                             /* Reserved8 */
+	nullptr,                             /* QuerySecurityContextToken */
 	credssp_EncryptMessage,              /* EncryptMessage */
 	credssp_DecryptMessage,              /* DecryptMessage */
-	NULL,                                /* SetContextAttributes */
-	NULL,                                /* SetCredentialsAttributes */
+	nullptr,                             /* SetContextAttributes */
+	nullptr,                             /* SetCredentialsAttributes */
 };
 
 const SecurityFunctionTableW CREDSSP_SecurityFunctionTableW = {
 	3,                                   /* dwVersion */
-	NULL,                                /* EnumerateSecurityPackages */
+	nullptr,                             /* EnumerateSecurityPackages */
 	credssp_QueryCredentialsAttributesW, /* QueryCredentialsAttributes */
 	credssp_AcquireCredentialsHandleW,   /* AcquireCredentialsHandle */
 	credssp_FreeCredentialsHandle,       /* FreeCredentialsHandle */
-	NULL,                                /* Reserved2 */
+	nullptr,                             /* Reserved2 */
 	credssp_InitializeSecurityContextW,  /* InitializeSecurityContext */
-	NULL,                                /* AcceptSecurityContext */
-	NULL,                                /* CompleteAuthToken */
-	NULL,                                /* DeleteSecurityContext */
-	NULL,                                /* ApplyControlToken */
+	nullptr,                             /* AcceptSecurityContext */
+	nullptr,                             /* CompleteAuthToken */
+	nullptr,                             /* DeleteSecurityContext */
+	nullptr,                             /* ApplyControlToken */
 	credssp_QueryContextAttributes,      /* QueryContextAttributes */
-	NULL,                                /* ImpersonateSecurityContext */
-	NULL,                                /* RevertSecurityContext */
+	nullptr,                             /* ImpersonateSecurityContext */
+	nullptr,                             /* RevertSecurityContext */
 	credssp_MakeSignature,               /* MakeSignature */
 	credssp_VerifySignature,             /* VerifySignature */
-	NULL,                                /* FreeContextBuffer */
-	NULL,                                /* QuerySecurityPackageInfo */
-	NULL,                                /* Reserved3 */
-	NULL,                                /* Reserved4 */
-	NULL,                                /* ExportSecurityContext */
-	NULL,                                /* ImportSecurityContext */
-	NULL,                                /* AddCredentials */
-	NULL,                                /* Reserved8 */
-	NULL,                                /* QuerySecurityContextToken */
+	nullptr,                             /* FreeContextBuffer */
+	nullptr,                             /* QuerySecurityPackageInfo */
+	nullptr,                             /* Reserved3 */
+	nullptr,                             /* Reserved4 */
+	nullptr,                             /* ExportSecurityContext */
+	nullptr,                             /* ImportSecurityContext */
+	nullptr,                             /* AddCredentials */
+	nullptr,                             /* Reserved8 */
+	nullptr,                             /* QuerySecurityContextToken */
 	credssp_EncryptMessage,              /* EncryptMessage */
 	credssp_DecryptMessage,              /* DecryptMessage */
-	NULL,                                /* SetContextAttributes */
-	NULL,                                /* SetCredentialsAttributes */
+	nullptr,                             /* SetContextAttributes */
+	nullptr,                             /* SetCredentialsAttributes */
 };
 
 const SecPkgInfoA CREDSSP_SecPkgInfoA = {
@@ -300,8 +316,8 @@ const SecPkgInfoA CREDSSP_SecPkgInfoA = {
 	"Microsoft CredSSP Security Provider" /* Comment */
 };
 
-static WCHAR CREDSSP_SecPkgInfoW_NameBuffer[128] = { 0 };
-static WCHAR CREDSSP_SecPkgInfoW_CommentBuffer[128] = { 0 };
+static WCHAR CREDSSP_SecPkgInfoW_NameBuffer[128] = WINPR_C_ARRAY_INIT;
+static WCHAR CREDSSP_SecPkgInfoW_CommentBuffer[128] = WINPR_C_ARRAY_INIT;
 
 const SecPkgInfoW CREDSSP_SecPkgInfoW = {
 	0x000110733,                      /* fCapabilities */

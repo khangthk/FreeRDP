@@ -19,6 +19,7 @@
  */
 
 #include <winpr/config.h>
+#include <winpr/buildflags.h>
 #include <winpr/platform.h>
 
 WINPR_PRAGMA_DIAG_PUSH
@@ -32,6 +33,7 @@ WINPR_PRAGMA_DIAG_POP
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <winpr/crt.h>
 #include <winpr/string.h>
@@ -56,43 +58,11 @@ WINPR_PRAGMA_DIAG_POP
 #include <winpr/wlog.h>
 #include <winpr/debug.h>
 
-#ifndef MIN
-#define MIN(a, b) (a) < (b) ? (a) : (b)
-#endif
-
 #define TAG "com.winpr.utils.debug"
-#define LOGT(...)                                           \
-	do                                                      \
-	{                                                       \
-		WLog_Print(WLog_Get(TAG), WLOG_TRACE, __VA_ARGS__); \
-	} while (0)
-#define LOGD(...)                                           \
-	do                                                      \
-	{                                                       \
-		WLog_Print(WLog_Get(TAG), WLOG_DEBUG, __VA_ARGS__); \
-	} while (0)
-#define LOGI(...)                                          \
-	do                                                     \
-	{                                                      \
-		WLog_Print(WLog_Get(TAG), WLOG_INFO, __VA_ARGS__); \
-	} while (0)
-#define LOGW(...)                                          \
-	do                                                     \
-	{                                                      \
-		WLog_Print(WLog_Get(TAG), WLOG_WARN, __VA_ARGS__); \
-	} while (0)
-#define LOGE(...)                                           \
-	do                                                      \
-	{                                                       \
-		WLog_Print(WLog_Get(TAG), WLOG_ERROR, __VA_ARGS__); \
-	} while (0)
-#define LOGF(...)                                           \
-	do                                                      \
-	{                                                       \
-		WLog_Print(WLog_Get(TAG), WLOG_FATAL, __VA_ARGS__); \
-	} while (0)
 
-static const char* support_msg = "Invalid stacktrace buffer! check if platform is supported!";
+#define LINE_LENGTH_MAX 2048
+
+static const char support_msg[] = "Invalid stacktrace buffer! check if platform is supported!";
 
 void winpr_backtrace_free(void* buffer)
 {
@@ -109,7 +79,7 @@ void winpr_backtrace_free(void* buffer)
 	winpr_win_backtrace_free(buffer);
 #else
 	free(buffer);
-	LOGF(support_msg);
+	WLog_FATAL(TAG, "%s", support_msg);
 #endif
 }
 
@@ -124,10 +94,10 @@ void* winpr_backtrace(DWORD size)
 #elif (defined(_WIN32) || defined(_WIN64)) && !defined(_UWP)
 	return winpr_win_backtrace(size);
 #else
-	LOGF(support_msg);
-	/* return a non NULL buffer to allow the backtrace function familiy to succeed without failing
+	WLog_FATAL(TAG, "%s", support_msg);
+	/* return a non nullptr buffer to allow the backtrace function family to succeed without failing
 	 */
-	return _strdup(support_msg);
+	return strndup(support_msg, sizeof(support_msg));
 #endif
 }
 
@@ -138,8 +108,8 @@ char** winpr_backtrace_symbols(void* buffer, size_t* used)
 
 	if (!buffer)
 	{
-		LOGF(support_msg);
-		return NULL;
+		WLog_FATAL(TAG, "%s", support_msg);
+		return nullptr;
 	}
 
 #if defined(USE_UNWIND)
@@ -151,7 +121,7 @@ char** winpr_backtrace_symbols(void* buffer, size_t* used)
 #elif (defined(_WIN32) || defined(_WIN64)) && !defined(_UWP)
 	return winpr_win_backtrace_symbols(buffer, used);
 #else
-	LOGF(support_msg);
+	WLog_FATAL(TAG, "%s", support_msg);
 
 	/* We return a char** on heap that is compatible with free:
 	 *
@@ -159,10 +129,10 @@ char** winpr_backtrace_symbols(void* buffer, size_t* used)
 	 * 2. The first sizeof(char*) bytes contain the pointer to the string following the pointer.
 	 * 3. The at data + sizeof(char*) contains the actual string
 	 */
-	size_t len = strlen(support_msg);
+	size_t len = strnlen(support_msg, sizeof(support_msg));
 	char* ppmsg = calloc(sizeof(char*) + len + 1, sizeof(char));
 	if (!ppmsg)
-		return NULL;
+		return nullptr;
 	char** msgptr = (char**)ppmsg;
 	char* msg = &ppmsg[sizeof(char*)];
 
@@ -177,7 +147,7 @@ void winpr_backtrace_symbols_fd(void* buffer, int fd)
 {
 	if (!buffer)
 	{
-		LOGF(support_msg);
+		WLog_FATAL(TAG, "%s", support_msg);
 		return;
 	}
 
@@ -192,11 +162,11 @@ void winpr_backtrace_symbols_fd(void* buffer, int fd)
 			return;
 
 		for (size_t i = 0; i < used; i++)
-			(void)_write(fd, lines[i], (unsigned)strnlen(lines[i], UINT32_MAX));
-		free(lines);
+			(void)_write(fd, lines[i], (unsigned)strnlen(lines[i], LINE_LENGTH_MAX));
+		free((void*)lines);
 	}
 #else
-	LOGF(support_msg);
+	WLog_FATAL(TAG, "%s", support_msg);
 #endif
 }
 
@@ -205,10 +175,13 @@ void winpr_log_backtrace(const char* tag, DWORD level, DWORD size)
 	winpr_log_backtrace_ex(WLog_Get(tag), level, size);
 }
 
-void winpr_log_backtrace_ex(wLog* log, DWORD level, DWORD size)
+void winpr_log_backtrace_ex(wLog* log, DWORD level, WINPR_ATTR_UNUSED DWORD size)
 {
+	if (!WLog_IsLevelActive(log, level))
+		return;
+
 	size_t used = 0;
-	char** msg = NULL;
+	char** msg = nullptr;
 	void* stack = winpr_backtrace(20);
 
 	if (!stack)
@@ -224,7 +197,7 @@ void winpr_log_backtrace_ex(wLog* log, DWORD level, DWORD size)
 		for (size_t x = 0; x < used; x++)
 			WLog_Print(log, level, "%" PRIuz ": %s", x, msg[x]);
 	}
-	free(msg);
+	free((void*)msg);
 
 fail:
 	winpr_backtrace_free(stack);
@@ -240,4 +213,137 @@ char* winpr_strerror(INT32 dw, char* dmsg, size_t size)
 	(void)_snprintf(dmsg, size, "%s", strerror(dw));
 #endif
 	return dmsg;
+}
+
+WINPR_ATTR_NODISCARD
+static BOOL starts_with(const char* tok, const char* val)
+{
+	const size_t len = strlen(val);
+	if (strncmp(tok, val, len) != 0)
+		return FALSE;
+
+	if (!strchr(tok, '='))
+		return FALSE;
+	return TRUE;
+}
+
+WINPR_ATTR_NODISCARD
+static BOOL option_equals(const char* what, const char* val)
+{
+	return _stricmp(what, val) == 0;
+}
+
+WINPR_ATTR_NODISCARD
+static BOOL parse_on_off_option(const char* value)
+{
+	WINPR_ASSERT(value);
+	const char* sep = strchr(value, '=');
+	if (!sep)
+		return TRUE;
+	if (option_equals("on", &sep[1]))
+		return TRUE;
+	if (option_equals("true", &sep[1]))
+		return TRUE;
+	if (option_equals("off", &sep[1]))
+		return FALSE;
+	if (option_equals("false", &sep[1]))
+		return FALSE;
+
+	errno = 0;
+	long val = strtol(value, nullptr, 0);
+	if (errno == 0)
+		return (val != 0);
+
+	return FALSE;
+}
+
+WINPR_ATTR_NODISCARD
+static BOOL option_is_debug(wLog* log, DWORD level, const char* tok)
+{
+	WINPR_ASSERT(log);
+	WINPR_UNUSED(log);
+	WINPR_UNUSED(level);
+
+	if (starts_with(tok, "WITH_DEBUG_"))
+		return parse_on_off_option(tok);
+
+	return FALSE;
+}
+
+static void log_build_warn(wLog* log, DWORD level, const char* what, const char* msg,
+                           BOOL (*cmp)(wLog* log, DWORD level, const char* tok), const char* input,
+                           size_t ilen)
+{
+	WINPR_ASSERT(log);
+
+	if (!input || (ilen == 0))
+		return;
+
+	char* list = calloc(ilen, sizeof(char));
+	char* config = _strdup(input);
+
+	if (config && list)
+	{
+		char* saveptr = nullptr;
+		char* tok = strtok_s(config, " ", &saveptr);
+		while (tok)
+		{
+			if (!cmp || cmp(log, level, tok))
+				winpr_str_append(tok, list, ilen, " ");
+
+			tok = strtok_s(nullptr, " ", &saveptr);
+		}
+	}
+	free(config);
+
+	if (list)
+	{
+		if (strlen(list) > 0)
+		{
+			WLog_Print(log, level, "*************************************************");
+			WLog_Print(log, level, "This WinPR build is using [%s] build options:", what);
+
+			char* saveptr = nullptr;
+			char* tok = strtok_s(list, " ", &saveptr);
+			while (tok)
+			{
+				WLog_Print(log, level, "* '%s'", tok);
+				tok = strtok_s(nullptr, " ", &saveptr);
+			}
+			WLog_Print(log, level, "*");
+			WLog_Print(log, level, "[%s] build options %s", what, msg);
+			WLog_Print(log, level, "*************************************************");
+		}
+	}
+	free(list);
+}
+
+void winpr_log_build_warn(wLog* log, DWORD level)
+{
+#if !defined(WINPR_ARCH_SUPPORTED) || (WINPR_ARCH_SUPPORTED == 0) || \
+    defined(DISABLE_SUPPORTED_ARCH_CHECKS)
+#define STR(x) #x
+#endif
+
+	const char configurations[] = {
+#if !defined(WINPR_ARCH_SUPPORTED) || (WINPR_ARCH_SUPPORTED == 0)
+		STR(WINPR_ARCH_SUPPORTED) "==0 "
+#endif
+#if defined(DISABLE_SUPPORTED_ARCH_CHECKS)
+		STR(DISABLE_SUPPORTED_ARCH_CHECKS) " "
+#endif
+		                                   "\0"
+	};
+	WINPR_ASSERT(log);
+	log_build_warn(log, level, "experimental",
+	               "might crash, overwrite data or steal your kitten, you have been warned!",
+	               nullptr, configurations, sizeof(configurations));
+
+	WINPR_PRAGMA_DIAG_PUSH
+	WINPR_PRAGMA_DIAG_IGNORED_OVERLENGTH_STRINGS
+	log_build_warn(log, level, "debug",
+	               "might leak sensitive information (credentials, ...), slow down runtime, "
+	               "increase memory usage",
+	               option_is_debug, WINPR_BUILD_CONFIG, sizeof(WINPR_BUILD_CONFIG));
+	WINPR_PRAGMA_DIAG_POP
 }

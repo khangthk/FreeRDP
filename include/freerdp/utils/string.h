@@ -30,22 +30,53 @@ extern "C"
 {
 #endif
 
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* rdp_redirection_flags_to_string(UINT32 flags, char* buffer,
 	                                                        size_t size);
+	WINPR_ATTR_NODISCARD
 	FREERDP_API const char* rdp_cluster_info_flags_to_string(UINT32 flags, char* buffer,
 	                                                         size_t size);
 
 	/** @brief extracts <key>=<value> pairs from a string
 	 *
-	 * @param str The string to extract data from, must not be \b NULL
-	 * @param pkey A pointer to store the key value, must not be \b NULL
-	 * @param pvalue A pointer to store the value, must not be \b NULL
+	 * @param str The string to extract data from, must not be \b nullptr
+	 * @param pkey A pointer to store the key value, must not be \b nullptr
+	 * @param pvalue A pointer to store the value, must not be \b nullptr
 	 *
 	 * @return \b TRUE if successfully extracted, \b FALSE if no matching data was found
 	 *
 	 * @since version 3.9.0
 	 */
+	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL freerdp_extract_key_value(const char* str, UINT32* pkey, UINT32* pvalue);
+
+	/** @brief Convert \ref FreeRDP_DesktopRotationFlags to string
+	 *
+	 *  @param flags The value to convert
+	 *  @return A constant string representation of \ref flags or the string \b ORIENTATION_UNKNOWN
+	 * for an invalid value
+	 *  @since version 3.22.0
+	 */
+	FREERDP_API WINPR_ATTR_NODISCARD const char*
+	freerdp_desktop_rotation_flags_to_string(UINT32 flags);
+
+	/** @brief Convert a single \ref RDPINPUT_CONTACT_FLAGS to string
+	 *
+	 *  @param flags The value to convert
+	 *  @return A constant string representation of \ref flag or the string \b
+	 * RDPINPUT_CONTACT_FLAG_UNKNOWN for an invalid value
+	 *  @since version 3.22.0
+	 */
+	FREERDP_API WINPR_ATTR_NODISCARD const char* freerdp_input_touch_state_string(DWORD flags);
+
+	/** @brief Convert a single \ref FreeRDP_OrderSupportFlags to string
+	 *
+	 *  @param type The value to convert
+	 *  @return A constant string representation of \ref type or the string \b
+	 * UNKNOWN for an invalid value
+	 *  @since version 3.22.0
+	 */
+	FREERDP_API WINPR_ATTR_NODISCARD const char* freerdp_order_support_flags_string(UINT8 type);
 
 #ifdef __cplusplus
 }

@@ -195,7 +195,9 @@ static const char* call_to_string_proxy(BOOL client, UINT32 interfaceId, UINT32 
 	}
 }
 
-static const char* call_to_string_stub(BOOL client, UINT32 interfaceNr, UINT32 functionId)
+static const char* call_to_string_stub(WINPR_ATTR_UNUSED BOOL client,
+                                       WINPR_ATTR_UNUSED UINT32 interfaceNr,
+                                       WINPR_ATTR_UNUSED UINT32 functionId)
 {
 	return "QUERY_DEVICE_TEXT_RSP             [stub  |client]";
 }
@@ -396,7 +398,7 @@ void urbdrc_dump_message(wLog* log, BOOL client, BOOL write, wStream* s)
 	if (write)
 	{
 		length = pos;
-		Stream_SetPosition(s, 0);
+		Stream_ResetPosition(s);
 	}
 	else
 		length = Stream_GetRemainingLength(s);
@@ -407,7 +409,8 @@ void urbdrc_dump_message(wLog* log, BOOL client, BOOL write, wStream* s)
 	Stream_Read_UINT32(s, InterfaceId);
 	Stream_Read_UINT32(s, MessageId);
 	Stream_Read_UINT32(s, FunctionId);
-	Stream_SetPosition(s, pos);
+	if (!Stream_SetPosition(s, pos))
+		WLog_Print(log, WLOG_ERROR, "Stream_SetPosition(%" PRIuz ") failed", pos);
 
 	WLog_Print(log, WLOG_DEBUG,
 	           "[%-5s] %s [%08" PRIx32 "] InterfaceId=%08" PRIx32 ", MessageId=%08" PRIx32
@@ -422,4 +425,31 @@ void urbdrc_dump_message(wLog* log, BOOL client, BOOL write, wStream* s)
 	winpr_HexLogDump(log, WLOG_TRACE, Stream_Buffer(s), length);
 	WLog_Print(log, WLOG_TRACE, "-------------------------- URBDRC end -----");
 #endif
+}
+
+/* [MS-RDPEUSB] 2.2.1 Shared Message Header (SHARED_MSG_HEADER) */
+BOOL write_shared_message_header_with_functionid(wStream* s, UINT32 InterfaceId, UINT32 MessageId,
+                                                 UINT32 FunctionId)
+{
+	if (!Stream_EnsureRemainingCapacity(s, 12))
+		return FALSE;
+
+	Stream_Write_UINT32(s, InterfaceId);
+	Stream_Write_UINT32(s, MessageId);
+	Stream_Write_UINT32(s, FunctionId);
+	return TRUE;
+}
+
+wStream* create_shared_message_header_with_functionid(UINT32 InterfaceId, UINT32 MessageId,
+                                                      UINT32 FunctionId, size_t OutputSize)
+{
+	wStream* out = Stream_New(nullptr, 12ULL + OutputSize);
+	if (!out)
+		return nullptr;
+	if (!write_shared_message_header_with_functionid(out, InterfaceId, MessageId, FunctionId))
+	{
+		Stream_Free(out, TRUE);
+		return nullptr;
+	}
+	return out;
 }

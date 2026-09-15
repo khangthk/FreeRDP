@@ -27,7 +27,7 @@
 
 /** @defgroup WINPR_JSON WinPR JSON wrapper
  *  @since version 3.6.0
- *  @brief Wrapper around cJSON or JSONC libraries
+ *  @brief Wrapper around cJSON, JSONC or jansson libraries
  *  @{
  */
 
@@ -46,6 +46,7 @@ extern "C"
 	 * @return length of the version string in bytes or negative for error
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API int WINPR_JSON_version(char* buffer, size_t len);
 
 	/**
@@ -60,7 +61,7 @@ extern "C"
 	 * @brief Parse a '\0' terminated JSON string
 	 *
 	 * @param value A '\0' terminated JSON string
-	 * @return A @ref WINPR_JSON object holding the parsed string or \b NULL if failed
+	 * @return A @ref WINPR_JSON object holding the parsed string or \b nullptr if failed
 	 * @since version 3.6.0
 	 */
 	WINPR_ATTR_MALLOC(WINPR_JSON_Delete, 1)
@@ -71,11 +72,31 @@ extern "C"
 	 *
 	 * @param value A JSON string
 	 * @param buffer_length The length in bytes of the JSON string
-	 * @return A @ref WINPR_JSON object holding the parsed string or \b NULL if failed
+	 * @return A @ref WINPR_JSON object holding the parsed string or \b nullptr if failed
 	 * @since version 3.6.0
 	 */
 	WINPR_ATTR_MALLOC(WINPR_JSON_Delete, 1)
 	WINPR_API WINPR_JSON* WINPR_JSON_ParseWithLength(const char* value, size_t buffer_length);
+
+	/**
+	 * @brief Parse a JSON string read from a file \b filename
+	 *
+	 * @param filename the name of the file to read from
+	 * @return A @ref WINPR_JSON object holding the parsed string or \b nullptr if failed
+	 * @since version 3.16.0
+	 */
+	WINPR_ATTR_MALLOC(WINPR_JSON_Delete, 1)
+	WINPR_API WINPR_JSON* WINPR_JSON_ParseFromFile(const char* filename);
+
+	/**
+	 * @brief Parse a JSON string read from a \b FILE
+	 *
+	 * @param fp a \b FILE pointer to read from.
+	 * @return A @ref WINPR_JSON object holding the parsed string or \b nullptr if failed
+	 * @since version 3.16.0
+	 */
+	WINPR_ATTR_MALLOC(WINPR_JSON_Delete, 1)
+	WINPR_API WINPR_JSON* WINPR_JSON_ParseFromFileFP(FILE* fp);
 
 	/**
 	 * @brief Get the number of arrayitems from an array
@@ -84,6 +105,7 @@ extern "C"
 	 * @return number of array items
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API size_t WINPR_JSON_GetArraySize(const WINPR_JSON* array);
 
 	/**
@@ -91,28 +113,32 @@ extern "C"
 	 *
 	 * @param array the JSON instance to query
 	 * @param index The index of the array item
-	 * @return A pointer to the array item or \b NULL if failed
+	 * @return A pointer to the array item or \b nullptr if failed
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_GetArrayItem(const WINPR_JSON* array, size_t index);
 
 	/**
 	 * @brief Return a pointer to an JSON object item
 	 * @param object the JSON object
-	 * @param string the name of the object
-	 * @return A pointer to the object identified by @ref string or \b NULL
+	 * @param string the name of the object (case is ignored)
+	 *
+	 * @return A pointer to the object identified by \b string or \b nullptr
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_GetObjectItem(const WINPR_JSON* object, const char* string);
 
 	/**
-	 * @brief Same as @ref WINPR_JSON_GetObjectItem but with case insensitive matching
+	 * @brief Same as @ref WINPR_JSON_GetObjectItem but with case sensitive matching
 	 *
 	 * @param object the JSON instance to query
 	 * @param string the name of the object
-	 * @return A pointer to the object identified by @ref string or \b NULL
+	 * @return A pointer to the object identified by \b string or \b nullptr
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_GetObjectItemCaseSensitive(const WINPR_JSON* object,
 	                                                            const char* string);
 
@@ -123,21 +149,24 @@ extern "C"
 	 * @return \b TRUE if found, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_HasObjectItem(const WINPR_JSON* object, const char* string);
 
 	/**
 	 * @brief Return an error string
-	 * @return A string describing the last error that occured or \b NULL
+	 * @return A string describing the last error that occurred or \b nullptr
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API const char* WINPR_JSON_GetErrorPtr(void);
 
 	/**
 	 * @brief Return the String value of a JSON item
 	 * @param item the JSON item to query
-	 * @return The string value or \b NULL if failed
+	 * @return The string value or \b nullptr if failed
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API const char* WINPR_JSON_GetStringValue(WINPR_JSON* item);
 
 	/**
@@ -146,6 +175,7 @@ extern "C"
 	 * @return The Number value or \b NaN if failed
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API double WINPR_JSON_GetNumberValue(const WINPR_JSON* item);
 
 	/**
@@ -154,6 +184,7 @@ extern "C"
 	 * @return \b TRUE if valid, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsInvalid(const WINPR_JSON* item);
 
 	/**
@@ -162,6 +193,7 @@ extern "C"
 	 * @return \b TRUE if False, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsFalse(const WINPR_JSON* item);
 
 	/**
@@ -170,6 +202,7 @@ extern "C"
 	 * @return \b TRUE if True, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsTrue(const WINPR_JSON* item);
 
 	/**
@@ -178,6 +211,7 @@ extern "C"
 	 * @return \b TRUE if the type is BOOL, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsBool(const WINPR_JSON* item);
 
 	/**
@@ -186,6 +220,7 @@ extern "C"
 	 * @return \b TRUE if it is Null, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsNull(const WINPR_JSON* item);
 
 	/**
@@ -194,6 +229,7 @@ extern "C"
 	 * @return \b TRUE if the type is Number, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsNumber(const WINPR_JSON* item);
 
 	/**
@@ -202,6 +238,7 @@ extern "C"
 	 * @return \b TRUE if the type is String, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsString(const WINPR_JSON* item);
 
 	/**
@@ -210,6 +247,7 @@ extern "C"
 	 * @return \b TRUE if the type is Array, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsArray(const WINPR_JSON* item);
 
 	/**
@@ -218,6 +256,7 @@ extern "C"
 	 * @return \b TRUE if the type is Object, \b FALSE otherwise
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_IsObject(const WINPR_JSON* item);
 
 	/**
@@ -225,6 +264,7 @@ extern "C"
 	 * @return a new JSON item of type and value Null
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateNull(void);
 
 	/**
@@ -232,6 +272,7 @@ extern "C"
 	 * @return a new JSON item of type Bool and value True
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateTrue(void);
 
 	/**
@@ -239,6 +280,7 @@ extern "C"
 	 * @return a new JSON item of type Bool and value False
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateFalse(void);
 
 	/**
@@ -247,6 +289,7 @@ extern "C"
 	 * @return a new JSON item of type Bool
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateBool(BOOL boolean);
 
 	/**
@@ -255,6 +298,7 @@ extern "C"
 	 * @return a new JSON item of type Number
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateNumber(double num);
 
 	/**
@@ -263,6 +307,7 @@ extern "C"
 	 * @return a new JSON item of type String
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateString(const char* string);
 
 	/**
@@ -270,6 +315,7 @@ extern "C"
 	 * @return a new JSON item of type array, empty
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateArray(void);
 
 	/**
@@ -277,6 +323,7 @@ extern "C"
 	 * @return a new JSON item of type Object
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_CreateObject(void);
 
 	/**
@@ -286,6 +333,7 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddNullToObject(WINPR_JSON* object, const char* name);
 
 	/**
@@ -295,6 +343,7 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddTrueToObject(WINPR_JSON* object, const char* name);
 
 	/**
@@ -304,6 +353,7 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddFalseToObject(WINPR_JSON* object, const char* name);
 
 	/**
@@ -313,6 +363,7 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddBoolToObject(WINPR_JSON* object, const char* name,
 	                                                 BOOL boolean);
 
@@ -323,8 +374,20 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddNumberToObject(WINPR_JSON* object, const char* name,
 	                                                   double number);
+
+	/**
+	 * @brief WINPR_JSON_AddIntegerToObject
+	 * @param object The JSON object the new item is added to
+	 * @param name The name of the object
+	 * @return the new JSON item added
+	 * @since version 3.6.0
+	 */
+	WINPR_ATTR_NODISCARD
+	WINPR_API WINPR_JSON* WINPR_JSON_AddIntegerToObject(WINPR_JSON* object, const char* name,
+	                                                    int64_t number);
 
 	/**
 	 * @brief WINPR_JSON_AddStringToObject
@@ -333,6 +396,7 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddStringToObject(WINPR_JSON* object, const char* name,
 	                                                   const char* string);
 
@@ -343,6 +407,7 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddObjectToObject(WINPR_JSON* object, const char* name);
 
 	/**
@@ -352,15 +417,17 @@ extern "C"
 	 * @return the new JSON item added
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API WINPR_JSON* WINPR_JSON_AddArrayToObject(WINPR_JSON* object, const char* name);
 
 	/**
 	 * @brief Add an item to an existing array
-	 * @param array An array to add to, must not be \b NULL
-	 * @param item An item to add, must not be \b NULL
+	 * @param array An array to add to, must not be \b nullptr
+	 * @param item An item to add, must not be \b nullptr
 	 * @return \b TRUE for success, \b FALSE for failure
 	 * @since version 3.7.0
 	 */
+	WINPR_ATTR_NODISCARD
 	WINPR_API BOOL WINPR_JSON_AddItemToArray(WINPR_JSON* array, WINPR_JSON* item);
 
 	/**
@@ -368,9 +435,10 @@ extern "C"
 	 * for minimal size without formatting see @ref WINPR_JSON_PrintUnformatted
 	 *
 	 * @param item The JSON instance to serialize
-	 * @return A string representation of the JSON instance or \b NULL
+	 * @return A string representation of the JSON instance or \b nullptr
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_MALLOC(free, 1)
 	WINPR_API char* WINPR_JSON_Print(WINPR_JSON* item);
 
 	/**
@@ -378,9 +446,10 @@ extern "C"
 	 * for human readable formatted output see @ref WINPR_JSON_Print
 	 *
 	 * @param item The JSON instance to serialize
-	 * @return A string representation of the JSON instance or \b NULL
+	 * @return A string representation of the JSON instance or \b nullptr
 	 * @since version 3.6.0
 	 */
+	WINPR_ATTR_MALLOC(free, 1)
 	WINPR_API char* WINPR_JSON_PrintUnformatted(WINPR_JSON* item);
 
 #ifdef __cplusplus

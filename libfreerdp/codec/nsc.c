@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <winpr/assert.h>
+#include <winpr/cast.h>
 #include <winpr/crt.h>
 
 #include <freerdp/codec/nsc.h>
@@ -41,26 +43,25 @@
 
 static BOOL nsc_decode(NSC_CONTEXT* WINPR_RESTRICT context)
 {
-	UINT16 rw = 0;
-	BYTE shift = 0;
-	BYTE* bmpdata = NULL;
 	size_t pos = 0;
 
 	if (!context)
 		return FALSE;
 
-	rw = ROUND_UP_TO(context->width, 8);
-	shift = context->ColorLossLevel - 1; /* colorloss recovery + YCoCg shift */
-	bmpdata = context->BitmapData;
+	const UINT16 rw = ROUND_UP_TO(context->width, 8);
+	WINPR_ASSERT(context->ColorLossLevel >= 1);
+	const BYTE shift = WINPR_ASSERTING_INT_CAST(BYTE, context->ColorLossLevel -
+	                                                      1); /* colorloss recovery + YCoCg shift */
+	BYTE* bmpdata = context->BitmapData;
 
 	if (!bmpdata)
 		return FALSE;
 
 	for (size_t y = 0; y < context->height; y++)
 	{
-		const BYTE* yplane = NULL;
-		const BYTE* coplane = NULL;
-		const BYTE* cgplane = NULL;
+		const BYTE* yplane = nullptr;
+		const BYTE* coplane = nullptr;
+		const BYTE* cgplane = nullptr;
 		const BYTE* aplane = context->priv->PlaneBuffers[3] + y * context->width; /* A */
 
 		if (context->ChromaSubsamplingLevel)
@@ -81,9 +82,9 @@ static BOOL nsc_decode(NSC_CONTEXT* WINPR_RESTRICT context)
 			INT16 y_val = (INT16)*yplane;
 			INT16 co_val = (INT16)(INT8)(((INT16)*coplane) << shift);
 			INT16 cg_val = (INT16)(INT8)(((INT16)*cgplane) << shift);
-			INT16 r_val = y_val + co_val - cg_val;
-			INT16 g_val = y_val + cg_val;
-			INT16 b_val = y_val - co_val - cg_val;
+			INT16 r_val = WINPR_ASSERTING_INT_CAST(int16_t, y_val + co_val - cg_val);
+			INT16 g_val = WINPR_ASSERTING_INT_CAST(int16_t, y_val + cg_val);
+			INT16 b_val = WINPR_ASSERTING_INT_CAST(int16_t, y_val - co_val - cg_val);
 
 			if (pos + 4 > context->BitmapDataLength)
 				return FALSE;
@@ -280,6 +281,8 @@ static BOOL nsc_context_initialize(NSC_CONTEXT* WINPR_RESTRICT context, wStream*
 	const UINT32 tempHeight = ROUND_UP_TO(context->height, 2);
 	/* The maximum length a decoded plane can reach in all cases */
 	const size_t plength = 1ull * tempWidth * tempHeight;
+	if (plength > UINT32_MAX)
+		return FALSE;
 
 	if (plength > context->priv->PlaneBuffersLength)
 	{
@@ -294,7 +297,7 @@ static BOOL nsc_context_initialize(NSC_CONTEXT* WINPR_RESTRICT context, wStream*
 			context->priv->PlaneBuffers[i] = tmp;
 		}
 
-		context->priv->PlaneBuffersLength = plength;
+		context->priv->PlaneBuffersLength = (UINT32)plength;
 	}
 
 	for (size_t i = 0; i < 4; i++)
@@ -340,7 +343,7 @@ NSC_CONTEXT* nsc_context_new(void)
 	NSC_CONTEXT* context = (NSC_CONTEXT*)winpr_aligned_calloc(1, sizeof(NSC_CONTEXT), 32);
 
 	if (!context)
-		return NULL;
+		return nullptr;
 
 	context->priv = (NSC_CONTEXT_PRIV*)winpr_aligned_calloc(1, sizeof(NSC_CONTEXT_PRIV), 32);
 
@@ -348,8 +351,7 @@ NSC_CONTEXT* nsc_context_new(void)
 		goto error;
 
 	context->priv->log = WLog_Get("com.freerdp.codec.nsc");
-	WLog_OpenAppender(context->priv->log);
-	context->BitmapData = NULL;
+	context->BitmapData = nullptr;
 	context->decode = nsc_decode;
 	context->encode = nsc_encode;
 
@@ -369,7 +371,22 @@ error:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	nsc_context_free(context);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
+}
+
+void nsc_context_planebuffers_free(NSC_CONTEXT_PRIV* priv)
+{
+	if (!priv)
+		return;
+
+	for (size_t i = 0; i < ARRAYSIZE(priv->PlaneBuffers); i++)
+	{
+		BYTE* cur = priv->PlaneBuffers[i];
+		priv->PlaneBuffers[i] = nullptr;
+		winpr_aligned_free(cur);
+	}
+
+	priv->PlaneBuffersLength = 0;
 }
 
 void nsc_context_free(NSC_CONTEXT* context)
@@ -379,8 +396,7 @@ void nsc_context_free(NSC_CONTEXT* context)
 
 	if (context->priv)
 	{
-		for (size_t i = 0; i < 5; i++)
-			winpr_aligned_free(context->priv->PlaneBuffers[i]);
+		nsc_context_planebuffers_free(context->priv);
 
 		nsc_profiler_print(context->priv);
 		PROFILER_FREE(context->priv->prof_nsc_rle_decompress_data)
@@ -432,19 +448,46 @@ BOOL nsc_process_message(NSC_CONTEXT* WINPR_RESTRICT context, UINT16 bpp, UINT32
                          BYTE* WINPR_RESTRICT pDstData, UINT32 DstFormat, UINT32 nDstStride,
                          UINT32 nXDst, UINT32 nYDst, UINT32 nWidth, UINT32 nHeight, UINT32 flip)
 {
-	wStream* s = NULL;
-	wStream sbuffer = { 0 };
-	BOOL ret = 0;
-	if (!context || !data || !pDstData)
+	if (!context)
 		return FALSE;
 
-	s = Stream_StaticConstInit(&sbuffer, data, length);
+	WINPR_ASSERT(context->priv);
 
+	wStream sbuffer = WINPR_C_ARRAY_INIT;
+	BOOL ret = 0;
+	if (!data || !pDstData)
+	{
+		WLog_Print(context->priv->log, WLOG_ERROR, "Invalid argument: data=%p, pDstData=%p",
+		           (const void*)data, (void*)pDstData);
+		return FALSE;
+	}
+
+	if (nXDst > nWidth)
+	{
+		WLog_Print(context->priv->log, WLOG_ERROR, "nXDst %" PRIu32 " > nWidth %" PRIu32, nXDst,
+		           nWidth);
+		return FALSE;
+	}
+	if (nYDst > nHeight)
+	{
+		WLog_Print(context->priv->log, WLOG_ERROR, "nYDst %" PRIu32 " > nHeight %" PRIu32, nYDst,
+		           nHeight);
+		return FALSE;
+	}
+
+	wStream* s = Stream_StaticConstInit(&sbuffer, data, length);
 	if (!s)
 		return FALSE;
 
+	const UINT32 minStride = nWidth * FreeRDPGetBytesPerPixel(DstFormat);
 	if (nDstStride == 0)
-		nDstStride = nWidth * FreeRDPGetBytesPerPixel(DstFormat);
+		nDstStride = minStride;
+	if (nDstStride < minStride)
+	{
+		WLog_Print(context->priv->log, WLOG_ERROR,
+		           "nDstStride %" PRIu32 " < minimum stride %" PRIu32, nDstStride, minStride);
+		return FALSE;
+	}
 
 	switch (bpp)
 	{
@@ -472,8 +515,8 @@ BOOL nsc_process_message(NSC_CONTEXT* WINPR_RESTRICT context, UINT16 bpp, UINT32
 			return FALSE;
 	}
 
-	context->width = width;
-	context->height = height;
+	context->width = WINPR_ASSERTING_INT_CAST(UINT16, width);
+	context->height = WINPR_ASSERTING_INT_CAST(UINT16, height);
 	ret = nsc_context_initialize(context, s);
 
 	if (!ret)
@@ -500,10 +543,15 @@ BOOL nsc_process_message(NSC_CONTEXT* WINPR_RESTRICT context, UINT16 bpp, UINT32
 			return FALSE;
 	}
 
-	if (!freerdp_image_copy_no_overlap(pDstData, DstFormat, nDstStride, nXDst, nYDst, width, height,
-	                                   context->BitmapData, PIXEL_FORMAT_BGRA32, 0, 0, 0, NULL,
-	                                   flip))
-		return FALSE;
+	uint32_t cwidth = width;
+	if (1ull * nXDst + width > nWidth)
+		cwidth = nWidth - nXDst;
 
-	return TRUE;
+	uint32_t cheight = height;
+	if (1ull * nYDst + height > nHeight)
+		cheight = nHeight - nYDst;
+
+	return (freerdp_image_copy_no_overlap(pDstData, DstFormat, nDstStride, nXDst, nYDst, cwidth,
+	                                      cheight, context->BitmapData, PIXEL_FORMAT_BGRA32, 0, 0,
+	                                      0, nullptr, flip));
 }

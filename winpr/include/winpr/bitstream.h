@@ -48,50 +48,55 @@ extern "C"
 {
 #endif
 
-	static INLINE void BitStream_Prefetch(wBitStream* _bs)
+	static inline void BitStream_Prefetch(wBitStream* _bs)
 	{
 		WINPR_ASSERT(_bs);
 
 		(_bs->prefetch) = 0;
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 4) < (_bs->capacity))
-			(_bs->prefetch) |= ((UINT32) * (_bs->pointer + 4) << 24);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 5) < (_bs->capacity))
-			(_bs->prefetch) |= ((UINT32) * (_bs->pointer + 5) << 16);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 6) < (_bs->capacity))
-			(_bs->prefetch) |= ((UINT32) * (_bs->pointer + 6) << 8);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 7) < (_bs->capacity))
-			(_bs->prefetch) |= ((UINT32) * (_bs->pointer + 7) << 0);
+
+		const intptr_t diff = _bs->pointer - _bs->buffer;
+		if ((diff + 4) < (intptr_t)_bs->capacity)
+			(_bs->prefetch) |= ((UINT32)_bs->pointer[4] << 24);
+		if ((diff + 5) < (intptr_t)_bs->capacity)
+			(_bs->prefetch) |= ((UINT32)_bs->pointer[5] << 16);
+		if ((diff + 6) < (intptr_t)_bs->capacity)
+			(_bs->prefetch) |= ((UINT32)_bs->pointer[6] << 8);
+		if ((diff + 7) < (intptr_t)_bs->capacity)
+			(_bs->prefetch) |= ((UINT32)_bs->pointer[7] << 0);
 	}
 
-	static INLINE void BitStream_Fetch(wBitStream* _bs)
+	static inline void BitStream_Fetch(wBitStream* _bs)
 	{
 		WINPR_ASSERT(_bs);
 		(_bs->accumulator) = 0;
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 0) < (_bs->capacity))
-			(_bs->accumulator) |= ((UINT32) * (_bs->pointer + 0) << 24);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 1) < (_bs->capacity))
-			(_bs->accumulator) |= ((UINT32) * (_bs->pointer + 1) << 16);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 2) < (_bs->capacity))
-			(_bs->accumulator) |= ((UINT32) * (_bs->pointer + 2) << 8);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 3) < (_bs->capacity))
-			(_bs->accumulator) |= ((UINT32) * (_bs->pointer + 3) << 0);
+
+		const intptr_t diff = _bs->pointer - _bs->buffer;
+		if ((diff + 0) < (intptr_t)_bs->capacity)
+			(_bs->accumulator) |= ((UINT32)_bs->pointer[0] << 24);
+		if ((diff + 1) < (intptr_t)_bs->capacity)
+			(_bs->accumulator) |= ((UINT32)_bs->pointer[1] << 16);
+		if ((diff + 2) < (intptr_t)_bs->capacity)
+			(_bs->accumulator) |= ((UINT32)_bs->pointer[2] << 8);
+		if ((diff + 3) < (intptr_t)_bs->capacity)
+			(_bs->accumulator) |= ((UINT32)_bs->pointer[3] << 0);
 		BitStream_Prefetch(_bs);
 	}
 
-	static INLINE void BitStream_Flush(wBitStream* _bs)
+	static inline void BitStream_Flush(wBitStream* _bs)
 	{
 		WINPR_ASSERT(_bs);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 0) < (_bs->capacity))
-			*(_bs->pointer + 0) = (BYTE)((UINT32)_bs->accumulator >> 24);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 1) < (_bs->capacity))
-			*(_bs->pointer + 1) = (BYTE)((UINT32)_bs->accumulator >> 16);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 2) < (_bs->capacity))
-			*(_bs->pointer + 2) = (BYTE)((UINT32)_bs->accumulator >> 8);
-		if (((UINT32)(_bs->pointer - _bs->buffer) + 3) < (_bs->capacity))
-			*(_bs->pointer + 3) = (BYTE)((UINT32)_bs->accumulator >> 0);
+		const intptr_t diff = _bs->pointer - _bs->buffer;
+		if ((diff + 0) < (intptr_t)_bs->capacity)
+			_bs->pointer[0] = (_bs->accumulator >> 24) & 0xFF;
+		if ((diff + 1) < (intptr_t)_bs->capacity)
+			_bs->pointer[1] = (_bs->accumulator >> 16) & 0xFF;
+		if ((diff + 2) < (intptr_t)_bs->capacity)
+			_bs->pointer[2] = (_bs->accumulator >> 8) & 0xFF;
+		if ((diff + 3) < (intptr_t)_bs->capacity)
+			_bs->pointer[3] = (_bs->accumulator >> 0) & 0xFF;
 	}
 
-	static INLINE void BitStream_Shift(wBitStream* _bs, UINT32 _nbits)
+	static inline void BitStream_Shift(wBitStream* _bs, UINT32 _nbits)
 	{
 		WINPR_ASSERT(_bs);
 		if (_nbits == 0)
@@ -130,14 +135,14 @@ extern "C"
 		}
 	}
 
-	static INLINE void BitStream_Shift32(wBitStream* _bs)
+	static inline void BitStream_Shift32(wBitStream* _bs)
 	{
 		WINPR_ASSERT(_bs);
 		BitStream_Shift(_bs, 16);
 		BitStream_Shift(_bs, 16);
 	}
 
-	static INLINE void BitStream_Write_Bits(wBitStream* _bs, UINT32 _bits, UINT32 _nbits)
+	static inline void BitStream_Write_Bits(wBitStream* _bs, UINT32 _bits, UINT32 _nbits)
 	{
 		WINPR_ASSERT(_bs);
 		_bs->position += _nbits;
@@ -149,7 +154,7 @@ extern "C"
 		else
 		{
 			_bs->offset -= 32;
-			_bs->mask = ((1 << (_nbits - _bs->offset)) - 1);
+			_bs->mask = ((1u << (_nbits - _bs->offset)) - 1);
 			_bs->accumulator |= ((_bits >> _bs->offset) & _bs->mask);
 			BitStream_Flush(_bs);
 			_bs->accumulator = 0;
@@ -162,7 +167,7 @@ extern "C"
 		}
 	}
 
-	static INLINE size_t BitStream_GetRemainingLength(wBitStream* _bs)
+	WINPR_ATTR_NODISCARD static inline size_t BitStream_GetRemainingLength(wBitStream* _bs)
 	{
 		WINPR_ASSERT(_bs);
 		return (_bs->length - _bs->position);
@@ -170,6 +175,8 @@ extern "C"
 
 	WINPR_API void BitDump(const char* tag, UINT32 level, const BYTE* buffer, UINT32 length,
 	                       UINT32 flags);
+
+	WINPR_ATTR_NODISCARD
 	WINPR_API UINT32 ReverseBits32(UINT32 bits, UINT32 nbits);
 
 	WINPR_API void BitStream_Attach(wBitStream* bs, const BYTE* buffer, UINT32 capacity);

@@ -30,14 +30,12 @@
 
 #define TAG FREERDP_TAG("cache.palette")
 
-static void* palette_cache_get(rdpPaletteCache* palette, UINT32 index);
-
 static void palette_cache_put(rdpPaletteCache* palette, UINT32 index, void* entry);
 
 static BOOL update_gdi_cache_color_table(rdpContext* context,
                                          const CACHE_COLOR_TABLE_ORDER* cacheColorTable)
 {
-	UINT32* colorTable = NULL;
+	UINT32* colorTable = nullptr;
 	rdpCache* cache = context->cache;
 	colorTable = (UINT32*)malloc(sizeof(UINT32) * 256);
 
@@ -47,27 +45,6 @@ static BOOL update_gdi_cache_color_table(rdpContext* context,
 	CopyMemory(colorTable, cacheColorTable->colorTable, sizeof(UINT32) * 256);
 	palette_cache_put(cache->palette, cacheColorTable->cacheIndex, (void*)colorTable);
 	return TRUE;
-}
-
-void* palette_cache_get(rdpPaletteCache* paletteCache, UINT32 index)
-{
-	void* entry = NULL;
-
-	if (index >= paletteCache->maxEntries)
-	{
-		WLog_ERR(TAG, "invalid color table index: 0x%08" PRIX32 "", index);
-		return NULL;
-	}
-
-	entry = paletteCache->entries[index].entry;
-
-	if (!entry)
-	{
-		WLog_ERR(TAG, "invalid color table at index: 0x%08" PRIX32 "", index);
-		return NULL;
-	}
-
-	return entry;
 }
 
 void palette_cache_put(rdpPaletteCache* paletteCache, UINT32 index, void* entry)
@@ -85,12 +62,14 @@ void palette_cache_put(rdpPaletteCache* paletteCache, UINT32 index, void* entry)
 
 void palette_cache_register_callbacks(rdpUpdate* update)
 {
+	WINPR_ASSERT(update);
+	WINPR_ASSERT(update->secondary);
 	update->secondary->CacheColorTable = update_gdi_cache_color_table;
 }
 
 rdpPaletteCache* palette_cache_new(rdpContext* context)
 {
-	rdpPaletteCache* paletteCache = NULL;
+	rdpPaletteCache* paletteCache = nullptr;
 
 	WINPR_ASSERT(context);
 
@@ -119,7 +98,7 @@ void palette_cache_free(rdpPaletteCache* paletteCache)
 	}
 }
 
-void free_palette_update(rdpContext* context, PALETTE_UPDATE* pointer)
+void free_palette_update(WINPR_ATTR_UNUSED rdpContext* context, PALETTE_UPDATE* pointer)
 {
 	free(pointer);
 }
@@ -138,5 +117,5 @@ fail:
 	WINPR_PRAGMA_DIAG_IGNORED_MISMATCHED_DEALLOC
 	free_palette_update(context, dst);
 	WINPR_PRAGMA_DIAG_POP
-	return NULL;
+	return nullptr;
 }

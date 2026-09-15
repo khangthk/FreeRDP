@@ -122,6 +122,28 @@
 	[_tableView reloadData];
 }
 
+// recalc safe area for modern device
+- (void)viewSafeAreaInsetsDidChange
+{
+	[super viewSafeAreaInsetsDidChange];
+	[[self view] setNeedsLayout];
+}
+
+- (void)viewDidLayoutSubviews
+{
+	[super viewDidLayoutSubviews];
+
+	const CGRect bounds = [[self view] bounds];
+	const UIEdgeInsets safe = [[self view] safeAreaInsets];
+	const CGFloat x = safe.left;
+	const CGFloat w = bounds.size.width - safe.left - safe.right;
+	CGFloat searchH = CGRectGetHeight([_searchBar frame]);
+
+	[_searchBar setFrame:CGRectMake(x, safe.top, w, searchH)];
+	[_tableView
+	    setFrame:CGRectMake(x, safe.top + searchH, w, bounds.size.height - safe.top - searchH)];
+}
+
 - (void)viewWillDisappear:(BOOL)animated
 {
 	[super viewWillDisappear:animated];
@@ -419,7 +441,7 @@
 	}
 }
 
-// prevent that an item is moved befoer the Add Bookmark item
+// prevent that an item is moved before the Add Bookmark item
 - (NSIndexPath *)tableView:(UITableView *)tableView
     targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath *)sourceIndexPath
                          toProposedIndexPath:(NSIndexPath *)proposedDestinationIndexPath
@@ -563,7 +585,6 @@
 			}
 
 			// set reachability status
-			WakeUpWWAN();
 			[bookmark
 			    setConntectedViaWLAN:[[Reachability
 			                             reachabilityWithHostName:[[bookmark params]
@@ -796,7 +817,7 @@
 
 - (UIButton *)disclosureButtonWithImage:(UIImage *)image
 {
-	// we make the button a little bit bigger (image widht * 2, height + 10) so that the user
+	// we make the button a little bit bigger (image width * 2, height + 10) so that the user
 	// doesn't accidentally connect to the bookmark ...
 	UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
 	[button setFrame:CGRectMake(0, 0, [image size].width * 2, [image size].height + 10)];
@@ -909,8 +930,6 @@
 	if (_manual_bookmarks == nil)
 	{
 		_manual_bookmarks = [[NSMutableArray alloc] init];
-		[_manual_bookmarks
-		    addObject:[[[GlobalDefaults sharedGlobalDefaults] newTestServerBookmark] autorelease]];
 	}
 }
 

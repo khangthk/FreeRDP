@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 
 #include <SDL.h>
 #include <SDL_ttf.h>
@@ -41,7 +42,8 @@ static const SDL_Color backgroundcolor = { 0x38, 0x36, 0x35, 0xff };
 
 static const Uint32 hpadding = 10;
 
-SdlWidget::SdlWidget(SDL_Renderer* renderer, SDL_Rect rect, bool input) : _rect(rect), _input(input)
+SdlWidget::SdlWidget([[maybe_unused]] SDL_Renderer* renderer, SDL_Rect rect, bool input)
+    : _rect(rect), _input(input)
 {
 	assert(renderer);
 
@@ -133,7 +135,10 @@ SDL_Texture* SdlWidget::render_text_wrapped(SDL_Renderer* renderer, const std::s
 	Sint32 w = 0;
 	Sint32 h = 0;
 	TTF_SizeUTF8(_font, " ", &w, &h);
-	auto surface = TTF_RenderUTF8_Blended_Wrapped(_font, text.c_str(), fgcolor, _text_width);
+
+	assert(_text_width <= UINT32_MAX);
+	auto surface = TTF_RenderUTF8_Blended_Wrapped(_font, text.c_str(), fgcolor,
+	                                              static_cast<Uint32>(_text_width));
 	if (!surface)
 	{
 		widget_log_error(-1, "TTF_RenderText_Blended");
@@ -160,8 +165,7 @@ SDL_Texture* SdlWidget::render_text_wrapped(SDL_Renderer* renderer, const std::s
 	dst.x += hpadding;
 	dst.w -= 2 * hpadding;
 	auto dh = scale(src.w, src.h);
-	if (dh < dst.h)
-		dst.h = dh;
+	dst.h = std::min<int>(dh, dst.h);
 
 	return texture;
 }
@@ -173,7 +177,7 @@ SdlWidget::~SdlWidget()
 		SDL_DestroyTexture(_image);
 }
 
-bool SdlWidget::error_ex(Uint32 res, const char* what, const char* file, size_t line,
+bool SdlWidget::error_ex(Sint32 res, const char* what, const char* file, size_t line,
                          const char* fkt)
 {
 	static wLog* log = nullptr;

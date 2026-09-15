@@ -29,12 +29,18 @@ extern "C"
 
 	typedef struct S_MAKECERT_CONTEXT MAKECERT_CONTEXT;
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API int makecert_context_process(MAKECERT_CONTEXT* context, int argc, char** argv);
 
+	WINPR_ATTR_NODISCARD
 	WINPR_API int makecert_context_set_output_file_name(MAKECERT_CONTEXT* context,
 	                                                    const char* name);
+
+	WINPR_ATTR_NODISCARD
 	WINPR_API int makecert_context_output_certificate_file(MAKECERT_CONTEXT* context,
 	                                                       const char* path);
+
+	WINPR_ATTR_NODISCARD
 	WINPR_API int makecert_context_output_private_key_file(MAKECERT_CONTEXT* context,
 	                                                       const char* path);
 

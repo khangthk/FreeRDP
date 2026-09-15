@@ -78,7 +78,10 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 char* AadServerHostname);       /** 30
 		                                                         * @since version 3.1.0
 		                                                         */
-	UINT64 padding0064[64 - 31];                                /* 31 */
+	SETTINGS_DEPRECATED(ALIGN64 char* CorrelationId);           /** 31
+		                                                         * @since version 3.27.0
+		                                                         */
+	UINT64 padding0064[64 - 32];                                /* 32 */
 	/* resource management related options */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 ThreadingFlags); /* 64 */
 
@@ -115,7 +118,15 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL SupportEdgeActionV2);     /* 151 */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL SupportSkipChannelJoin);  /* 152 */
 	SETTINGS_DEPRECATED(ALIGN64 UINT16 SupportedColorDepths);  /* 153 */
-	UINT64 padding0192[192 - 154];                             /* 154 */
+	SETTINGS_DEPRECATED(ALIGN64 UINT64 MonitorOverrideFlags);  /** 154
+		                                                        * @since version 3.15.0
+		                                                        */
+	SETTINGS_DEPRECATED(ALIGN64 char* SspiClientHostname);     /** 155
+		                                                        * @brief The client name sent during
+		                                                        * SSPI authentication if available
+		                                                        * @since version 3.27.0
+		                                                        */
+	UINT64 padding0192[192 - 156];                             /* 156 */
 
 	/* Client/Server Security Data */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL UseRdpSecurityLayer);                /* 192 */
@@ -160,8 +171,8 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL ListMonitors);            /*    392 */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32* MonitorIds);           /*    393 */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 NumMonitorIds);         /*    394 */
-	SETTINGS_DEPRECATED(ALIGN64 UINT32 MonitorLocalShiftX);    /*395 */
-	SETTINGS_DEPRECATED(ALIGN64 UINT32 MonitorLocalShiftY);    /*    396 */
+	SETTINGS_DEPRECATED(ALIGN64 INT32 MonitorLocalShiftX);     /*395 */
+	SETTINGS_DEPRECATED(ALIGN64 INT32 MonitorLocalShiftY);     /*    396 */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL HasMonitorAttributes);    /*    397 */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 MonitorFlags);          /* 398 */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 MonitorAttributeFlags); /* 399 */
@@ -204,7 +215,8 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL ForceEncryptedCsPdu);    /* 719 */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL HiDefRemoteApp);         /* 720 */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 CompressionLevel);     /* 721 */
-	UINT64 padding0768[768 - 722];                            /* 722 */
+	SETTINGS_DEPRECATED(ALIGN64 UINT32 RemoteAppFeatureFlags); /* 722 */
+	UINT64 padding0768[768 - 723];                             /* 723 */
 
 	/* Client Info (Extra) */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL IPv6Enabled);       /* 768 */
@@ -222,7 +234,10 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL AutoReconnectionPacketSupported);             /** 837
 		                                                                             @since version 3.5.0
 */
-	UINT64 padding0896[896 - 838];                                                 /* 838 */
+	SETTINGS_DEPRECATED(ALIGN64 BOOL SessionHasBeenReconnected);                   /** 838
+		                                                                            * @since version 3.26.0
+		                                                                            */
+	UINT64 padding0896[896 - 839];                                                 /* 839 */
 
 	/* Client Info (Time Zone) */
 	SETTINGS_DEPRECATED(ALIGN64 TIME_ZONE_INFORMATION* ClientTimeZone); /* 896 */
@@ -286,7 +301,9 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL AadSecurity);                  /* 1112 */
 	SETTINGS_DEPRECATED(ALIGN64 char* WinSCardModule);              /* 1113 */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL RemoteCredentialGuard);        /* 1114 */
-	UINT64 padding1152[1152 - 1115];                                /* 1115 */
+	SETTINGS_DEPRECATED(ALIGN64 BOOL RestrictedAdminModeSupported); /** 1115
+		                                                             * @since version 3.16.0 */
+	UINT64 padding1152[1152 - 1116];                                /* 1116 */
 
 	/* Connection Cookie */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL MstscCookieMode);      /* 1152 */
@@ -294,7 +311,10 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 PreconnectionId);    /* 1154 */
 	SETTINGS_DEPRECATED(ALIGN64 char* PreconnectionBlob);   /* 1155 */
 	SETTINGS_DEPRECATED(ALIGN64 BOOL SendPreconnectionPdu); /* 1156 */
-	UINT64 padding1216[1216 - 1157];                        /* 1157 */
+	SETTINGS_DEPRECATED(ALIGN64 char* EndpointFedAuthToken); /** 1157
+		                                                      * @since version 3.28.0
+		                                                      */
+	UINT64 padding1216[1216 - 1158];                         /* 1158 */
 
 	/* Server Redirection */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 RedirectionFlags);                      /* 1216 */
@@ -482,7 +502,12 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL GatewayIgnoreRedirectionPolicy);  /** 2012
 		                                                                * @since version 3.4.0
 		                                                                */
-	UINT64 padding2015[2015 - 2013];                                   /* 2013 */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayAvdClientID);             /** 2013
+		                                                                * @since version 3.10.0
+		                                                                */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayAzureActiveDirectory);    /** 2014
+		                                                                * @since version 3.10.0
+		                                                                */
 
 	/* Proxy */
 	SETTINGS_DEPRECATED(ALIGN64 UINT32 ProxyType);    /* 2015 */
@@ -490,7 +515,39 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 UINT16 ProxyPort);    /* 2017 */
 	SETTINGS_DEPRECATED(ALIGN64 char* ProxyUsername); /* 2018 */
 	SETTINGS_DEPRECATED(ALIGN64 char* ProxyPassword); /* 2019 */
-	UINT64 padding2112[2112 - 2020];                  /* 2020 */
+	SETTINGS_DEPRECATED(ALIGN64 BOOL GatewayAvdUseTenantid); /** 2020
+		                                                      * @since version 3.10.0
+		                                                      */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayAvdScope);      /** 2021
+		                                                      * @since version 3.16.0
+		                                                      */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayAvdAccessTokenFormat); /** 2022
+		                                                             * @since version 3.16.0
+		                                                             */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayAvdAccessAadFormat);   /** 2023
+		                                                             * @since version 3.16.0
+		                                                             */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayHttpReferer);          /** 2024
+		                                                             * @since version 3.18.0
+		                                                             */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayHttpUserAgent);        /** 2025
+		                                                             * @since version 3.18.0
+		                                                             */
+	SETTINGS_DEPRECATED(ALIGN64 char* GatewayHttpMsUserAgent);      /** 2026
+		                                                             * @since version 3.18.0
+		                                                             */
+	SETTINGS_DEPRECATED(ALIGN64 UINT32 GatewayResponseTimeout);     /** 2027
+		                                                             * @since version 3.32.0
+		                                                             */
+	SETTINGS_DEPRECATED(ALIGN64 char* AadAuthHelper);               /** 2028
+		                                                             * out-of-process AAD auth helper
+		                                                             * override: a path to a helper
+		                                                             * binary, or "autodetect" to
+		                                                             * probe the built-in ones (also
+		                                                             * the default when unset).
+		                                                             * @since version 3.32.0
+		                                                             */
+	UINT64 padding2112[2112 - 2029];                                /* 2029 */
 
 	/**
 	 * RemoteApp
@@ -712,7 +769,13 @@ struct rdp_settings
 	SETTINGS_DEPRECATED(ALIGN64 BOOL GfxSuspendFrameAck); /** 3850
 		                                                   * @since version 3.6.0
 		                                                   */
-	UINT64 padding3904[3904 - 3851];                      /* 3851 */
+	SETTINGS_DEPRECATED(ALIGN64 BOOL GfxCodecAV1);        /** 3851
+		                                                   * @since version 3.25.0
+		                                                   */
+	SETTINGS_DEPRECATED(ALIGN64 UINT32 GfxCodecAV1Profile); /** 3852
+		                                                     * @since version 3.25.0
+		                                                     */
+	UINT64 padding3904[3904 - 3853];                        /* 3853 */
 
 	/**
 	 * Caches

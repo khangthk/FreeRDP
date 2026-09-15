@@ -27,11 +27,11 @@
 
 #define TAG WINPR_TAG("android")
 
-JavaVM* jniVm = NULL;
+JavaVM* jniVm = nullptr;
 
 WINPR_API jint JNI_OnLoad(JavaVM* vm, void* reserved)
 {
-	WLog_INFO(TAG, "Setting up JNI environement...");
+	WLog_INFO(TAG, "Setting up JNI environment...");
 
 	jniVm = vm;
 	return JNI_VERSION_1_6;
@@ -39,8 +39,8 @@ WINPR_API jint JNI_OnLoad(JavaVM* vm, void* reserved)
 
 WINPR_API void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved)
 {
-	JNIEnv* env = NULL;
-	WLog_INFO(TAG, "Tearing down JNI environement...");
+	JNIEnv* env = nullptr;
+	WLog_INFO(TAG, "Tearing down JNI environment...");
 
 	if ((*jniVm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK)
 	{
@@ -56,7 +56,7 @@ jboolean winpr_jni_attach_thread(JNIEnv** env)
 	if ((*jniVm)->GetEnv(jniVm, (void**)env, JNI_VERSION_1_4) != JNI_OK)
 	{
 		WLog_INFO(TAG, "android_java_callback: attaching current thread");
-		(*jniVm)->AttachCurrentThread(jniVm, env, NULL);
+		(*jniVm)->AttachCurrentThread(jniVm, env, nullptr);
 
 		if ((*jniVm)->GetEnv(jniVm, (void**)env, JNI_VERSION_1_4) != JNI_OK)
 		{

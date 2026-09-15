@@ -48,7 +48,7 @@ extern "C"
 		HANDLE vcm;
 		void* custom;
 
-		psRemdeskStart Start;
+		WINPR_ATTR_NODISCARD psRemdeskStart Start;
 		psRemdeskStop Stop;
 
 		RemdeskServerPrivate* priv;
@@ -58,6 +58,7 @@ extern "C"
 	FREERDP_API void remdesk_server_context_free(RemdeskServerContext* context);
 
 	WINPR_ATTR_MALLOC(remdesk_server_context_free, 1)
+	WINPR_ATTR_NODISCARD
 	FREERDP_API RemdeskServerContext* remdesk_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus
